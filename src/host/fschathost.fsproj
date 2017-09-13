@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project Sdk="Microsoft.NET.Sdk.Web">
+  <PropertyGroup>
+    <TargetFrameworks>netcoreapp2.0;net461</TargetFrameworks>
+    <OutputType>Exe</OutputType>
+    <AssemblyName>fschathost</AssemblyName>
+    <PackageId>fschathost</PackageId>
+    <EnableDefaultContentItems>false</EnableDefaultContentItems>
+    <UserSecretsId>61b4e703-d6e0-4941-9706-bf253a8984eb</UserSecretsId>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="Program.fs" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\app\fschatapp.fsproj" />
+  </ItemGroup>
+  <Import Project="..\..\.paket\Paket.Restore.targets" />
+</Project>

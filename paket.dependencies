@@ -1,0 +1,16 @@
+source https://www.nuget.org/api/v2
+
+clitool Microsoft.DotNet.Watcher.Tools 2.0.0
+
+nuget Microsoft.AspNetCore.Authentication.Cookies >= 2.0
+nuget Microsoft.Extensions.DependencyInjection >= 2.0
+nuget Giraffe 0.1.0-beta-100
+nuget Giraffe.Razor 0.1.0-beta-100
+
+nuget Microsoft.AspNetCore.Hosting >= 2.0
+nuget Microsoft.AspNetCore.Diagnostics >= 2.0
+nuget Microsoft.AspNetCore.Server.Kestrel >= 2.0
+nuget Microsoft.AspNetCore.Server.IISIntegration >= 2.0
+nuget Microsoft.AspNetCore.StaticFiles >= 2.0
+nuget Microsoft.Extensions.Logging.Console >= 2.0
+nuget Microsoft.Extensions.Logging.Debug >= 2.0

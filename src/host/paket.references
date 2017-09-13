@@ -1,0 +1,14 @@
+Microsoft.AspNetCore.StaticFiles
+Microsoft.AspNetCore.Authentication.Cookies
+Microsoft.Extensions.DependencyInjection
+Giraffe
+Giraffe.Razor
+
+Microsoft.AspNetCore.Hosting
+Microsoft.AspNetCore.Diagnostics
+Microsoft.AspNetCore.Server.Kestrel
+Microsoft.AspNetCore.Server.IISIntegration
+Microsoft.Extensions.Logging.Console
+Microsoft.Extensions.Logging.Debug
+    
+Microsoft.DotNet.Watcher.Tools
