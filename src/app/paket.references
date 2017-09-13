@@ -1,7 +1,0 @@
-Microsoft.AspNetCore.StaticFiles
-Microsoft.AspNetCore.Authentication.Cookies
-Microsoft.Extensions.DependencyInjection
-Giraffe
-Giraffe.Razor
-
-Microsoft.DotNet.Watcher.Tools
