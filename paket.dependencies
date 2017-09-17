@@ -1,4 +1,5 @@
 source https://www.nuget.org/api/v2
+storage: none
 
 clitool Microsoft.DotNet.Watcher.Tools 2.0.0
 

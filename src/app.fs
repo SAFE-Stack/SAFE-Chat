@@ -11,8 +11,25 @@ open fschat.Models
 // Web app
 // ---------------------------------
 
+(*
+    /login
+    /logout
+    GET /channels
+    POST /channels/:chan/join
+    POST /channels/:chan/leave
+    POST /channels/:chan
+    GET /channels/:chan/messages
+*)
+
 let webApp: HttpHandler =
     choose [
+        subRoute "/channels"
+            (choose [
+                GET >=> route "/" >=>
+                    setStatusCode 200 >=> text "TBD list of channels here"
+                POST >=> routef "%s/join" (fun chan ->
+                    setStatusCode 200 >=> text ("TBD Join channel " + chan))
+            ])
         GET >=>
             choose [
                 route "/" >=> razorHtmlView "Index" { Text = "Hello world, from Giraffe!" }
