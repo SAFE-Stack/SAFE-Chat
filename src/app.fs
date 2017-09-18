@@ -10,29 +10,48 @@ open fschat.Models
 // ---------------------------------
 // Web app
 // ---------------------------------
+module internal AppState =
+// app state
+    let app = { App.Channels = ["hardware"; "software"; "cats"] }
+    let mutable userSession = { UserSession.UserName = "%username%"; Channels = ["cats"]}
 
-(*
-    /login
-    /logout
-    GET /channels
-    POST /channels/:chan/join
-    POST /channels/:chan/leave
-    POST /channels/:chan
-    GET /channels/:chan/messages
-*)
+module Pages =
+
+    open Giraffe.XmlViewEngine
+
+    let pageLayout pageTitle content =
+        html [] [
+            head [] [
+                title [] [encodedText pageTitle]
+            ]
+            body [] content
+        ]
+
+let joinChannel chan =
+    if not(AppState.userSession.Channels |> List.contains chan) then
+        AppState.userSession <- { AppState.userSession with Channels = chan :: AppState.userSession.Channels}
+    redirectTo false "/"
+
+let leaveChannel chan =
+    // todo leave, redirect to channels list
+    setStatusCode 200 >=> text ("TBD leave channel " + chan)
 
 let webApp: HttpHandler =
     choose [
         subRoute "/channels"
             (choose [
-                GET >=> route "/" >=>
-                    setStatusCode 200 >=> text "TBD list of channels here"
-                POST >=> routef "%s/join" (fun chan ->
-                    setStatusCode 200 >=> text ("TBD Join channel " + chan))
+                GET >=> route "" >=> razorHtmlView "Channels" AppState.app
+                GET >=> routef "/%s/join" joinChannel
+                GET >=> routef "/%s/leave" leaveChannel
+                routef "/%s" (fun chan ->
+                    choose [
+                        GET  >=> setStatusCode 200 >=> text ("TBD view channel messages " + chan)
+                        POST >=> setStatusCode 200 >=> text ("TBD post message to " + chan)
+                    ])                
             ])
         GET >=>
             choose [
-                route "/" >=> razorHtmlView "Index" { Text = "Hello world, from Giraffe!" }
+                route "/" >=> warbler (fun _ -> AppState.userSession |> razorHtmlView "Index")
             ]
         setStatusCode 404 >=> text "Not Found" ]
 

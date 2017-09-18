@@ -1,14 +1,22 @@
-@model fschat.Models.Message
+@model fschat.Models.UserSession
 
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Giraffe</title>
+    <title>F# chat</title>
 </head>
 <body>
-    xxx yyy
     <div>
-        <h3>@Model.Text</h3>
+        <h3>Hello, @Model.UserName</h3>
+        <p>Here's the list of channels you've joined:</p>
+        <ul>
+            @foreach(var channelName in Model.Channels)
+            {
+                <li><a href=@($"channels/{channelName}")>@channelName</a></li>
+            }
+        </ul>
+        Click <a href="/channels">here</a> to join to a new channel.
+
     </div>
 </body>
 </html>
