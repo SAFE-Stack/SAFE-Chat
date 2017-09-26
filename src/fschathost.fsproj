@@ -10,6 +10,8 @@
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="Models\*.fs" />
+    <Compile Include="Flowr\Types.fs" />
+    <Compile Include="Flowr\Channel.fs" />
     <Compile Include="app.fs" />
     <Compile Include="Program.fs" />
   </ItemGroup>

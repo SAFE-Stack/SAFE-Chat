@@ -12,5 +12,8 @@ Microsoft.AspNetCore.Server.IISIntegration
 Microsoft.Extensions.DependencyInjection
 Microsoft.Extensions.Logging.Console
 Microsoft.Extensions.Logging.Debug
+
+Akkling
+Akkling.Streams
     
 Microsoft.DotNet.Watcher.Tools

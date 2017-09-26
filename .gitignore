@@ -33,3 +33,4 @@ TestResult.*
 .paket/
 .idea/
 .idea/.idea.fschat/riderModule.iml
+.nuget-packages/

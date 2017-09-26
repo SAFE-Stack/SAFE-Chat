@@ -15,3 +15,8 @@ nuget Microsoft.AspNetCore.Server.IISIntegration >= 2.0
 nuget Microsoft.AspNetCore.StaticFiles >= 2.0
 nuget Microsoft.Extensions.Logging.Console >= 2.0
 nuget Microsoft.Extensions.Logging.Debug >= 2.0
+
+source .nuget-packages/
+
+nuget Akkling > 0.7.0
+nuget Akkling.Streams > 0.7.0
