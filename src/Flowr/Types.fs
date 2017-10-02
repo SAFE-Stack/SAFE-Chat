@@ -9,7 +9,7 @@ type Message = Message of string
 type ChannelCtlMsg =
     | NewParticipant of user: User * subscriber: IActorRef<ChatProtocolMessage>
     | ParticipantLeft of user: User
-    | ReceivedMessage of user: User * message: String
+    | NewMessage of user: User * message: String
     | ListUsers
 
 /// The message sent out to user
