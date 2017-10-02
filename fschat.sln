@@ -3,7 +3,7 @@ Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio 15
 VisualStudioVersion = 15.0.26730.10
 MinimumVisualStudioVersion = 10.0.40219.1
-Project("{6EC3EE1D-3C4E-46DD-8F32-0CC8E7565705}") = "fschathost", "src\fschathost.fsproj", "{30E47460-D292-4C79-8CA6-E88BF777CE2C}"
+Project("{6EC3EE1D-3C4E-46DD-8F32-0CC8E7565705}") = "server", "src\Server\server.fsproj", "{30E47460-D292-4C79-8CA6-E88BF777CE2C}"
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Solution Items", "Solution Items", "{4A530AA9-27D3-49EE-BA40-3ED057BB59FA}"
 	ProjectSection(SolutionItems) = preProject
