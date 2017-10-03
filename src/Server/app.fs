@@ -17,24 +17,6 @@ module internal AppState =
     let app = { App.Channels = ["hardware"; "software"; "cats"] }
     let mutable userSession = { UserSession.UserName = "%username%"; Channels = ["cats"]}
 
-module Pages =
-
-    open Suave.Html
-
-    let pageLayout pageTitle content =
-        html [] [
-            head [] [
-                title [] pageTitle
-            ]
-            body [] content
-        ]
-    let channels chanlist =
-        [
-        tag "ul" [] [
-            for ch in chanlist do
-                yield tag "li" [] (text ch)
-        ]]
-
 let joinChannel chan =
     if not(AppState.userSession.Channels |> List.contains chan) then
         AppState.userSession <- { AppState.userSession with Channels = chan :: AppState.userSession.Channels}
@@ -47,7 +29,7 @@ let leaveChannel chan =
 let webApp: WebPart =
     choose [
         pathStarts "/channels" >=> choose [
-            GET >=> path "/channels" >=> (Pages.channels AppState.app.Channels |> Pages.pageLayout "Channels" |> Html.renderHtmlDocument |> OK)
+            GET >=> path "/channels" >=> (Views.channels AppState.app.Channels |> Views.pageLayout "Channels" |> Html.renderHtmlDocument |> OK)
             GET >=> pathScan "/channels/%s/join" joinChannel
             GET >=> pathScan "/channels/%s/leave" leaveChannel
             GET >=> pathScan "/channels/%s" (fun chan ->
