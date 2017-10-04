@@ -11,12 +11,15 @@
 
   <ItemGroup>
     <Compile Include="Models\*.fs" />
+    <Compile Include="SessionStore.fs" />
     <Compile Include="Flowr\Types.fs" />
     <Compile Include="Flowr\Channel.fs" />
     <Compile Include="Flowr\SocketFlow.fs" />
     <Compile Include="Flowr\Session.fs" />
-    <Compile Include="Flowr\SessionStore.fs" />
     <Compile Include="Flowr\ChatServer.fs" />
+
+    <Compile Include="Json.fs" />
+    <Compile Include="ChatApi.fs" />
     <Compile Include="views.fs" />
     <Compile Include="app.fs" />
     <Compile Include="Program.fs" />

@@ -6,8 +6,6 @@ open Akka.Actor
 open Akkling
 open Akkling.Streams
 
-open Session
-
 type ControlMsg =
     | NewSession of sessionId: string
     | StoreData of sessionId: string * key: string * data: obj

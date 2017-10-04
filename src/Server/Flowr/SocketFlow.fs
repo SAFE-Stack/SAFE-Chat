@@ -78,6 +78,7 @@ let handleWebsocketMessagesImpl (system: ActorSystem)
                 | _ -> ()
         }
 
+/// Creates Suave socket handshaking handler
 let handleWebsocketMessages  (system: ActorSystem) (handler: Flow<WsMessage, WsMessage, Akka.NotUsed>) (ws : WebSocket) =
     let materialize materializer inputSource sink =
         inputSource |> Source.via handler |> Source.runWith materializer sink |> ignore

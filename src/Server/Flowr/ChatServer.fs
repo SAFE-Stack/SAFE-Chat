@@ -13,7 +13,7 @@ open Channel
 
 type IrcChannel = {
     name: string
-    newUser: User -> Flow<string, ChatProtocolMessage, Akka.NotUsed>
+    newUser: User -> Flow<Message, ChatProtocolMessage, Akka.NotUsed>
     channelActor: IActorRef<ChannelCtlMsg>
 }
 
@@ -30,7 +30,7 @@ type IrcServerControlMsg =
 type IrcServerReplyMsg =
     | ChannelList of string list
 
-type AddChanFnType = string -> Flow<string, ChatProtocolMessage, Akka.NotUsed> -> UniqueKillSwitch
+// type AddChanFnType = string -> Flow<Message, ChatProtocolMessage, Akka.NotUsed> -> UniqueKillSwitch
 
 /// <summary>
 /// Starts IRC server actor.
@@ -38,7 +38,7 @@ type AddChanFnType = string -> Flow<string, ChatProtocolMessage, Akka.NotUsed> -
 /// <param name="system"></param>
 let startServer (system: ActorSystem) =
 
-    let behavior state (ctx: Actor<_>) =
+    let behavior state (ctx: Actor<IrcServerControlMsg>) =
         function
         | List ->
             do ctx.Sender() <! (state.channels |> List.map (fun chan -> chan.name) |> ChannelList)
@@ -65,7 +65,7 @@ let startServer (system: ActorSystem) =
                 {state with channels = newChanList} |> ignored
             | _ -> ignored state
     in
-    props <| actorOf2 (behavior { channels = [] }) |> (spawn system "ircserver") |> retype
+    props <| actorOf2 (behavior { channels = [] }) |> (spawn system "ircserver")
 
 /// Creates a user impersonated by bots. User seems too heavy for our needs.
 let createUser name =
@@ -76,11 +76,9 @@ let createUser name =
 let createEchoActor (system: ActorSystem) botUser =
     let botHandler state (ctx: Actor<_>) =
         function
-        // ignore messages from other bots
-        // TODO ignore replies to other messages
-        | ChatMessage (_, user, message) // FIXME do not let bots reply to other bots when user.Person <> Person.Anonymous
+        | ChatMessage (_, user, Message message) // FIXME do not let bots reply to other bots when user.Person <> Person.Anonymous
             ->
-            do ctx.Sender() <! ChannelCtlMsg.NewMessage (botUser, sprintf "\"%s\" said: %s" user message)
+            do ctx.Sender() <! ChannelCtlMsg.NewMessage (botUser, sprintf "\"%s\" said: %s" user message |> Message)
             ignored ()
         | _ -> ignored ()
     in
@@ -125,7 +123,7 @@ let joinChannel (server: IActorRef<_>) (chanName: string) (user: User) =
         return channel.newUser user
     }
 
-type UserMessage = UserMessage of chan: string * message: string
+type UserMessage = UserMessage of chan: string * Message
 
 /// Starts a user session. Return stopSession killswitch,
 /// and "subscribe" method which adds chat flow (you have to create it in advance) to session flow.
@@ -140,7 +138,7 @@ let startUserSession (materializer: Akka.Streams.IMaterializer) =
     let combine
             (producer: Source<UserMessage, Akka.NotUsed>)
             (consumer: Sink<string*ChatProtocolMessage, Akka.NotUsed>)
-            (chanName: string) (chanFlow: Flow<string, ChatProtocolMessage, _>) =
+            (chanName: string) (chanFlow: Flow<Message, ChatProtocolMessage, _>) =
 
         let infilter =
             Flow.empty<UserMessage, Akka.NotUsed>

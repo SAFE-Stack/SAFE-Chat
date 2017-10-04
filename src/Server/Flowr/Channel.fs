@@ -7,7 +7,6 @@ open Akkling.Streams
 open Types
 
 // Channel. Feed of messages for all parties.
-type User = string
 type ChannelParty = User * IActorRef<ChatProtocolMessage>
 
 // maps user login
@@ -17,6 +16,7 @@ type internal ChannelState = {
     LastEventId: int
 }
 
+/// Creates channel actor
 let createChannel (system: ActorSystem) name =
 
     let incId chan = { chan with LastEventId = chan.LastEventId + 1}
@@ -63,17 +63,14 @@ let createChannel (system: ActorSystem) name =
     in
     props <| actorOf2 (behavior { Parties = Map.empty; LastEventId = 1000 }) |> (spawn system name) |> retype
 
-module FlowExt =
-    open Akka.Streams.Dsl
-    let to' (sink) (fin: Flow<'TIn,'TOut, 'TFin>) = fin.To(sink)
-
+/// Creates a Flow instance for user in channel
 let createPartyFlow (channelActor: IActorRef<_>) (user: User) =
     let chatInSink = Sink.toActorRef (ParticipantLeft user) channelActor
 
     let fin =
-        Flow.empty<string, Akka.NotUsed>
-        |> Flow.map (fun s -> NewMessage(user, s))
-        |> FlowExt.to' chatInSink
+        (Flow.empty<Message, Akka.NotUsed>
+            |> Flow.map (fun msg -> NewMessage(user, msg))
+        ).To(chatInSink)
 
     // The counter-part which is a source that will create a target ActorRef per
     // materialization where the chatActor will send its messages to.

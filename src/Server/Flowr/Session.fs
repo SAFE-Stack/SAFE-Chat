@@ -38,3 +38,7 @@ let leaveChannel (session: SessionState) chan =
         | Some (Some killSwitch) -> killSwitch.Shutdown()
         | _ -> ()
     {session with channels = session.channels |> Map.remove chan}
+
+/// Gets channel list the user is joined to
+let channelList (state: SessionState) =
+    state.channels |> Map.toList |> List.map fst
