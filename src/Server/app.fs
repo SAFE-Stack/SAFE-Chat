@@ -7,12 +7,23 @@ open Suave.Redirection
 open Suave.Successful
 open Suave.RequestErrors
 
-open fschat.Models
-
 // ---------------------------------
 // Web app
 // ---------------------------------
 module internal AppState =
+
+    type UserSession =
+        {
+            UserName: string
+            // token
+            Channels: string list // list of channels I'm in
+        }
+
+    type App =
+        {
+            Channels: string list
+        }
+
 // app state
     let app = { App.Channels = ["hardware"; "software"; "cats"] }
     let mutable userSession = { UserSession.UserName = "%username%"; Channels = ["cats"]}

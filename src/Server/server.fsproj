@@ -1,29 +1,20 @@
-﻿<?xml version="1.0" encoding="utf-8"?>
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
+    <AssemblyName>fschathost</AssemblyName>
     <OutputType>Exe</OutputType>
     <TargetFramework>netcoreapp2.0</TargetFramework>
-    <AssemblyName>fschathost</AssemblyName>
-    <PackageId>fschathost</PackageId>
-    <EnableDefaultContentItems>false</EnableDefaultContentItems>
-    <UserSecretsId>61b4e703-d6e0-4941-9706-bf253a8984eb</UserSecretsId>
   </PropertyGroup>
-
   <ItemGroup>
-    <Compile Include="Models\*.fs" />
+    <Compile Include="Types.fs" />
     <Compile Include="SessionStore.fs" />
-    <Compile Include="Flowr\Types.fs" />
-    <Compile Include="Flowr\Channel.fs" />
-    <Compile Include="Flowr\SocketFlow.fs" />
-    <Compile Include="Flowr\Session.fs" />
-    <Compile Include="Flowr\ChatServer.fs" />
-
+    <Compile Include="Channel.fs" />
+    <Compile Include="ChatServer.fs" />
+    <Compile Include="Session.fs" />
     <Compile Include="Json.fs" />
-    <Compile Include="ChatApi.fs" />
     <Compile Include="views.fs" />
+    <Compile Include="SocketFlow.fs" />
     <Compile Include="app.fs" />
     <Compile Include="Program.fs" />
   </ItemGroup>
-
   <Import Project="..\..\.paket\Paket.Restore.targets" />
 </Project>

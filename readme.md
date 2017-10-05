@@ -1,6 +1,6 @@
 # F#chat
 
-Sample chat application built with netcore and F#.
+Sample chat application built with netcore, F#, Akka.net and Fable.
 
 
 ## References

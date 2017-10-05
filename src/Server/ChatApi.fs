@@ -10,8 +10,8 @@ open Suave
 open Suave.Successful
 open Suave.WebSocket
 
-open fschat.Flowr.Types
-open fschat.Flowr.ChatServer
+open Types
+open ChatServer
 open SocketFlow
 
 // open ProductHub.Rest.Common
@@ -32,7 +32,7 @@ module private Payloads =
 
 open Payloads
 
-let private encodeChannelMessage channel : ChatProtocolMessage -> WsMessage =
+let private encodeChannelMessage channel : ChatClientMessage -> WsMessage =
     function
     | ChatMessage ((id, ts), author, Message message) ->
         {id = id; ts = ts; text = message; chan = channel; author = author}
@@ -45,7 +45,7 @@ let private encodeChannelMessage channel : ChatProtocolMessage -> WsMessage =
 /// <summary>
 /// Translates user flow to a WebSocket ready one.
 /// </summary>
-let private mapUserToWebsocketFlow channel (userFlow: Flow<Message, ChatProtocolMessage, _>) =
+let private mapUserToWebsocketFlow channel (userFlow: Flow<Message, ChatClientMessage, _>) =
 
     Flow.empty<WsMessage, Akka.NotUsed>
     |> Flow.map (function | Text t -> t |_ -> null)
