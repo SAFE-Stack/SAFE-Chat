@@ -4,7 +4,6 @@ module SessionStore
 open System
 open Akka.Actor
 open Akkling
-open Akkling.Streams
 
 type ControlMsg =
     | NewSession of sessionId: string

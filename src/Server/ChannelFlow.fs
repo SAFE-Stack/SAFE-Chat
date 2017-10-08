@@ -1,48 +1,48 @@
-﻿module Channel
+﻿module ChannelFlow
 
 open Akka.Actor
+open Akka.Streams
+open Akka.Streams.Dsl
+
 open Akkling
 open Akkling.Streams
 
-open Types
+type Message = Message of string
 
-/// The message sent out to user
+// message timestamp
 type MessageTs = int * System.DateTime
 
 /// Client protocol message (messages sent from channel to client actor)
-type ChatClientMessage =
-    | ChatMessage of ts: MessageTs * author: User * Message
-    | Joined of ts: MessageTs * user: User * all: User seq
-    | Left of ts: MessageTs * user: User * all: User seq
+type 'User ChatClientMessage =
+    | ChatMessage of ts: MessageTs * author: 'User * Message
+    | Joined of ts: MessageTs * user: 'User * all: 'User seq
+    | Left of ts: MessageTs * user: 'User * all: 'User seq
 
 /// Channel actor protocol (server side protocol)
-type ChannelMessage =
-    | NewParticipant of user: User * subscriber: IActorRef<ChatClientMessage>
-    | ParticipantLeft of User
-    | NewMessage of User * Message
+type 'User ChannelMessage =
+    | NewParticipant of user: 'User * subscriber: IActorRef<'User ChatClientMessage>
+    | ParticipantLeft of 'User
+    | NewMessage of 'User * Message
     | ListUsers
 
 module internal Internals =
-    // Channel. Feed of messages for all parties.
-    type ChannelParty = User * IActorRef<ChatClientMessage>
-
     // maps user login
-    type ChannelParties = Map<User, ChannelParty>   // FIXME UserId
-    type ChannelState = {
-        Parties: ChannelParties
+    type 'User ChannelParties when 'User: comparison = Map<'User, 'User * IActorRef<'User ChatClientMessage>>
+    type 'User ChannelState when 'User: comparison = {
+        Parties: ChannelParties<'User>
         LastEventId: int
     }
 
 open Internals
 /// Creates channel actor
-let createChannel (system: ActorSystem) name =
+let createChannel<'User when 'User: comparison> (system: ActorSystem) name =
 
     let incId chan = { chan with LastEventId = chan.LastEventId + 1}
-    let dispatch (parties: ChannelParties) (msg: ChatClientMessage): unit =
+    let dispatch (parties: 'User ChannelParties) (msg: 'User ChatClientMessage): unit =
         parties |> Map.iter (fun _ (_, subscriber) -> subscriber <! msg)
     let allMembers = Map.toSeq >> Seq.map (snd >> fst)
 
-    let behavior state (ctx: Actor<ChannelMessage>): obj -> _ =
+    let behavior state (ctx: Actor<'User ChannelMessage>): obj -> _ =
         function
         | Terminated (t,_,_) ->
             match state.Parties |> Map.tryFindKey (fun _ (_, ref) -> ref = t) with
@@ -50,7 +50,7 @@ let createChannel (system: ActorSystem) name =
                 {state with Parties = state.Parties |> Map.remove key} |> ignored
             | _ -> ignored state
 
-        | :? ChannelMessage as channelEvent ->
+        | :? ChannelMessage<'User> as channelEvent ->
             let ts = state.LastEventId, System.DateTime.Now
 
             match channelEvent with
@@ -82,7 +82,7 @@ let createChannel (system: ActorSystem) name =
     props <| actorOf2 (behavior { Parties = Map.empty; LastEventId = 1000 }) |> (spawn system name)
 
 /// Creates a Flow instance for user in channel
-let createPartyFlow (channelActor: IActorRef<_>) (user: User) =
+let createPartyFlow<'User> (channelActor: IActorRef<_>) (user: 'User) =
     let chatInSink = Sink.toActorRef (ParticipantLeft user) channelActor
 
     let fin =
@@ -96,6 +96,40 @@ let createPartyFlow (channelActor: IActorRef<_>) (user: User) =
     // messages fast enough.
     let fout =
         Source.actorRef Akka.Streams.OverflowStrategy.Fail 1
-        |> Source.mapMaterializedValue (fun (sub: IActorRef<ChatClientMessage>) -> channelActor <! NewParticipant (user, sub); Akka.NotUsed.Instance)
+        |> Source.mapMaterializedValue (fun (sub: IActorRef<'User ChatClientMessage>) -> channelActor <! NewParticipant (user, sub); Akka.NotUsed.Instance)
 
     Flow.ofSinkAndSource fin fout
+
+
+/// User session multiplexer. Creates a flow that receives user messages for multiple channels, binds each stream to channel flow
+/// and finally collects the messages from multiple channels into single stream.
+/// When materialized return a "connect" function which, given channel and channel flow, adds it to session. "Connect" returns a killswitch to remove the channel.
+let createUserSessionFlow<'User, 'Chan when 'Chan: equality>
+    (materializer: Akka.Streams.IMaterializer) =
+
+    let inhub = BroadcastHub.Sink<'Chan * Message>(bufferSize = 256)
+    let outhub = MergeHub.Source<'Chan * 'User ChatClientMessage>(perProducerBufferSize = 16)
+
+    let sourceTo (sink) (source: Source<'TOut, 'TMat>) = source.To(sink)
+
+    let combine
+            (producer: Source<'Chan * Message, Akka.NotUsed>)
+            (consumer: Sink<'Chan * 'User ChatClientMessage, Akka.NotUsed>)
+            (chanId: 'Chan) (chanFlow: Flow<Message, 'User ChatClientMessage, _>) =
+
+        let infilter =
+            Flow.empty<'Chan * Message, Akka.NotUsed>
+            |> Flow.filter (fst >> (=) chanId)
+            |> Flow.map snd
+
+        let graph =
+            producer
+            |> Source.viaMat (KillSwitches.Single()) Keep.right
+            |> Source.via infilter
+            |> Source.via chanFlow
+            |> Source.map (fun message -> chanId, message)
+            |> sourceTo consumer
+
+        graph |> Graph.run materializer
+
+    Flow.ofSinkAndSourceMat inhub combine outhub

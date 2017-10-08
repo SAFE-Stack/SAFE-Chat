@@ -6,9 +6,6 @@ open Akka.Streams.Dsl
 open Akkling
 open Akkling.Streams
 
-open Types
-open Channel
-
 type SessionState = {
     channels: Map<Uuid, UniqueKillSwitch option>
     join: Uuid -> UniqueKillSwitch Async
@@ -49,38 +46,3 @@ let leaveChannel (session: SessionState) chan =
 /// Gets channel list the user is joined to
 let channelList (state: SessionState) =
     state.channels |> Map.toList |> List.map fst
-
-type UserMessage = UserMessage of chan:Uuid * Message
-
-/// Starts a user session flow. Session flow obtains pair of (channel * message) redirects it to respective channel, collects messages from channels and sends as output
-/// Return stopSession killswitch,
-/// and "subscribe" method which adds chat flow (you have to create it in advance) to session flow.
-/// "Subscribe" in its turn returns "unsubscribe" killswitch.
-let createUserSessionFlow (materializer: Akka.Streams.IMaterializer) =
-
-    let inhub = BroadcastHub.Sink<UserMessage>(bufferSize = 256)
-    let outhub = MergeHub.Source<Uuid * ChatClientMessage>(perProducerBufferSize = 16)
-
-    let sourceTo (sink) (source: Source<'TOut, 'TMat>) = source.To(sink)
-
-    let combine
-            (producer: Source<UserMessage, Akka.NotUsed>)
-            (consumer: Sink<Uuid * ChatClientMessage, Akka.NotUsed>)
-            (chanId: Uuid) (chanFlow: Flow<Message, ChatClientMessage, _>) =
-
-        let infilter =
-            Flow.empty<UserMessage, Akka.NotUsed>
-            |> Flow.filter (fun (UserMessage (chan,_)) -> chan = chanId)
-            |> Flow.map (fun (UserMessage (_,message)) -> message)
-
-        let graph =
-            producer
-            |> Source.viaMat (KillSwitches.Single()) Keep.right
-            |> Source.via infilter
-            |> Source.via chanFlow
-            |> Source.map (fun message -> chanId, message)
-            |> sourceTo consumer
-
-        graph |> Graph.run materializer
-
-    Flow.ofSinkAndSourceMat inhub combine outhub

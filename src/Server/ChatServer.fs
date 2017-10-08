@@ -8,17 +8,28 @@ open Akka.Streams.Dsl
 open Akkling
 open Akkling.Streams
 
-open Types
-open Channel
+open ChannelFlow
+
+type UserInfo = {
+    id: Uuid
+    nick: string
+    email: string option
+} with static member Blank = {id = Uuid.Empty; nick = null; email = None}
+type User = User of UserInfo
 
 module internal Internals =
+
+    type ChannelInfo = {
+        name: string
+        topic: string
+    }
 
     /// Channel is a primary store for channel info and data
     type ChannelData = {
         id: Uuid
         info: ChannelInfo
-        newUser: User -> Flow<Message, ChatClientMessage, Akka.NotUsed>
-        channelActor: IActorRef<ChannelMessage>
+        newUser: User -> Flow<Message, User ChatClientMessage, Akka.NotUsed>
+        channelActor: IActorRef<User ChannelMessage>
     }
 
     type ServerData = {
