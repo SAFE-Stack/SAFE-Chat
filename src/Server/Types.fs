@@ -26,21 +26,3 @@ type ChannelInfo = {
     name: string
     topic: string
 }
-
-/// Channel actor protocol (server side protocol)
-type ChannelMessage =
-    | NewParticipant of user: User * subscriber: IActorRef<ChatClientMessage>
-    | ParticipantLeft of User
-    | NewMessage of User * Message
-    | ListUsers
-
-/// The message sent out to user
-and MessageTs = int * DateTime
-
-/// Client protocol message (messages sent from channel to client actor)
-and ChatClientMessage =
-    | ChatMessage of ts: MessageTs * author: User * Message
-    | Joined of ts: MessageTs * user: User * all: User seq
-    | Left of ts: MessageTs * user: User * all: User seq
-
-// TODO renames ChannelMessage, ChatClientMessage

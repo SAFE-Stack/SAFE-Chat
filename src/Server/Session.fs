@@ -7,6 +7,7 @@ open Akkling
 open Akkling.Streams
 
 open Types
+open Channel
 
 type SessionState = {
     channels: Map<Uuid, UniqueKillSwitch option>

@@ -6,6 +6,22 @@ open Akkling.Streams
 
 open Types
 
+/// The message sent out to user
+type MessageTs = int * System.DateTime
+
+/// Client protocol message (messages sent from channel to client actor)
+type ChatClientMessage =
+    | ChatMessage of ts: MessageTs * author: User * Message
+    | Joined of ts: MessageTs * user: User * all: User seq
+    | Left of ts: MessageTs * user: User * all: User seq
+
+/// Channel actor protocol (server side protocol)
+type ChannelMessage =
+    | NewParticipant of user: User * subscriber: IActorRef<ChatClientMessage>
+    | ParticipantLeft of User
+    | NewMessage of User * Message
+    | ListUsers
+
 module internal Internals =
     // Channel. Feed of messages for all parties.
     type ChannelParty = User * IActorRef<ChatClientMessage>
@@ -18,7 +34,6 @@ module internal Internals =
     }
 
 open Internals
-
 /// Creates channel actor
 let createChannel (system: ActorSystem) name =
 
