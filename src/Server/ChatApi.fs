@@ -10,13 +10,12 @@ open Suave
 open Suave.Successful
 open Suave.WebSocket
 
-open Types
 open ChatServer
 open SocketFlow
 
 // open ProductHub.Rest.Common
 open SessionStore
-open Session
+open SessionFlow
 
 module private Payloads =
     type ChanUserInfo = {
