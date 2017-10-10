@@ -22,9 +22,9 @@ type ServerControlMessage =
     // user specific commands
     | Connect of nick: string * mat: MaterializeFlow option  * channels: Uuid list   // return UserInfo
     | Disconnect of user: Uuid
-    | Join of user: Uuid * channelName: string
+    | Join of user: Uuid * channelName: string * mat: MaterializeFlow option
     // | Nick of user: Uuid * newNick: string
-    | Leave of user: Uuid * channelName: string
+    | Leave of user: Uuid * chanId: Uuid
     | GetUser of user: Uuid                             // returns UserInfo
 
 type ChannelInfo = {id: Uuid; name: string; topic: string; userCount: int}
@@ -73,10 +73,24 @@ module internal Internals =
     let updateChannels f serverState: ServerData =
         {serverState with channels = serverState.channels |> List.map f}
 
+    let updateUsers f serverState: ServerData =
+        {serverState with users = serverState.users |> List.map f}
+
     let updateChannel f chanId serverState: ServerData =
         let u  chan = if chan.id = chanId then f chan else chan
         in
         updateChannels u serverState
+
+    let updateUser f userId serverState: ServerData =
+        let u (user: UserData) = if user.id = userId then f user else user
+        in
+        updateUsers u serverState
+
+    let addUserChan chanId ks (user: UserData) =
+        {user with channels = user.channels |> Map.add chanId ks}
+
+    let leaveChan chanId (user: UserData) =
+        {user with channels = user.channels |> Map.remove chanId}
     
     let getChannelInfo (data: ChannelData) =
         async {
@@ -170,8 +184,7 @@ let startServer (system: ActorSystem) =
                         channels = state.channels
                             |> List.filter(fun chan -> channels |> List.contains chan.id)
                             |> List.map (fun chan ->
-                                let flow = createPartyFlow chan.channelActor newUser.id
-                                let ks = mat |> Option.map (fun m -> m flow)
+                                let ks = mat |> Option.map (fun m -> m <| createPartyFlow chan.channelActor newUser.id)
                                 chan.id, ks
                             )
                             |> Map.ofList
@@ -193,6 +206,54 @@ let startServer (system: ActorSystem) =
                 )
                 ignored {state with users = state.users |> List.filter(fun u -> u.id <> userId)}
                 // closing socket will kick user off of all the channels
+
+        | Join (userId, channelName, mat) ->
+            let alreadyJoined channelName (u: UserData) =
+                state.channels |> List.tryFind (matchName channelName)
+                |> function
+                | Some ch when u.channels |> Map.containsKey ch.id -> true
+                | _ -> false
+
+            match state.users |> List.tryFind (fun u -> u.id = userId) with
+            | None ->
+                ctx.Sender() <! ServerReplyMessage.Error "User with such id not found"
+                ignored state
+            | Some user when user |> alreadyJoined channelName ->
+                ctx.Sender() <! ServerReplyMessage.Error "User already joined this channel"
+                ignored state
+            | Some user ->
+                // TODO validate channel name
+                let newState, chan =
+                    match state.channels |> List.tryFind (matchName channelName) with
+                    | None ->
+                        let channelActor = createChannel system channelName
+                        let newChan = {
+                            id = Uuid.New()
+                            name = channelName; topic = ""
+                            channelActor = channelActor
+                            }
+                        {state with channels = newChan::state.channels}, newChan
+                    | Some chan -> state, chan
+                
+                let ks = mat |> Option.map (fun m -> m <| createPartyFlow chan.channelActor userId)
+                let newState = newState |> updateUser (addUserChan chan.id ks) userId
+                ignored newState
+        
+        | Leave (userId, chanId) ->
+            match state.users |> List.tryFind (fun u -> u.id = userId) with
+            | None ->
+                ctx.Sender() <! ServerReplyMessage.Error "User with such id not found"
+                ignored state
+            | Some user ->
+                match user.channels |> Map.tryFind chanId with
+                | None ->
+                    ctx.Sender() <! ServerReplyMessage.Error "User is not joined channel"
+                    ignored state
+                | Some (Some ks) ->
+                    do ks.Shutdown()
+                    state |> updateUser (leaveChan chanId) userId |> ignored
+                | _ ->
+                    state |> updateUser (leaveChan chanId) userId |> ignored
 
         | GetUser userId ->
             match state.users |> List.tryFind (fun u -> u.id = userId) with
@@ -245,5 +306,5 @@ let getChannelList (server: IActorRef<_>) =
         return list
     }
 
-let joinChannel (server: IActorRef<_>) chan user =
-    server <! Join (user, chan)
+let joinChannel (server: IActorRef<_>) chan user mat =
+    server <! Join (user, chan, mat)
