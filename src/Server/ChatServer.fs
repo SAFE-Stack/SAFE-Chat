@@ -12,6 +12,9 @@ open ChannelFlow
 
 type MaterializeFlow = Flow<Message,Uuid ChatClientMessage, Akka.NotUsed> -> UniqueKillSwitch
 
+type ChannelInfo = {id: Uuid; name: string; topic: string; userCount: int}
+type UserInfo = {id: Uuid; nick: string; email: string option; channels: ChannelInfo list}
+
 type ServerControlMessage =
     | List                                              // returns ChannelList
     | NewChannel of name: string                        // returns ChannelInfo
@@ -27,17 +30,13 @@ type ServerControlMessage =
     | Leave of user: Uuid * chanId: Uuid
     | GetUser of user: Uuid                             // returns UserInfo
 
-type ChannelInfo = {id: Uuid; name: string; topic: string; userCount: int}
-type UserInfo = {id: Uuid; nick: string; email: string option; channels: ChannelInfo list}
-
 type ServerReplyMessage =
     | ChannelList of ChannelInfo list
-    | ChannelInfo of ChannelInfo
+    | ChannelInfo of ChannelInfo option
     | UserInfo of UserInfo
     | Error of string
 
-
-module internal Internals =
+module ServerState =
 
     type UserData = {
         id: Uuid
@@ -60,6 +59,9 @@ module internal Internals =
         users: UserData list
     }
 
+module internal Helpers =
+    open ServerState
+
     /// Creates a user.
     let createUser nick : UserData =
         {id = Uuid.New(); nick = nick; email = None; channels = Map.empty; mat = None}
@@ -80,6 +82,12 @@ module internal Internals =
         let u  chan = if chan.id = chanId then f chan else chan
         in
         updateChannels u serverState
+
+    let byChanName name = getChanName >> ((=) name)
+    let byChanId id = getChannelId >> ((=) id)
+
+    let setChannelTopic topic (chan: ChannelData) =
+        {chan with topic = topic}
 
     let updateUser f userId serverState: ServerData =
         let u (user: UserData) = if user.id = userId then f user else user
@@ -106,9 +114,70 @@ module internal Internals =
             |> List.map getChannelInfo0 // FIXME does not return userCount
         { id = data.id; nick = data.nick; email = data.email
           channels = data.channels |> getChan}
+
+    module Async =
+        let map f workflow = async {
+            let! res = workflow
+            return f res }
+
 // type AddChanFnType = string -> Flow<Message, ChatClientMessage, Akka.NotUsed> -> UniqueKillSwitch
 
-open Internals
+module ServerApi =
+    open ServerState
+    open Helpers
+
+    // verifies the name is correct
+    let isValidName (name: string) =
+        (String.length name) > 0
+        && Char.IsLetter name.[0]
+
+    let listChannels state =
+        async {
+            let! channels = state.channels |> List.map getChannelInfo |> Async.Parallel
+            return channels |> Array.toList
+        }
+
+    /// Creates a new channel or returns existing if channel already exists
+    let addChannel createChannel name (state: ServerData) =
+        match state.channels |> List.tryFind (byChanName name) with
+        | Some chan ->
+            chan |> getChannelInfo0, state
+        | _ when isValidName name ->
+            let channelActor = createChannel name
+            let newChan = {
+                id = Uuid.New()
+                name = name; topic = ""
+                channelActor = channelActor
+                }
+            newChan |> getChannelInfo0, {state with channels = newChan::state.channels}
+        | _ ->
+            failwith "Invalid channel name"
+
+    let findChannel name (state: ServerData) =
+        state.channels |> List.tryFind (byChanName name) |> Option.map getChannelInfo0
+
+    let setTopic chanId newTopic state =
+        state |> updateChannel (setChannelTopic newTopic) chanId
+
+    let private kickUser chanId (u: UserData) =
+        match u.channels |> Map.tryFind chanId with
+        | Some (Some ks) ->
+            do ks.Shutdown()
+            {u with channels = u.channels |> Map.remove chanId}
+        | Some _ ->
+            {u with channels = u.channels |> Map.remove chanId}
+        | _ -> u
+
+    let dropChannel chanId state =
+        match state.channels |> List.tryFind (byChanId chanId) with
+        | Some chan ->
+            let newState = state |> updateUsers (kickUser chanId)
+            in
+            {newState with channels = state.channels |> List.filter (not << byChanId chanId)}
+        | _ -> state
+
+open ServerState
+open Helpers
 
 /// Starts IRC server actor.
 let startServer (system: ActorSystem) =
@@ -119,55 +188,26 @@ let startServer (system: ActorSystem) =
     let behavior state (ctx: Actor<ServerControlMessage>) =
         function
         | List ->
-            ctx.Sender() <!| async {
-                let! channels = state.channels |> List.map getChannelInfo |> Async.Parallel
-                return channels |> Array.toList |> ServerReplyMessage.ChannelList
-            }
+            ctx.Sender() <!| (state |> ServerApi.listChannels |> Async.map ServerReplyMessage.ChannelList)
             ignored state
 
         | NewChannel name ->
-            let channelActor = createChannel system name
-            let newChan = {
-                id = Uuid.New()
-                name = name; topic = ""
-                channelActor = channelActor
-                }
-            ctx.Sender() <! (newChan |> getChannelInfo0 |> ServerReplyMessage.ChannelInfo)
-            {state with channels = newChan::state.channels} |> ignored
+            let chanInfo, newState = state |> ServerApi.addChannel (createChannel system) name
+            ctx.Sender() <! (Some chanInfo |> ServerReplyMessage.ChannelInfo)
+            newState |> ignored
 
         | FindChannel name ->
-            ctx.Sender() <!| async {
-                match state.channels |> List.tryFind (matchName name) with
-                | None ->
-                    return ServerReplyMessage.Error "Channel with such name not found"
-                | Some chan ->
-                    let! chanInfo = chan |> getChannelInfo
-                    return chanInfo |> ServerReplyMessage.ChannelInfo
-            }
+            ctx.Sender() <!
+                match state |> ServerApi.findChannel name with
+                | None -> ServerReplyMessage.Error "Channel with such name not found"
+                | chan -> chan |> ServerReplyMessage.ChannelInfo
             ignored state
 
         | SetTopic (chanId, topic) ->
-            let updateTopic = updateIf (matchId chanId) (fun chan -> {chan with topic = topic})
-            ignored (state |> updateChannels updateTopic)
+            ignored (state |> ServerApi.setTopic chanId topic)
 
         | DropChannel chanId ->
-            match state.channels |> List.tryFind (matchId chanId) with
-            | Some chan ->
-                // kicks users off the channel
-                let newUserList = state.users |> List.map (fun (u: UserData) ->
-                        match u.channels |> Map.tryFind chanId with
-                        | Some (Some ks) ->
-                            do ks.Shutdown()
-                            {u with channels = u.channels |> Map.remove chanId}
-                        | Some _ ->
-                            {u with channels = u.channels |> Map.remove chanId}
-                        | _ -> u
-                    )
-                let newChanList = state.channels |> List.filter (not << matchId chanId)
-                in
-                {state with users = newUserList; channels = newChanList}
-            | _ -> state
-            |> ignored
+            state |> ServerApi.dropChannel chanId |> ignored
 
         | Connect (nick, mat, channels) ->
             // checking nick is unique
