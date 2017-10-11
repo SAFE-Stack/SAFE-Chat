@@ -32,7 +32,7 @@ type ServerControlMessage =
 
 type ServerReplyMessage =
     | ChannelList of ChannelInfo list
-    | ChannelInfo of ChannelInfo option
+    | ChannelInfo of ChannelInfo
     | UserInfo of UserInfo
     | Error of string
 
@@ -62,11 +62,8 @@ module ServerState =
 module internal Helpers =
     open ServerState
 
-    /// Creates a user.
-    let createUser nick : UserData =
-        {id = Uuid.New(); nick = nick; email = None; channels = Map.empty; mat = None}
-
     let getUserNick userInfo = userInfo.nick
+    let getUserId userInfo = (userInfo: UserData).id
     let getChannelId (channel: ChannelData) = channel.id
     let getChanName (channel: ChannelData) = channel.name
 
@@ -86,6 +83,8 @@ module internal Helpers =
     let byChanName name = getChanName >> ((=) name)
     let byChanId id = getChannelId >> ((=) id)
 
+    let byUserId id = getUserId >> ((=) id)
+
     let setChannelTopic topic (chan: ChannelData) =
         {chan with topic = topic}
 
@@ -96,6 +95,12 @@ module internal Helpers =
 
     let addUserChan chanId ks (user: UserData) =
         {user with channels = user.channels |> Map.add chanId ks}
+
+    let alreadyJoined channels channelName (u: UserData) =
+        channels |> List.tryFind (byChanName channelName)
+        |> function
+        | Some ch when u.channels |> Map.containsKey ch.id -> true
+        | _ -> false
 
     let leaveChan chanId (user: UserData) =
         {user with channels = user.channels |> Map.remove chanId}
@@ -120,8 +125,6 @@ module internal Helpers =
             let! res = workflow
             return f res }
 
-// type AddChanFnType = string -> Flow<Message, ChatClientMessage, Akka.NotUsed> -> UniqueKillSwitch
-
 module ServerApi =
     open ServerState
     open Helpers
@@ -141,23 +144,22 @@ module ServerApi =
     let addChannel createChannel name (state: ServerData) =
         match state.channels |> List.tryFind (byChanName name) with
         | Some chan ->
-            chan |> getChannelInfo0, state
+            Ok (state, chan)
         | _ when isValidName name ->
             let channelActor = createChannel name
             let newChan = {
-                id = Uuid.New()
-                name = name; topic = ""
-                channelActor = channelActor
-                }
-            newChan |> getChannelInfo0, {state with channels = newChan::state.channels}
+                id = Uuid.New(); name = name; topic = ""; channelActor = channelActor }
+            Ok ({state with channels = newChan::state.channels}, newChan)
         | _ ->
-            failwith "Invalid channel name"
+            Result.Error "Invalid channel name"
 
     let findChannel name (state: ServerData) =
-        state.channels |> List.tryFind (byChanName name) |> Option.map getChannelInfo0
+        match state.channels |> List.tryFind (byChanName name) with
+        | Some chan -> getChannelInfo0 chan |> Ok
+        | _ -> Result.Error "Channel with such name not found"
 
     let setTopic chanId newTopic state =
-        state |> updateChannel (setChannelTopic newTopic) chanId
+        Ok (state |> updateChannel (setChannelTopic newTopic) chanId)
 
     let private kickUser chanId (u: UserData) =
         match u.channels |> Map.tryFind chanId with
@@ -173,8 +175,72 @@ module ServerApi =
         | Some chan ->
             let newState = state |> updateUsers (kickUser chanId)
             in
-            {newState with channels = state.channels |> List.filter (not << byChanId chanId)}
-        | _ -> state
+            Ok {newState with channels = state.channels |> List.filter (not << byChanId chanId)}
+        | _ -> Result.Error "Channel not found"        
+
+    let connectUser nick channels (mat: MaterializeFlow option) state =
+        match state.users |> List.exists(fun u -> u.nick = nick) with
+        | true ->
+            Result.Error "User with such nick already exists"
+        | _ ->
+            let newUserId = Uuid.New()
+            let newUser = {
+                id = newUserId; nick = nick; email = None
+                mat = mat
+                channels = state.channels
+                    |> List.filter(fun chan -> channels |> List.contains chan.id)
+                    |> List.map (fun chan ->
+                        let ks = mat |> Option.map (fun m -> m <| createPartyFlow chan.channelActor newUserId)
+                        chan.id, ks
+                    )
+                    |> Map.ofList
+            }
+            Ok ({state with users = newUser :: state.users}, getUserInfo newUser state.channels)
+
+    let disconnect userId state =
+        match state.users |> List.tryFind (fun u -> u.id = userId) with
+        | None ->
+            Result.Error "User with such id not found"
+        | Some user ->
+            user.channels |> Map.iter(fun _ ks ->
+                match ks with
+                | Some killSwitch -> killSwitch.Shutdown()
+                | _ -> ()
+            )
+            Result.Ok {state with users = state.users |> List.filter(fun u -> u.id <> userId)}
+
+    let join userId channelName createChannel mat state =
+        match state.users |> List.tryFind (fun u -> u.id = userId) with
+        | None ->
+            Result.Error "User with such id not found"
+        | Some user when user |> alreadyJoined state.channels channelName ->
+            Result.Error "User already joined this channel"
+        | Some user ->
+            match addChannel createChannel channelName state with
+            | Ok (newState, chan) ->
+                let ks = mat |> Option.map (fun m -> m <| createPartyFlow chan.channelActor userId)
+                Ok (newState |> updateUser (addUserChan chan.id ks) userId)
+            | Result.Error error -> Result.Error error
+
+    let leave userId chanId state =
+        match state.users |> List.tryFind (byUserId userId) with
+        | None ->
+            Result.Error "User with such id not found"
+        | Some user ->
+            match user.channels |> Map.tryFind chanId with
+            | None ->
+                Result.Error "User is not joined channel"
+            | Some kso ->
+                kso |> Option.map (fun ks -> ks.Shutdown()) |> ignore
+                Ok (state |> updateUser (leaveChan chanId) userId)
+
+    let getUserInfo userId state =
+        match state.users |> List.tryFind (byUserId userId) with
+        | None ->
+            Result.Error "User with such id not found"
+        | Some user ->
+            Ok (getUserInfo user state.channels)
+
 
 open ServerState
 open Helpers
@@ -186,123 +252,59 @@ let startServer (system: ActorSystem) =
     let matchId id  = getChannelId >> ((=) id)
 
     let behavior state (ctx: Actor<ServerControlMessage>) =
+        let passError errtext =
+            ctx.Sender() <! ServerReplyMessage.Error errtext
+            ignored state
+        let reply = function
+            | Ok result -> ctx.Sender() <! result; ignored state
+            | Result.Error errtext -> passError errtext
+        let update = function
+            | Ok newState -> ignored newState
+            | Result.Error errText -> passError errText
+        let replyAndUpdate = function
+            | Ok (newState, reply) -> ctx.Sender() <! reply; ignored newState
+            | Result.Error errText -> passError errText
+        let mapReply f = Result.map (fun (ns, r) -> ns, f r)
+
         function
         | List ->
             ctx.Sender() <!| (state |> ServerApi.listChannels |> Async.map ServerReplyMessage.ChannelList)
             ignored state
 
         | NewChannel name ->
-            let chanInfo, newState = state |> ServerApi.addChannel (createChannel system) name
-            ctx.Sender() <! (Some chanInfo |> ServerReplyMessage.ChannelInfo)
-            newState |> ignored
+            state |> ServerApi.addChannel (createChannel system) name
+            |> mapReply (getChannelInfo0 >> ServerReplyMessage.ChannelInfo)
+            |> replyAndUpdate
 
         | FindChannel name ->
-            ctx.Sender() <!
-                match state |> ServerApi.findChannel name with
-                | None -> ServerReplyMessage.Error "Channel with such name not found"
-                | chan -> chan |> ServerReplyMessage.ChannelInfo
-            ignored state
+            state |> ServerApi.findChannel name
+            |> Result.map ServerReplyMessage.ChannelInfo
+            |> reply
 
         | SetTopic (chanId, topic) ->
-            ignored (state |> ServerApi.setTopic chanId topic)
+            update (state |> ServerApi.setTopic chanId topic)
 
         | DropChannel chanId ->
-            state |> ServerApi.dropChannel chanId |> ignored
+            update (state |> ServerApi.dropChannel chanId)
 
         | Connect (nick, mat, channels) ->
-            // checking nick is unique
-            match state.users |> List.exists(fun u -> u.nick = nick) with
-            | true ->
-                ctx.Sender() <! ServerReplyMessage.Error "User with such nick already exists"
-                ignored state
-            | _ ->
-                let newUser = createUser nick
-                let newUser = {
-                    newUser
-                    with
-                        mat = mat
-                        channels = state.channels
-                            |> List.filter(fun chan -> channels |> List.contains chan.id)
-                            |> List.map (fun chan ->
-                                let ks = mat |> Option.map (fun m -> m <| createPartyFlow chan.channelActor newUser.id)
-                                chan.id, ks
-                            )
-                            |> Map.ofList
-                }
-                
-                ctx.Sender() <! ServerReplyMessage.UserInfo (getUserInfo newUser state.channels)
-                ignored {state with users = newUser :: state.users}
+            state |> ServerApi.connectUser nick channels mat
+            |> mapReply ServerReplyMessage.UserInfo
+            |> replyAndUpdate
         
         | Disconnect userId ->
-            match state.users |> List.tryFind (fun u -> u.id = userId) with
-            | None ->
-                ctx.Sender() <! ServerReplyMessage.Error "User with such id not found"
-                ignored state
-            | Some user ->
-                user.channels |> Map.iter(fun _ ks ->
-                    match ks with
-                    | Some killSwitch -> killSwitch.Shutdown()
-                    | _ -> ()
-                )
-                ignored {state with users = state.users |> List.filter(fun u -> u.id <> userId)}
-                // closing socket will kick user off of all the channels
+            update (state |> ServerApi.disconnect userId)
 
         | Join (userId, channelName, mat) ->
-            let alreadyJoined channelName (u: UserData) =
-                state.channels |> List.tryFind (matchName channelName)
-                |> function
-                | Some ch when u.channels |> Map.containsKey ch.id -> true
-                | _ -> false
-
-            match state.users |> List.tryFind (fun u -> u.id = userId) with
-            | None ->
-                ctx.Sender() <! ServerReplyMessage.Error "User with such id not found"
-                ignored state
-            | Some user when user |> alreadyJoined channelName ->
-                ctx.Sender() <! ServerReplyMessage.Error "User already joined this channel"
-                ignored state
-            | Some user ->
-                // TODO validate channel name
-                let newState, chan =
-                    match state.channels |> List.tryFind (matchName channelName) with
-                    | None ->
-                        let channelActor = createChannel system channelName
-                        let newChan = {
-                            id = Uuid.New()
-                            name = channelName; topic = ""
-                            channelActor = channelActor
-                            }
-                        {state with channels = newChan::state.channels}, newChan
-                    | Some chan -> state, chan
-                
-                let ks = mat |> Option.map (fun m -> m <| createPartyFlow chan.channelActor userId)
-                let newState = newState |> updateUser (addUserChan chan.id ks) userId
-                ignored newState
+            update(state |> ServerApi.join userId channelName (createChannel system) mat)
         
         | Leave (userId, chanId) ->
-            match state.users |> List.tryFind (fun u -> u.id = userId) with
-            | None ->
-                ctx.Sender() <! ServerReplyMessage.Error "User with such id not found"
-                ignored state
-            | Some user ->
-                match user.channels |> Map.tryFind chanId with
-                | None ->
-                    ctx.Sender() <! ServerReplyMessage.Error "User is not joined channel"
-                    ignored state
-                | Some (Some ks) ->
-                    do ks.Shutdown()
-                    state |> updateUser (leaveChan chanId) userId |> ignored
-                | _ ->
-                    state |> updateUser (leaveChan chanId) userId |> ignored
+            update (state |> ServerApi.leave userId chanId)
 
         | GetUser userId ->
-            match state.users |> List.tryFind (fun u -> u.id = userId) with
-            | None ->
-                ctx.Sender() <! ServerReplyMessage.Error "User with such id not found"
-            | Some user ->
-                ctx.Sender() <! ServerReplyMessage.UserInfo (getUserInfo user state.channels)
-
-            ignored state
+            state |> ServerApi.getUserInfo userId
+            |> Result.map ServerReplyMessage.UserInfo
+            |> reply
 
     in
     props <| actorOf2 (behavior { channels = []; users = [] }) |> (spawn system "ircserver")
