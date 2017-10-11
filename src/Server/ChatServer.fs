@@ -25,7 +25,7 @@ type ServerControlMessage =
     // user specific commands
     | Connect of nick: string * mat: MaterializeFlow option  * channels: Uuid list   // return UserInfo
     | Disconnect of user: Uuid
-    | Join of user: Uuid * channelName: string * mat: MaterializeFlow option
+    | Join of user: Uuid * channelName: string
     // | Nick of user: Uuid * newNick: string
     | Leave of user: Uuid * chanId: Uuid
     | GetUser of user: Uuid                             // returns UserInfo
@@ -66,8 +66,6 @@ module internal Helpers =
     let getUserId userInfo = (userInfo: UserData).id
     let getChannelId (channel: ChannelData) = channel.id
     let getChanName (channel: ChannelData) = channel.name
-
-    let updateIf p f o = if p o then f o else o
 
     let updateChannels f serverState: ServerData =
         {serverState with channels = serverState.channels |> List.map f}
@@ -209,7 +207,7 @@ module ServerApi =
             )
             Result.Ok {state with users = state.users |> List.filter(fun u -> u.id <> userId)}
 
-    let join userId channelName createChannel mat state =
+    let join userId channelName createChannel state =
         match state.users |> List.tryFind (fun u -> u.id = userId) with
         | None ->
             Result.Error "User with such id not found"
@@ -218,7 +216,7 @@ module ServerApi =
         | Some user ->
             match addChannel createChannel channelName state with
             | Ok (newState, chan) ->
-                let ks = mat |> Option.map (fun m -> m <| createPartyFlow chan.channelActor userId)
+                let ks = user.mat |> Option.map (fun m -> m <| createPartyFlow chan.channelActor userId)
                 Ok (newState |> updateUser (addUserChan chan.id ks) userId)
             | Result.Error error -> Result.Error error
 
@@ -247,9 +245,6 @@ open Helpers
 
 /// Starts IRC server actor.
 let startServer (system: ActorSystem) =
-
-    let matchName name = getChanName >> ((=) name)
-    let matchId id  = getChannelId >> ((=) id)
 
     let behavior state (ctx: Actor<ServerControlMessage>) =
         let passError errtext =
@@ -295,8 +290,8 @@ let startServer (system: ActorSystem) =
         | Disconnect userId ->
             update (state |> ServerApi.disconnect userId)
 
-        | Join (userId, channelName, mat) ->
-            update(state |> ServerApi.join userId channelName (createChannel system) mat)
+        | Join (userId, channelName) ->
+            update(state |> ServerApi.join userId channelName (createChannel system))
         
         | Leave (userId, chanId) ->
             update (state |> ServerApi.leave userId chanId)
@@ -348,5 +343,5 @@ let getChannelList (server: IActorRef<_>) =
         return list
     }
 
-let joinChannel (server: IActorRef<_>) chan user mat =
-    server <! Join (user, chan, mat)
+let joinChannel (server: IActorRef<_>) chan user =
+    server <! Join (user, chan)
