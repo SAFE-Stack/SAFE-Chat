@@ -58,22 +58,23 @@ let createChannel<'User when 'User: comparison> (system: ActorSystem) name =
                 do monitor ctx subscriber |> ignore
                 let parties = state.Parties |> Map.add user (user, subscriber)
                 do dispatch state.Parties <| ChatClientMessage.Joined (ts, user, parties |> allMembers)
-                incId { state with Parties = parties} |> ignored
+                incId { state with Parties = parties}
 
             | ParticipantLeft user ->
                 let parties = state.Parties |> Map.remove user
                 do dispatch state.Parties <| ChatClientMessage.Left (ts, user, parties |> allMembers)
-                incId { state with Parties = parties} |> ignored
+                incId { state with Parties = parties}
 
             | NewMessage (user, message) ->
                 if state.Parties |> Map.containsKey user then
                     do dispatch state.Parties <| ChatMessage (ts, user, message)
-                incId state |> ignored
+                incId state
 
             | ListUsers ->
                 let users = state.Parties |> Map.toList |> List.map fst
                 ctx.Sender() <! users
-                ignored state
+                state
+            |> ignored
 
         | _ -> unhandled()
 

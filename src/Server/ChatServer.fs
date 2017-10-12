@@ -15,27 +15,6 @@ type MaterializeFlow = Flow<Message,Uuid ChatClientMessage, Akka.NotUsed> -> Uni
 type ChannelInfo = {id: Uuid; name: string; topic: string; userCount: int}
 type UserInfo = {id: Uuid; nick: string; email: string option; channels: ChannelInfo list}
 
-type ServerControlMessage =
-    | List                                              // returns ChannelList
-    | NewChannel of name: string                        // returns ChannelInfo
-    | SetTopic of chan: Uuid * topic: string
-    // RenameChan
-    | FindChannel of name: string                       // return ChannelInfo
-    | DropChannel of Uuid: Uuid
-    // user specific commands
-    | Connect of nick: string * mat: MaterializeFlow option  * channels: Uuid list   // return UserInfo
-    | Disconnect of user: Uuid
-    | Join of user: Uuid * channelName: string
-    // | Nick of user: Uuid * newNick: string
-    | Leave of user: Uuid * chanId: Uuid
-    | GetUser of user: Uuid                             // returns UserInfo
-
-type ServerReplyMessage =
-    | ChannelList of ChannelInfo list
-    | ChannelInfo of ChannelInfo
-    | UserInfo of UserInfo
-    | Error of string
-
 module ServerState =
 
     type UserData = {
@@ -58,6 +37,31 @@ module ServerState =
         channels: ChannelData list
         users: UserData list
     }
+
+type ServerControlMessage =
+    | List                                              // returns ChannelList
+    | NewChannel of name: string                        // returns ChannelInfo
+    | SetTopic of chan: Uuid * topic: string
+    // RenameChan
+    | FindChannel of name: string                       // return ChannelInfo
+    | DropChannel of Uuid: Uuid
+    // user specific commands
+    | Connect of nick: string * mat: MaterializeFlow option  * channels: Uuid list   // return UserInfo
+    | Disconnect of user: Uuid
+    | Join of user: Uuid * channelName: string
+    // | Nick of user: Uuid * newNick: string
+    | Leave of user: Uuid * chanId: Uuid
+    | GetUser of user: Uuid                             // returns UserInfo
+
+    | UpdateState of (ServerState.ServerData -> ServerState.ServerData)
+    | ReadState
+
+type ServerReplyMessage =
+    | ChannelList of ChannelInfo list
+    | ChannelInfo of ChannelInfo
+    | UserInfo of UserInfo
+    | State of ServerState.ServerData
+    | Error of string
 
 module internal Helpers =
     open ServerState
@@ -176,12 +180,12 @@ module ServerApi =
             Ok {newState with channels = state.channels |> List.filter (not << byChanId chanId)}
         | _ -> Result.Error "Channel not found"        
 
-    let connectUser nick channels (mat: MaterializeFlow option) state =
+    let connectUser (userId: Uuid option) nick channels (mat: MaterializeFlow option) state =
         match state.users |> List.exists(fun u -> u.nick = nick) with
         | true ->
             Result.Error "User with such nick already exists"
         | _ ->
-            let newUserId = Uuid.New()
+            let newUserId = userId |> Option.defaultValue (Uuid.New())
             let newUser = {
                 id = newUserId; nick = nick; email = None
                 mat = mat
@@ -239,7 +243,6 @@ module ServerApi =
         | Some user ->
             Ok (getUserInfo user state.channels)
 
-
 open ServerState
 open Helpers
 
@@ -283,7 +286,7 @@ let startServer (system: ActorSystem) =
             update (state |> ServerApi.dropChannel chanId)
 
         | Connect (nick, mat, channels) ->
-            state |> ServerApi.connectUser nick channels mat
+            state |> ServerApi.connectUser None nick channels mat
             |> mapReply ServerReplyMessage.UserInfo
             |> replyAndUpdate
         
@@ -300,41 +303,14 @@ let startServer (system: ActorSystem) =
             state |> ServerApi.getUserInfo userId
             |> Result.map ServerReplyMessage.UserInfo
             |> reply
+        | ReadState ->
+            Ok state |> Result.map ServerReplyMessage.State |> reply
+        | UpdateState updater ->
+            state |> updater |> ignored
 
     in
     props <| actorOf2 (behavior { channels = []; users = [] }) |> (spawn system "ircserver")
 
-(*
-/// Creates an actor for echo bot.
-let createEchoActor (system: ActorSystem) botUser =
-    let botHandler state (ctx: Actor<_>) =
-        function
-        | ChatMessage (_, userId, Message message) // FIXME do not let bots reply to other bots when user.Person <> Person.Anonymous
-            ->
-            let reply = sprintf "\"%s\" said: %s" (user |> getUserNick) message
-            do ctx.Sender() <! ChannelMessage.NewMessage (botUser, Message reply)
-            ignored ()
-        | _ -> ignored ()
-    in
-     props <| (actorOf2 <| botHandler ()) |> spawn system "echobot"
-
-let createDiagChannel (system: ActorSystem) (server: IActorRef<_>) channelName =
-    let botUser = createUser "echobot"
-    let (User {id = userId}) = botUser
-    let bot = createEchoActor system botUser
-    async {
-        let! (chan: obj) = server <? NewChannel channelName
-        match chan with
-        | :? option<ChannelInfo> as t when Option.isSome t ->
-            let chan = Option.get t
-            chan.channelActor <! (NewParticipant (userId, bot))
-            ()
-        | _ ->
-            failwith "server replied with something other than new channel"
-
-        return ()
-    }
-*)
 // TODO incapsulate server actor (so that actor is not exposed as is and we provide nice api)?
 
 let getChannelList (server: IActorRef<_>) =

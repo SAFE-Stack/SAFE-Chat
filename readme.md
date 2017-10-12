@@ -6,7 +6,10 @@ Sample chat application built with netcore, F#, Akka.net and Fable.
 
 The random ideas for extending the chat:
 
-* store internally uuid and channels for the user, let application specific user info be a parameter to chat
+* [x] store internally uuid and channels for the user, let application specific user info be a parameter to chat
+* [] store ActorSystem in server state (simplify ServerApi then)
+
+
 
 
 ## References
