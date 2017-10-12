@@ -10,10 +10,10 @@
     <Compile Include="SessionStore.fs" />
     <Compile Include="ChatServer.fs" />
     <Compile Include="Diag.fs" />
-    <Compile Include="Session.fs" />
     <Compile Include="Json.fs" />
-    <Compile Include="views.fs" />
     <Compile Include="SocketFlow.fs" />
+    <Compile Include="ChatApi.fs" />
+    <Compile Include="views.fs" />
     <Compile Include="app.fs" />
     <Compile Include="Program.fs" />
   </ItemGroup>

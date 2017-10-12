@@ -12,7 +12,7 @@ open ChannelFlow
 
 type MaterializeFlow = Flow<Message,Uuid ChatClientMessage, Akka.NotUsed> -> UniqueKillSwitch
 
-type ChannelInfo = {id: Uuid; name: string; topic: string; userCount: int}
+type ChannelInfo = {id: Uuid; name: string; topic: string; userCount: int; users: Uuid list}
 type UserInfo = {id: Uuid; nick: string; email: string option; channels: ChannelInfo list}
 
 module ServerState =
@@ -110,10 +110,10 @@ module internal Helpers =
     let getChannelInfo (data: ChannelData) =
         async {
             let! (users: Uuid list) = data.channelActor <? ListUsers
-            return {id = data.id; name = data.name; topic = data.topic; userCount = users |> List.length}
+            return {id = data.id; name = data.name; topic = data.topic; userCount = users |> List.length; users = users}
         }
     let getChannelInfo0 (data: ChannelData) =
-        {id = data.id; name = data.name; topic = data.topic; userCount = 0}
+        {id = data.id; name = data.name; topic = data.topic; userCount = 0; users = []}
 
     let getUserInfo (data: UserData) (channels: ChannelData list) =
         let getChan ids =
@@ -159,6 +159,11 @@ module ServerApi =
         match state.channels |> List.tryFind (byChanName name) with
         | Some chan -> getChannelInfo0 chan |> Ok
         | _ -> Result.Error "Channel with such name not found"
+
+    let findChannelEx name (state: ServerData) =
+        match state.channels |> List.tryFind (byChanName name) with
+        | Some chan -> getChannelInfo chan |> Async.map Ok
+        | _ -> Result.Error "Channel with such name not found" |> async.Return
 
     let setTopic chanId newTopic state =
         Ok (state |> updateChannel (setChannelTopic newTopic) chanId)
@@ -304,7 +309,7 @@ let startServer (system: ActorSystem) =
             |> Result.map ServerReplyMessage.UserInfo
             |> reply
         | ReadState ->
-            Ok state |> Result.map ServerReplyMessage.State |> reply
+            ctx.Sender() <! state; ignored state
         | UpdateState updater ->
             state |> updater |> ignored
 
