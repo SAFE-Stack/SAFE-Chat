@@ -32,7 +32,7 @@ let createEchoActor (system: ActorSystem) botUserId =
     props <| (actorOf2 <| botHandler ()) |> spawn system "echobot"
 
 let createDiagChannel (system: ActorSystem) (server: IActorRef<_>) channelName =
-    let botUserId = {Uuid.Uuid.i1 = 10000L; i2 = 1}
+    let botUserId = {Uuid.i1 = 10000L; i2 = 1}
     let bot = createEchoActor system botUserId
 
     server <! UpdateState (fun state ->

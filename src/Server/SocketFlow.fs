@@ -18,15 +18,15 @@ type WsMessage =
     | Data of byte array
     | Close
 
-let handleWebsocketMessagesImpl (system: ActorSystem)
+// Provides websocket handshaking.
+// 'materialize'
+let handleWebsocketMessages (system: ActorSystem)
     (materialize: IMaterializer -> Source<WsMessage, Akka.NotUsed> -> Sink<WsMessage, Akka.NotUsed> -> unit) (ws : WebSocket)
     =
     let materializer = system.Materializer()
-    let inputSinkActor, publisher =
-        Source.actorRef OverflowStrategy.Fail 1000
-        |> Source.toMat Sink.publisher Keep.both
-        |> Graph.run materializer
-    let inputSource = Source.FromPublisher publisher
+    let sourceActor, inputSource =
+        Source.actorRef OverflowStrategy.Fail 1000 |> Source.toMat Sink.publisher Keep.both
+        |> Graph.run materializer |> fun (actor, pub) -> actor, Source.FromPublisher pub
 
     let emptyData = ByteSegment [||]
 
@@ -66,20 +66,20 @@ let handleWebsocketMessagesImpl (system: ActorSystem)
                 match msg with
                 | (Opcode.Text, data, true) -> 
                     let str = Encoding.UTF8.GetString data
-                    inputSinkActor <! Text str
+                    sourceActor <! Text str
                     ()
                 | (Opcode.Ping, _, _) ->
                     do! ws.send Opcode.Pong emptyData true
                 | (Opcode.Close, _, _) ->
                     // this finalizes the Source
-                    inputSinkActor <! Close
+                    sourceActor <! Close
                     do! ws.send Opcode.Close emptyData true
                     loop := false
                 | _ -> ()
         }
 
 /// Creates Suave socket handshaking handler
-let handleWebsocketMessages  (system: ActorSystem) (handler: Flow<WsMessage, WsMessage, Akka.NotUsed>) (ws : WebSocket) =
+let handleWebsocketMessagesFlow  (system: ActorSystem) (handler: Flow<WsMessage, WsMessage, Akka.NotUsed>) (ws : WebSocket) =
     let materialize materializer inputSource sink =
         inputSource |> Source.via handler |> Source.runWith materializer sink |> ignore
-    handleWebsocketMessagesImpl system materialize ws
+    handleWebsocketMessages system materialize ws

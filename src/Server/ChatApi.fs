@@ -40,16 +40,6 @@ module private Implementation =
         | Joined ((id, ts), user, users) -> Joined ((id, ts), f user, users |> Seq.map f)
         | Left ((id, ts), user, users) -> Left ((id, ts), f user, users |> Seq.map f)
 
-    let extractMessage =
-        function
-        | Text t ->
-            let payload = t |> Json.unjson<Payloads.Message>
-            match Uuid.TryParse payload.chan with
-            | Some chanId ->
-                Some (chanId, Message payload.text)
-            | _ -> None
-        |_ -> None
-
     let encodeChannelMessage channel : Uuid ChatClientMessage -> WsMessage =
         mapMessageUser (fun userid -> userid.ToString())
         >>
@@ -67,139 +57,120 @@ module private Implementation =
 
 open Implementation
 
-/// <summary>
-/// Translates user flow to a WebSocket ready one.
-/// </summary>
-let private mapUserToWebsocketFlow channel (userFlow: Flow<ChannelFlow.Message, Uuid ChatClientMessage, _>) =
-
-    Flow.empty<WsMessage, Akka.NotUsed>
-    |> Flow.map (function | Text t -> t |_ -> null)
-    |> Flow.filter ((<>) null)
-    |> Flow.map Message
-    |> Flow.via userFlow
-    |> Flow.map (encodeChannelMessage channel)
-
 type private ServerActor = IActorRef<ServerControlMessage>
 
-let inSession f: WebPart =
-    f "111" // FIXME retrieve session from http context
-
 /// Lists a channels.
-let listChannels (server: ServerActor) (sessionStore: SessionStore) : WebPart =
-    inSession <| fun session ctx ->
-        // FIXME overall uglyness
-        // using exceptions with try catch might do a trick
-
-        let meId = Uuid.New() // TODO obtain id from session
-        async {
-            let! reply = server <? List
-            match reply with
+let listChannels (server: ServerActor) me : WebPart =
+    fun ctx -> async {
+        let! reply = server <? List
+        match reply with
+        | ServerReplyMessage.Error e ->
+            return! BAD_REQUEST e ctx
+        | ServerReplyMessage.ChannelList channelList ->
+            let! reply2 = server <? GetUser me
+            match reply2 with
             | ServerReplyMessage.Error e ->
                 return! BAD_REQUEST e ctx
-            | ServerReplyMessage.ChannelList channelList ->
-                let! reply2 = server <? GetUser meId
-                match reply2 with
-                | ServerReplyMessage.Error e ->
-                    return! BAD_REQUEST e ctx
-                | ServerReplyMessage.UserInfo me ->
-                    let imIn chanId = me.channels |> List.exists(fun ch -> ch.id = chanId)
-                    let result = channelList |> List.map (mapChannel imIn) |> Json.json
-                    return! OK result ctx
-                | _ -> return! BAD_REQUEST "Unknown reply from server, expected user info" ctx
-            | _ -> return! BAD_REQUEST "Unknown reply from server" ctx
-        }
+            | ServerReplyMessage.UserInfo me ->
+                let imIn chanId = me.channels |> List.exists(fun ch -> ch.id = chanId)
+                let result = channelList |> List.map (mapChannel imIn) |> Json.json
+                return! OK result ctx
+            | _ -> return! BAD_REQUEST "Unknown reply from server, expected user info" ctx
+        | _ -> return! BAD_REQUEST "Unknown reply from server" ctx
+    }
 
 open Payloads
 
-let chanInfo (server: ServerActor) (chanName: string) : WebPart =
-    inSession <| fun session ctx ->
-        let meId = Uuid.New()   // TODO retrieve from session
-        async {
-            let! (serverState: ServerState.ServerData) = server <? ReadState
-            let! chan = serverState |> ServerApi.findChannelEx chanName
-            match chan with
-            | Result.Error e ->
-                return! BAD_REQUEST e ctx
-            | Ok channel ->
-                let userInfo userId :Payloads.ChanUserInfo list =
-                    serverState.users |> List.tryFind (fun u -> u.id = userId)
-                    |> function
-                    | Some user -> [{name = user.nick; online = true; isbot = false; lastSeen = System.DateTime.Now}]  // FIXME
-                    | _ -> []
+let chanInfo (server: ServerActor) me (chanName: string) : WebPart =
+    fun ctx -> async {
+        let! (serverState: ServerState.ServerData) = server <? ReadState
+        let! chan = serverState |> ServerApi.findChannelEx chanName
+        match chan with
+        | Result.Error e ->
+            return! BAD_REQUEST e ctx
+        | Ok channel ->
+            let userInfo userId :Payloads.ChanUserInfo list =
+                serverState.users |> List.tryFind (fun u -> u.id = userId)
+                |> function
+                | Some user -> [{name = user.nick; online = true; isbot = false; lastSeen = System.DateTime.Now}]  // FIXME
+                | _ -> []
 
-                let chanInfo: Payloads.ChannelInfo = {
-                    id = channel.id.ToString()
-                    name = channel.name
-                    topic = channel.topic
-                    joined = channel.users |> List.contains meId
-                    userCount = channel.userCount
-                    users = channel.users |> List.collect userInfo
-                }
+            let chanInfo: Payloads.ChannelInfo = {
+                id = channel.id.ToString()
+                name = channel.name
+                topic = channel.topic
+                joined = channel.users |> List.contains me
+                userCount = channel.userCount
+                users = channel.users |> List.collect userInfo
+            }
 
-                return! OK (chanInfo |> Json.json) ctx
-        }
+            return! OK (chanInfo |> Json.json) ctx
+    }
 
-let join (server: ServerActor) (sessionStore: SessionStore) chan : WebPart =
-    inSession (fun session ctx ->
-        let meId = Uuid.New()   // TODO retrieve from session
-        async {
-            let! x = server <? Join (meId, chan)
-            match x with
-            | Error e ->
-                return! BAD_REQUEST e ctx
-            | _ ->
-                return! OK "" ctx
-        }    
-    )
+let join (server: ServerActor) me chan : WebPart =
+    fun ctx -> async {
+        let! x = server <? Join (me, chan)
+        match x with
+        | Error e ->
+            return! BAD_REQUEST e ctx
+        | _ ->
+            return! OK "" ctx
+    }    
 
-let leave (server: ServerActor) (sessionStore: SessionStore) chan : WebPart =
-    inSession (fun session ctx ->
-        let meId = Uuid.New()   // TODO retrieve from session
-        async {
-            let! x = server <? Leave (meId, chan)
-            match x with
-            | Error e ->
-                return! BAD_REQUEST e ctx
-            | _ ->
-                return! OK "" ctx
-        }    
-    )
+let leave (server: ServerActor) me chan : WebPart =
+    fun ctx -> async {
+        let! x = server <? Leave (me, chan)
+        match x with
+        | Error e ->
+            return! BAD_REQUEST e ctx
+        | _ ->
+            return! OK "" ctx
+    }    
 
-let toWebSocketFlow sessionFlow =
-    Flow.empty<WsMessage, Akka.NotUsed>
-    |> Flow.map extractMessage
-    |> Flow.filter Option.isSome
-    |> Flow.map Option.get
-    |> Flow.viaMat sessionFlow Keep.right
-    |> Flow.map (fun (channel, message) -> encodeChannelMessage channel message)
+// TODO need a socket protocol type
 
-let startChat (system: ActorSystem) (server: ServerActor) (users: User Repository) (sessionStore) : WebPart =
+// extracts message from websocket reply, only handles User input (channel * string)
+let private extractMessage = function
+    | Text t ->
+        let payload = t |> Json.unjson<Payloads.Message>
+        match Uuid.TryParse payload.chan with
+        | Some chanId ->
+            Some (chanId, Message payload.text)
+        | _ -> None
+    |_ -> None
+
+let connectWebSocket (system: ActorSystem) (server: ServerActor) me : WebPart =
     let materializer = system.Materializer()
 
-    let sessionFlow = startUserSession materializer
-    let flow = toWebSocketFlow sessionFlow
+    let sessionFlow = createUserSessionFlow<Uuid,Uuid> materializer
+    let socketFlow =
+        Flow.empty<WsMessage, Akka.NotUsed>
+        |> Flow.map extractMessage
+        |> Flow.filter Option.isSome
+        |> Flow.map Option.get
+        |> Flow.viaMat sessionFlow Keep.right
+        |> Flow.map (fun (channel: Uuid, message) -> encodeChannelMessage (channel.ToString()) message)
 
-    let materialize user (sessionControl: SessionState) materializer (source: Source<WsMessage, Akka.NotUsed>) (sink: Sink<WsMessage, Akka.NotUsed>) =
+    let materialize materializer (source: Source<WsMessage, Akka.NotUsed>) (sink: Sink<WsMessage, Akka.NotUsed>) =
         let listenChannel =
             source
-            |> Source.viaMat flow Keep.right
-            |> Source.toMat sink Keep.Left
+            |> Source.viaMat socketFlow Keep.right
+            |> Source.toMat sink Keep.left
             |> Graph.run materializer
-        let joinChan chan =
-            async {
-                let! userFlow = joinChannel server chan user
-                let leaveChan = listenChannel chan userFlow
-                return leaveChan
-            }
+
+        // TODO switch user to "connected mode" (need a new API for ChatServer)
+        // TODO send ChatServer Join message
+        // let joinChan chan =
+        //     async {
+        //         let! userFlow = IrcMain.joinChannel server chan user
+        //         let leaveChan = listenChannel chan userFlow
+        //         return leaveChan
+        //     }
         // FIXME pass channels
-        connect [] joinChan |> Async.RunSynchronously
+        // connect [] joinChan |> Async.RunSynchronously
+        ()
 
-    inSession (fun session ctx ->
+    fun ctx ->
         async {
-            let! userEnvp = session.UserId |> users.GetById
-            let user = (Option.get userEnvp).Record
-            let! sessionControl = ensureSessionCreated sessionStore session.SessionId
-
-            return! handShake (handleWebsocketMessagesImpl system (materialize user sessionControl)) ctx
+            return! handShake (handleWebsocketMessages system materialize) ctx
         }    
-    )
