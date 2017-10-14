@@ -66,11 +66,6 @@ type ServerReplyMessage =
 module internal Helpers =
     open ServerState
 
-    let getUserNick userInfo = userInfo.nick
-    let getUserId userInfo = (userInfo: UserData).id
-    let getChannelId (channel: ChannelData) = channel.id
-    let getChanName (channel: ChannelData) = channel.name
-
     let updateChannels f serverState: ServerData =
         {serverState with channels = serverState.channels |> List.map f}
 
@@ -78,14 +73,13 @@ module internal Helpers =
         {serverState with users = serverState.users |> List.map f}
 
     let updateChannel f chanId serverState: ServerData =
-        let u  chan = if chan.id = chanId then f chan else chan
+        let u chan = if chan.id = chanId then f chan else chan
         in
         updateChannels u serverState
 
-    let byChanName name = getChanName >> ((=) name)
-    let byChanId id = getChannelId >> ((=) id)
-
-    let byUserId id = getUserId >> ((=) id)
+    let byChanId id c = (c:ChannelData).id = id
+    let byChanName name c = (c:ChannelData).name = name
+    let byUserId id u = (u:UserData).id = id
 
     let setChannelTopic topic (chan: ChannelData) =
         {chan with topic = topic}
@@ -315,14 +309,3 @@ let startServer (system: ActorSystem) =
 
     in
     props <| actorOf2 (behavior { channels = []; users = [] }) |> (spawn system "ircserver")
-
-// TODO incapsulate server actor (so that actor is not exposed as is and we provide nice api)?
-
-let getChannelList (server: IActorRef<_>) =
-    async {
-        let! (ChannelList list) = server <? List
-        return list
-    }
-
-let joinChannel (server: IActorRef<_>) chan user =
-    server <! Join (user, chan)

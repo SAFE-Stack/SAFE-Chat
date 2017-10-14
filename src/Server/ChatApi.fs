@@ -131,20 +131,28 @@ let chanInfo (server: ServerActor) (chanName: string) : WebPart =
 
 let join (server: ServerActor) (sessionStore: SessionStore) chan : WebPart =
     inSession (fun session ctx ->
+        let meId = Uuid.New()   // TODO retrieve from session
         async {
-            let! chatSession = ensureSessionCreated sessionStore session
-            do! joinChannel server chan
-            return! OK "joined" ctx
+            let! x = server <? Join (meId, chan)
+            match x with
+            | Error e ->
+                return! BAD_REQUEST e ctx
+            | _ ->
+                return! OK "" ctx
         }    
     )
 
 let leave (server: ServerActor) (sessionStore: SessionStore) chan : WebPart =
     inSession (fun session ctx ->
+        let meId = Uuid.New()   // TODO retrieve from session
         async {
-            let! sessionControl = ensureSessionCreated sessionStore session.SessionId
-            do sessionControl.LeaveChannel chan
-            return! OK "left" ctx
-        }
+            let! x = server <? Leave (meId, chan)
+            match x with
+            | Error e ->
+                return! BAD_REQUEST e ctx
+            | _ ->
+                return! OK "" ctx
+        }    
     )
 
 let startChat (system: ActorSystem) (server: ServerActor) (users: User Repository) (sessionStore) : WebPart =
