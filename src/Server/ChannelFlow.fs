@@ -7,7 +7,7 @@ open Akka.Streams.Dsl
 open Akkling
 open Akkling.Streams
 
-type Message = Message of string
+type Message = Message of string with static member Empty = Message null
 
 // message timestamp
 type MessageTs = int * System.DateTime

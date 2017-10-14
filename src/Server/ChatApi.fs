@@ -40,6 +40,16 @@ module private Implementation =
         | Joined ((id, ts), user, users) -> Joined ((id, ts), f user, users |> Seq.map f)
         | Left ((id, ts), user, users) -> Left ((id, ts), f user, users |> Seq.map f)
 
+    let extractMessage =
+        function
+        | Text t ->
+            let payload = t |> Json.unjson<Payloads.Message>
+            match Uuid.TryParse payload.chan with
+            | Some chanId ->
+                Some (chanId, Message payload.text)
+            | _ -> None
+        |_ -> None
+
     let encodeChannelMessage channel : Uuid ChatClientMessage -> WsMessage =
         mapMessageUser (fun userid -> userid.ToString())
         >>
@@ -155,22 +165,16 @@ let leave (server: ServerActor) (sessionStore: SessionStore) chan : WebPart =
         }    
     )
 
+let toWebSocketFlow sessionFlow =
+    Flow.empty<WsMessage, Akka.NotUsed>
+    |> Flow.map extractMessage
+    |> Flow.filter Option.isSome
+    |> Flow.map Option.get
+    |> Flow.viaMat sessionFlow Keep.right
+    |> Flow.map (fun (channel, message) -> encodeChannelMessage channel message)
+
 let startChat (system: ActorSystem) (server: ServerActor) (users: User Repository) (sessionStore) : WebPart =
     let materializer = system.Materializer()
-
-    let extractMessage =
-        function
-        | Text t ->
-            let p = Providers.UserInput.Parse t in
-            p.Chan, Message p.Message
-        |_ -> null, Message null
-
-    let toWebSocketFlow sessionFlow =
-        Flow.empty<WsMessage, Akka.NotUsed>
-        |> Flow.map extractMessage
-        |> Flow.filter (fst >> (<>) null)
-        |> Flow.viaMat sessionFlow Keep.right
-        |> Flow.map (fun (channel, message) -> encodeChannelMessage channel message)
 
     let sessionFlow = startUserSession materializer
     let flow = toWebSocketFlow sessionFlow
