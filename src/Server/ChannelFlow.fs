@@ -82,8 +82,9 @@ let createChannel<'User when 'User: comparison> (system: ActorSystem) name =
     in
     props <| actorOf2 (behavior { Parties = Map.empty; LastEventId = 1000 }) |> (spawn system name)
 
-/// Creates a Flow instance for user in channel
-let createPartyFlow<'User> (channelActor: IActorRef<_>) (user: 'User) =
+// Creates a Flow instance for user in channel.
+// When materialized flow connects user to channel and starts bidirectional communication.
+let createChannelFlow<'User> (channelActor: IActorRef<_>) (user: 'User) =
     let chatInSink = Sink.toActorRef (ParticipantLeft user) channelActor
 
     let fin =
@@ -116,7 +117,7 @@ let createUserSessionFlow<'User, 'Chan when 'Chan: equality>
     let combine
             (producer: Source<'Chan * Message, Akka.NotUsed>)
             (consumer: Sink<'Chan * 'User ChatClientMessage, Akka.NotUsed>)
-            (chanId: 'Chan) (chanFlow: Flow<Message, 'User ChatClientMessage, _>) =
+            (chanId: 'Chan) (chanFlow: Flow<Message, 'User ChatClientMessage, Akka.NotUsed>) =
 
         let infilter =
             Flow.empty<'Chan * Message, Akka.NotUsed>

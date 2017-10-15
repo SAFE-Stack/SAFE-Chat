@@ -158,18 +158,8 @@ let connectWebSocket (system: ActorSystem) (server: ServerActor) me : WebPart =
             |> Source.toMat sink Keep.left
             |> Graph.run materializer
 
-        // TODO switch user to "connected mode" (need a new API for ChatServer), pass listerChannel (aka MaterializeFlow)
-        // TODO send ChatServer Join message
-
-        // let joinChan chan =
-        //     async {
-        //         let! userFlow = IrcMain.joinChannel server chan user
-        //         let leaveChan = listenChannel chan userFlow
-        //         return leaveChan
-        //     }
-        // FIXME pass channels
-        // connect [] joinChan |> Async.RunSynchronously
-        ()
+        server <? Connect (me, listenChannel) |> Async.RunSynchronously |> ignore
+        // TODO let server know websocket has gone
 
     fun ctx ->
         async {

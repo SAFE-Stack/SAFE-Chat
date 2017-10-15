@@ -10,7 +10,7 @@ open Akkling.Streams
 
 open ChannelFlow
 
-type MaterializeFlow = Flow<Message,Uuid ChatClientMessage, Akka.NotUsed> -> UniqueKillSwitch
+type MaterializeFlow = Uuid -> Flow<Message,Uuid ChatClientMessage, Akka.NotUsed> -> UniqueKillSwitch
 
 type ChannelInfo = {id: Uuid; name: string; topic: string; userCount: int; users: Uuid list}
 type UserInfo = {id: Uuid; nick: string; email: string option; channels: ChannelInfo list}
@@ -96,6 +96,16 @@ module internal Helpers =
 
     let addUserChan chanId ks (user: UserData) =
         {user with channels = user.channels |> Map.add chanId ks}
+
+    let disconnect (user: UserData) =
+        {user with
+            mat = None
+            channels = user.channels |> Map.map (fun chanId ks ->
+                match ks with
+                | Some killSwitch -> killSwitch.Shutdown()
+                | _ -> ()
+                None)
+        }
 
     let alreadyJoined channels channelName (u: UserData) =
         channels |> List.tryFind (byChanName channelName)
@@ -193,7 +203,6 @@ module ServerApi =
         | Some user ->
             Result.Ok user
 
-
     // Turns user to an "online" mode, and user starts receiving messages from all channels he's subscribed
     let connect userId (mat: MaterializeFlow) state =
         userOp userId state
@@ -205,7 +214,7 @@ module ServerApi =
                     state.channels
                     |> List.filter(fun chan -> channels |> Map.containsKey chan.id)
                     |> List.map (fun chan ->
-                        chan.id, Some (createPartyFlow chan.channelActor userId |> mat))
+                        chan.id, Some (createChannelFlow chan.channelActor userId |> mat chan.id))
                     |> Map.ofList
                 let connectUser user = { user with mat = Some mat; channels = user.channels |> connectChannels}
                 Result.Ok (state |> updateUser connectUser userId)
@@ -228,23 +237,13 @@ module ServerApi =
 
     let disconnect userId state =
         userOp userId state
-        |> Result.map (fun user ->
-            let disconnectChannels (user: UserData) =
-                {user with
-                    mat = None
-                    channels = user.channels |> Map.map (fun chanId ks ->
-                        match ks with
-                        | Some killSwitch -> killSwitch.Shutdown()
-                        | _ -> ()
-                        None)
-                }
-            state |> updateUser disconnectChannels userId)
+        |> Result.map (fun _ -> state |> updateUser Helpers.disconnect userId)
 
     // User leaves the chat server
     let unregister userId state =
         userOp userId state
-        |> Result.bind (fun _ -> state |> disconnect userId)
-        |> Result.map (removeUser (byUserId userId))            
+        |> Result.map (fun _ ->
+            state |> updateUser Helpers.disconnect userId |> removeUser (byUserId userId))
 
     let join userId channelName createChannel state =
         userOp userId state
@@ -254,7 +253,7 @@ module ServerApi =
             | user ->
                 match addChannel createChannel channelName state with
                 | Ok (newState, chan) ->
-                    let ks = user.mat |> Option.map (fun m -> m <| createPartyFlow chan.channelActor userId)
+                    let ks = user.mat |> Option.map (fun m -> m chan.id <| createChannelFlow chan.channelActor userId)
                     Ok (newState |> updateUser (addUserChan chan.id ks) userId)
                 | Result.Error error -> Result.Error error)
 
@@ -304,9 +303,7 @@ let startServer (system: ActorSystem) =
             |> replyAndUpdate
 
         | FindChannel name ->
-            state |> ServerApi.findChannel name
-            |> Result.map ServerReplyMessage.ChannelInfo
-            |> reply
+            state |> ServerApi.findChannel name |> Result.map ChannelInfo |> reply
 
         | SetTopic (chanId, topic) ->   update (state |> ServerApi.setTopic chanId topic)
         | DropChannel chanId ->         update (state |> ServerApi.dropChannel chanId)
