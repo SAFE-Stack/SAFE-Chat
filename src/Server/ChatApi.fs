@@ -117,9 +117,10 @@ let join (server: ServerActor) me chan : WebPart =
             return! OK "" ctx
     }    
 
-let leave (server: ServerActor) me chan : WebPart =
+let leave (server: ServerActor) me chanIdStr : WebPart =
     fun ctx -> async {
-        let! x = server <? Leave (me, chan)
+        let (Some chanId) = Uuid.TryParse(chanIdStr)    // FIXME, let it understand both id and name
+        let! x = server <? Leave (me, chanId)
         match x with
         | Error e ->
             return! BAD_REQUEST e ctx

@@ -7,48 +7,38 @@ open Suave.Redirection
 open Suave.Successful
 open Suave.RequestErrors
 
+open Akka.Actor
+open Akkling
+
 // ---------------------------------
 // Web app
 // ---------------------------------
+type AppState = | Off | Started of actorSystem: ActorSystem * server: IActorRef<ChatServer.ServerControlMessage>
 module internal AppState =
 
-    type UserSession =
-        {
-            UserName: string
-            // token
-            Channels: string list // list of channels I'm in
-        }
+    let mutable server = Off
+    let mutable me = Uuid.New()
 
-    type App =
-        {
-            Channels: string list
-        }
+let startChatServer () =
+    let actorSystem = ActorSystem.Create("chatapp")
+    let chatServer = ChatServer.startServer actorSystem
 
-// app state
-    let app = { App.Channels = ["hardware"; "software"; "cats"] }
-    let mutable userSession = { UserSession.UserName = "%username%"; Channels = ["cats"]}
+    AppState.server <- Started (actorSystem, chatServer)
 
-let joinChannel chan =
-    if not(AppState.userSession.Channels |> List.contains chan) then
-        AppState.userSession <- { AppState.userSession with Channels = chan :: AppState.userSession.Channels}
-    redirect "/channels"
-
-let leaveChannel chan =
-    // todo leave, redirect to channels list
-    OK ("TBD leave channel " + chan)
+    // TODO add testing channels and actors
+    ()
 
 let webApp: WebPart =
     choose [
-        pathStarts "/channels" >=> choose [
-            GET >=> path "/channels" >=> (Views.channels AppState.app.Channels |> Views.pageLayout "Channels" |> Html.renderHtmlDocument |> OK)
-            GET >=> pathScan "/channels/%s/join" joinChannel
-            GET >=> pathScan "/channels/%s/leave" leaveChannel
-            GET >=> pathScan "/channels/%s" (fun chan ->
-                 choose [
-                     GET  >=> OK ("TBD view channel messages " + chan)
-                     POST >=> OK ("TBD post message to " + chan)
-                 ])                
-        ]
+        pathStarts "/api" >=> fun ctx ->
+            let (Started (actorSystem, server)) = AppState.server
+            choose [
+                GET >=> path "/api/channels" >=> (ChatApi.listChannels server AppState.me)
+                GET >=> pathScan "/api/channel/%s/info" (ChatApi.chanInfo server AppState.me)
+                POST >=> pathScan "/api/channel/%s/join" (ChatApi.join server AppState.me)
+                POST >=> pathScan "/api/channel/%s/leave" (ChatApi.leave server AppState.me)
+                path "/api/channel/socket" >=> (ChatApi.connectWebSocket actorSystem server AppState.me)
+            ] ctx
         // GET >=>
         //     choose [
         //         route "/" >=> warbler (fun _ -> AppState.userSession |> razorHtmlView "Index")
