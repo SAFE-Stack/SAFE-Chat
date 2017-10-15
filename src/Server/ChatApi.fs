@@ -142,9 +142,18 @@ let private extractMessage = function
 let connectWebSocket (system: ActorSystem) (server: ServerActor) me : WebPart =
     let materializer = system.Materializer()
 
+    // let server know websocket has gone (see onCompleteMessage)
+    // FIXME not sure if it works at all
+    let monitor t = async {
+        let! _ = t
+        let! reply = server <? Disconnect (me)
+        return ()
+    }
+
     let sessionFlow = createUserSessionFlow<Uuid,Uuid> materializer
     let socketFlow =
         Flow.empty<WsMessage, Akka.NotUsed>
+        |> Flow.watchTermination (fun x t -> (monitor t) |> Async.Start; x)
         |> Flow.map extractMessage
         |> Flow.filter Option.isSome
         |> Flow.map Option.get
@@ -159,7 +168,6 @@ let connectWebSocket (system: ActorSystem) (server: ServerActor) me : WebPart =
             |> Graph.run materializer
 
         server <? Connect (me, listenChannel) |> Async.RunSynchronously |> ignore
-        // TODO let server know websocket has gone
 
     fun ctx ->
         async {
