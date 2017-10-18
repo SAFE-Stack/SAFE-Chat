@@ -6,9 +6,14 @@ open Suave.Web
 open Suave.Operators
 open Suave.Logging
 
-open fschat.app
-
 type CmdArgs = { IP: System.Net.IPAddress; Port: Sockets.Port }
+
+type JsonNetCookieSerializer() =
+  interface CookieSerialiser with
+    member x.serialise m =
+      Json.json(m) |> Text.Encoding.UTF8.GetBytes
+    member x.deserialise m =
+      Json.unjson<Map<string, obj>>(Text.Encoding.UTF8.GetString(m))
 
 [<EntryPoint>]
 let main argv =
@@ -38,17 +43,25 @@ let main argv =
 
     let logger = Logging.Targets.create Logging.Verbose [| "Suave" |]
 
-    let app = webApp >=> logWithLevelStructured Logging.Info logger logFormatStructured
+    let app = App.root >=> logWithLevelStructured Logging.Info logger logFormatStructured
 
     let config =
         { defaultConfig with
             logger = Targets.create LogLevel.Debug [|"ServerCode"; "Server" |]
-            bindings = [ HttpBinding.create HTTP args.IP args.Port ] }
+            bindings = [ HttpBinding.create HTTP args.IP args.Port ]
+            // cookieSerializer = JsonNetCookieSerializer()
+        }
 
     let cts = new System.Threading.CancellationTokenSource()
-    let _,webServer = startWebServerAsync config app
+    let application = async {
+        let _, webServer = startWebServerAsync config app
+        do! webServer
+        do App.startChatServer()
 
-    Async.Start (webServer, cts.Token)
+        return ()
+    }
+
+    Async.Start (application, cts.Token)
 
     //kill the server
     printfn "type 'q' to gracefully stop"

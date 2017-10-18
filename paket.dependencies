@@ -6,5 +6,6 @@ clitool Microsoft.DotNet.Watcher.Tools 2.0.0
 
 nuget Suave
 nuget Suave.Experimental
+nuget Suave.OAuth
 nuget Akkling > 0.7.0
 nuget Akkling.Streams > 0.7.0
