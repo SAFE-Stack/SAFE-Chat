@@ -14,7 +14,7 @@ module internal Details =
 
     type UserSession = {
         userData: Map<string, obj>
-        lastAccess: System.DateTime
+        lastAccess: DateTime
     }
 
     type State = {

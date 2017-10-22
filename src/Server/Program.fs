@@ -8,12 +8,18 @@ open Suave.Logging
 
 type CmdArgs = { IP: System.Net.IPAddress; Port: Sockets.Port }
 
-type JsonNetCookieSerializer() =
-  interface CookieSerialiser with
-    member x.serialise m =
-      Json.json(m) |> Text.Encoding.UTF8.GetBytes
-    member x.deserialise m =
-      Json.unjson<Map<string, obj>>(Text.Encoding.UTF8.GetString(m))
+module TweakingSuave =
+
+    open Newtonsoft.Json
+
+    let utf8 = System.Text.Encoding.UTF8
+
+    type JsonNetCookieSerialiser () =
+      interface CookieSerialiser with
+        member x.serialise m =
+          utf8.GetBytes (JsonConvert.SerializeObject m)
+        member x.deserialise m =
+          JsonConvert.DeserializeObject<Map<string, obj>> (utf8.GetString m)
 
 [<EntryPoint>]
 let main argv =
@@ -49,15 +55,15 @@ let main argv =
         { defaultConfig with
             logger = Targets.create LogLevel.Debug [|"ServerCode"; "Server" |]
             bindings = [ HttpBinding.create HTTP args.IP args.Port ]
-            // cookieSerializer = JsonNetCookieSerializer()
+            cookieSerialiser = TweakingSuave.JsonNetCookieSerialiser()
         }
 
     let cts = new System.Threading.CancellationTokenSource()
     let application = async {
         let _, webServer = startWebServerAsync config app
-        do! webServer
         do App.startChatServer()
-
+        do! webServer
+     
         return ()
     }
 

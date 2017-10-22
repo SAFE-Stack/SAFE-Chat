@@ -14,8 +14,10 @@
     <Compile Include="SocketFlow.fs" />
     <Compile Include="ChatApi.fs" />
     <Compile Include="views.fs" />
+    <Compile Include="OAuth.fs" />
     <Compile Include="app.fs" />
     <Compile Include="Program.fs" />
   </ItemGroup>
+
   <Import Project="..\..\.paket\Paket.Restore.targets" />
 </Project>

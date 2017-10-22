@@ -2,4 +2,9 @@ Akkling
 Akkling.Streams
 Suave
 Suave.Experimental
+Newtonsoft.Json
+
+Microsoft.Extensions.Configuration
+Microsoft.Extensions.Configuration.Json
+
 Microsoft.DotNet.Watcher.Tools

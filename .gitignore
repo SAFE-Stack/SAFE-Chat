@@ -11,6 +11,7 @@ _ReSharper*/
 _UpgradeReport*
 
 # NuGet Packages Directory
+paket-files
 packages
 .nuget/
 
@@ -32,3 +33,5 @@ TestResult.*
 .vs/
 .idea/
 .idea/.idea.fschat/riderModule.iml
+
+CHAT_DATA/

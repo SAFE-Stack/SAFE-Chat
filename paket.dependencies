@@ -1,11 +1,13 @@
 source https://www.nuget.org/api/v2
 source .nuget-packages
-storage: none
 
 clitool Microsoft.DotNet.Watcher.Tools 2.0.0
 
 nuget Suave
 nuget Suave.Experimental
-nuget Suave.OAuth
 nuget Akkling > 0.7.0
 nuget Akkling.Streams > 0.7.0
+nuget Newtonsoft.Json
+
+nuget Microsoft.Extensions.Configuration
+nuget Microsoft.Extensions.Configuration.Json
