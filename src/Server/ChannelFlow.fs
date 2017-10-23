@@ -57,12 +57,12 @@ let createChannel<'User when 'User: comparison> (system: ActorSystem) name =
             | NewParticipant (user, subscriber) ->
                 do monitor ctx subscriber |> ignore
                 let parties = state.Parties |> Map.add user (user, subscriber)
-                do dispatch state.Parties <| ChatClientMessage.Joined (ts, user, parties |> allMembers)
+                do dispatch state.Parties <| Joined (ts, user, parties |> allMembers)
                 incId { state with Parties = parties}
 
             | ParticipantLeft user ->
                 let parties = state.Parties |> Map.remove user
-                do dispatch state.Parties <| ChatClientMessage.Left (ts, user, parties |> allMembers)
+                do dispatch state.Parties <| Left (ts, user, parties |> allMembers)
                 incId { state with Parties = parties}
 
             | NewMessage (user, message) ->
@@ -97,7 +97,7 @@ let createChannelFlow<'User> (channelActor: IActorRef<_>) (user: 'User) =
     // This source will only buffer one element and will fail if the client doesn't read
     // messages fast enough.
     let fout =
-        Source.actorRef Akka.Streams.OverflowStrategy.Fail 1
+        Source.actorRef OverflowStrategy.Fail 1
         |> Source.mapMaterializedValue (fun (sub: IActorRef<'User ChatClientMessage>) -> channelActor <! NewParticipant (user, sub); Akka.NotUsed.Instance)
 
     Flow.ofSinkAndSource fin fout

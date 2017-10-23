@@ -1,21 +1,24 @@
 # TODOs
 
-## wrap up the project
+## implementation plan
 
-- revise session abstraction
-- revise what concludes user session
-- determine user/session lifecycle (when to create flows)
-- design API
-- implement API
-* client MVP
+- client MVP
+- persist ChatServer state (registers once and forever, channels are preserved)
+- persist user info (id, nick, userid)
+- request user Nick form (before registration is complete)
+
+
+### Far plans
+
+- alternate flow for notifications when user if offline
 
 ## authorization implementation plan
 
-* check if authorized, redirect to login page
-* logon page/google/fb
+* [x] check if authorized, redirect to login page
+* [x] logon page/google/fb
 * signin: choose nick form/step
-* signin: connect/register user
-* logout step
+* [x] signin: connect/register user
+* [x] logout step
 
 ## ideas
 

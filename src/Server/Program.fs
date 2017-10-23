@@ -56,6 +56,9 @@ let main argv =
             logger = Targets.create LogLevel.Debug [|"ServerCode"; "Server" |]
             bindings = [ HttpBinding.create HTTP args.IP args.Port ]
             cookieSerialiser = TweakingSuave.JsonNetCookieSerialiser()
+
+            // FIXME I intentionally want new session on server restart so that user registers on ChatServer every time
+            // serverKey = App.Secrets.readCookieSecret()
         }
 
     let cts = new System.Threading.CancellationTokenSource()

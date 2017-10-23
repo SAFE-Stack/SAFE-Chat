@@ -15,9 +15,6 @@ open ChannelFlow
 open ChatServer
 open SocketFlow
 
-// open ProductHub.Rest.Common
-open SessionStore
-
 module private Payloads =
     type ChanUserInfo = {
         name: string; online: bool; isbot: bool; lastSeen: System.DateTime
@@ -50,7 +47,7 @@ module private Implementation =
             {id = id; ts = ts; text = sprintf "%s joined channel" user; chan = channel; author = "system"}
         | Left ((id, ts), user, _) ->
             {id = id; ts = ts; text = sprintf "%s left channel" user; chan = channel; author = "system"}
-        >> Json.json >> WsMessage.Text
+        >> Json.json >> Text
 
     let mapChannel isMine (chan: ChatServer.ChannelInfo) =
         {Payloads.ChannelInfo.id = chan.id.ToString(); name = chan.name; topic = chan.topic; userCount = chan.userCount; users = []; joined = isMine chan.id}
@@ -64,14 +61,14 @@ let listChannels (server: ServerActor) me : WebPart =
     fun ctx -> async {
         let! reply = server <? List
         match reply with
-        | ServerReplyMessage.Error e ->
+        | Error e ->
             return! BAD_REQUEST e ctx
-        | ServerReplyMessage.ChannelList channelList ->
+        | ChannelList channelList ->
             let! reply2 = server <? GetUser me
             match reply2 with
-            | ServerReplyMessage.Error e ->
+            | Error e ->
                 return! BAD_REQUEST e ctx
-            | ServerReplyMessage.UserInfo me ->
+            | UserInfo me ->
                 let imIn chanId = me.channels |> List.exists(fun ch -> ch.id = chanId)
                 let result = channelList |> List.map (mapChannel imIn) |> Json.json
                 return! OK result ctx

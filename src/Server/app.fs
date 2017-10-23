@@ -26,6 +26,7 @@ module internal AppState =
 module Secrets =
 
     open System.IO
+    open Suave.Utils
     open Microsoft.Extensions.Configuration
 
     [<Literal>]
@@ -34,16 +35,13 @@ module Secrets =
     [<Literal>]
     let OAuthConfigFile = "CHAT_DATA\\suave.oauth.config"
 
-    let ensureCookieSecret () =
+    let readCookieSecret () =
         printfn "Reading configuration data from %s" System.Environment.CurrentDirectory
         if not (File.Exists CookieSecretFile) then
-            let rnd = System.Random(int System.DateTime.Now.Ticks)
-            let secret = Array.create<byte> 16 (byte 0)
-            rnd.NextBytes(secret)
+            let secret = Crypto.generateKey Crypto.KeyLength
             do (Path.GetDirectoryName CookieSecretFile) |> Directory.CreateDirectory |> ignore
             File.WriteAllBytes (CookieSecretFile, secret)
 
-    let readCookieSecret () =
         File.ReadAllBytes(CookieSecretFile)
 
     // Here I'm reading my personal API keys from file stored in my %HOME% folder. You will likely define you keys in code (see below).
@@ -71,7 +69,6 @@ let startChatServer () =
     let actorSystem = ActorSystem.Create("chatapp")
     let chatServer = ChatServer.startServer actorSystem
 
-    Secrets.ensureCookieSecret()
     AppState.server <- Started (actorSystem, chatServer)
 
     // TODO add diag channels and actors
@@ -80,6 +77,7 @@ let startChatServer () =
 type UserSessionData = {
     Nickname: string
     Id: string
+    UserId: Uuid
 }
 
 type Session = NoSession | UserLoggedOn of UserSessionData
@@ -95,7 +93,8 @@ module View =
                 yield Text (sprintf "Logged on as %s, " session.Nickname)
                 yield a "/logoff" [] [Text "Log off"]
             | _ ->
-                yield a "/logon" [] [Text "Log on"]
+                yield Text "Log on via: "
+                yield a "/oaquery?provider=Google" [] [Text "Google"]
         ]
 
     let page content =
@@ -127,13 +126,6 @@ module View =
 
     let index session = page (partUser session)
 
-    let logon =
-        page <| div [] [
-            Text "Click the link below to login "
-            a "/oaquery?provider=Google" [] [Text "Google"]
-        ]
-
-
     let loggedoff =
         page <| div [] [
             Text " You are now logged off."
@@ -154,15 +146,17 @@ let sessionStore setF = context (fun x ->
     | Some state -> setF state
     | None -> never)
 
+let (|ParseUuid|_|) = Uuid.TryParse
+
 let session f = 
     statefulForSession
     >=> context (fun x -> 
         match x |> HttpContext.state with
         | None -> f NoSession
         | Some state ->
-            match state.get "id", state.get "nick" with
-            | Some id, Some nick -> 
-                f (UserLoggedOn {Id = id; Nickname = nick})
+            match state.get "id", state.get "nick", state.get "uid" with
+            | Some id, Some nick, Some (ParseUuid userId) ->
+                f (UserLoggedOn {Id = id; Nickname = nick; UserId = userId})
             | _ -> f NoSession)
 
 let root: WebPart =
@@ -173,10 +167,15 @@ let root: WebPart =
             // in your application you shoud store such kind of data to session data
             authorize authorizeRedirectUri Secrets.oauthConfigs
                 (fun loginData ->
+                    // register user, obtain userid and store in session
+                    let (Started (actorsystem, server)) = AppState.server
+                    let userId = server |> ChatServer.registerNewUser loginData.Name [] |> Async.RunSynchronously // FIXME async
+
                     statefulForSession
                     >=> sessionStore (fun store ->
                             store.set "id" loginData.Id
                         >=> store.set "nick" loginData.Name
+                        >=> store.set "uid" (userId.ToString())
                     )
                     >=> FOUND "/"
                 )
@@ -188,20 +187,25 @@ let root: WebPart =
             session (fun session ->
                 choose [
                     path "/" >=> (OK <| (View.index session |> Html.htmlToString))
-                    path "/logon" >=> (OK <| Html.htmlToString View.logon)
                     path "/logoff" >=> (
                         deauthenticate
                         >=> (OK <| Html.htmlToString View.loggedoff)
                         )
-                    pathStarts "/api" >=> fun ctx ->
-                        let (Started (actorSystem, server)) = AppState.server
-                        choose [
-                            GET >=> path "/api/channels" >=> (ChatApi.listChannels server AppState.me)
-                            GET >=> pathScan "/api/channel/%s/info" (ChatApi.chanInfo server AppState.me)
-                            POST >=> pathScan "/api/channel/%s/join" (ChatApi.join server AppState.me)
-                            POST >=> pathScan "/api/channel/%s/leave" (ChatApi.leave server AppState.me)
-                            path "/api/channel/socket" >=> (ChatApi.connectWebSocket actorSystem server AppState.me)
-                        ] ctx                ]
+                    pathStarts "/api" >=> 
+                        match session with
+                        | UserLoggedOn u ->
+                            let (Started (actorSystem, server)) = AppState.server   // FIXME kinda session fn
+                            choose [
+                                GET >=> path "/api/channels" >=> (ChatApi.listChannels server u.UserId)
+                                GET >=> pathScan "/api/channel/%s/info" (ChatApi.chanInfo server u.UserId)
+                                POST >=> pathScan "/api/channel/%s/join" (ChatApi.join server u.UserId)
+                                POST >=> pathScan "/api/channel/%s/leave" (ChatApi.leave server u.UserId)
+                                path "/api/channel/socket" >=> (ChatApi.connectWebSocket actorSystem server u.UserId)
+                            ]
+                        | NoSession ->
+                            BAD_REQUEST "Authorization required"
+                    ]
+                            
             )
 
         NOT_FOUND "Not Found"

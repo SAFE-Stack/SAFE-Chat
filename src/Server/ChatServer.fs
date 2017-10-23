@@ -6,7 +6,6 @@ open Akka.Actor
 open Akka.Streams
 open Akka.Streams.Dsl
 open Akkling
-open Akkling.Streams
 
 open ChannelFlow
 
@@ -190,7 +189,7 @@ module ServerApi =
         // TODO consider automatic dropping the channel when no users left
         // TODO drop all users from the channel
         match state.channels |> List.tryFind (byChanId chanId) with
-        | Some chan ->
+        | Some _ ->
             let newState = state |> updateUsers (kickUser chanId)
             in
             Ok {newState with channels = state.channels |> List.filter (not << byChanId chanId)}
@@ -201,7 +200,7 @@ module ServerApi =
         | None ->
             Result.Error "User with such id not found"
         | Some user ->
-            Result.Ok user
+            Ok user
 
     // Turns user to an "online" mode, and user starts receiving messages from all channels he's subscribed
     let connect userId (mat: MaterializeFlow) state =
@@ -279,7 +278,7 @@ let startServer (system: ActorSystem) =
 
     let behavior state (ctx: Actor<ServerControlMessage>) =
         let passError errtext =
-            ctx.Sender() <! ServerReplyMessage.Error errtext
+            ctx.Sender() <! Error errtext
             ignored state
         let reply = function
             | Ok result -> ctx.Sender() <! result; ignored state
@@ -294,12 +293,12 @@ let startServer (system: ActorSystem) =
 
         function
         | List ->
-            ctx.Sender() <!| (state |> ServerApi.listChannels |> Async.map ServerReplyMessage.ChannelList)
+            ctx.Sender() <!| (state |> ServerApi.listChannels |> Async.map ChannelList)
             ignored state
 
         | NewChannel name ->
             state |> ServerApi.addChannel (createChannel system) name
-            |> mapReply (getChannelInfo0 >> ServerReplyMessage.ChannelInfo)
+            |> mapReply (getChannelInfo0 >> ChannelInfo)
             |> replyAndUpdate
 
         | FindChannel name ->
@@ -319,7 +318,7 @@ let startServer (system: ActorSystem) =
 
         | GetUser userId ->
             state |> ServerApi.getUserInfo userId
-            |> Result.map ServerReplyMessage.UserInfo
+            |> Result.map UserInfo
             |> reply
         | ReadState ->
             ctx.Sender() <! state; ignored state
@@ -328,3 +327,13 @@ let startServer (system: ActorSystem) =
 
     in
     props <| actorOf2 (behavior { channels = []; users = [] }) |> (spawn system "ircserver")
+
+let registerNewUser nick channels (server: IActorRef<ServerControlMessage>) =
+    async {
+        let! reply = server <? Register (nick, channels)
+        return reply
+            |> function
+            | UserInfo userInfo -> userInfo.id
+            | Error e -> failwith e; Uuid.Empty // FIXME
+    }
+
