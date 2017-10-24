@@ -89,8 +89,8 @@ module View =
     let partUser (session : Session) = 
         div ["id", "part-user"] [
             match session with
-            | UserLoggedOn session -> 
-                yield Text (sprintf "Logged on as %s, " session.Nickname)
+            | UserLoggedOn session ->
+                yield Text (sprintf "Logged on as %s" session.Nickname)
                 yield a "/logoff" [] [Text "Log off"]
             | _ ->
                 yield Text "Log on via: "
@@ -161,8 +161,8 @@ let session f =
 
 let root: WebPart =
     choose [
-        warbler(fun ctx ->
-            let authorizeRedirectUri ="http://localhost:8083/oalogin" in   // FIXME
+        warbler(fun _ ->
+            let authorizeRedirectUri ="http://localhost:8083/oalogin" in   // FIXME hardcoded path
             // Note: logon state for current user is stored in global variable, which is ok for demo purposes.
             // in your application you shoud store such kind of data to session data
             authorize authorizeRedirectUri Secrets.oauthConfigs

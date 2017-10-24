@@ -3,6 +3,15 @@
 ## implementation plan
 
 - client MVP
+  - design screens
+  - design state + server-side state
+  - my channels (active)
+  - all channels (active)
+  - join/leave channel + list of all channels
+  - unread count (for inactive)
+  - render channel room (users + messages)
+  - post message form
+  - refresh/autoscroll
 - persist ChatServer state (registers once and forever, channels are preserved)
 - persist user info (id, nick, userid)
 - request user Nick form (before registration is complete)
