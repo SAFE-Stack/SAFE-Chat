@@ -1,5 +1,6 @@
 source https://www.nuget.org/api/v2
 source .nuget-packages
+storage: none
 
 clitool Microsoft.DotNet.Watcher.Tools 2.0.0
 
@@ -12,3 +13,12 @@ nuget Newtonsoft.Json
 
 nuget Microsoft.Extensions.Configuration
 nuget Microsoft.Extensions.Configuration.Json
+
+nuget Fable.Elmish.HMR
+nuget FSharp.Core
+nuget Fable.Core
+nuget Fable.Elmish.React
+nuget Fable.Elmish.Browser
+nuget Fable.Elmish.Debugger
+
+clitool dotnet-fable

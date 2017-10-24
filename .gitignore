@@ -10,11 +10,6 @@ testrunner/
 _ReSharper*/
 _UpgradeReport*
 
-# NuGet Packages Directory
-paket-files
-packages
-.nuget/
-
 # Ignore Visual Studio files
 *.pdb
 *.suo
@@ -35,3 +30,13 @@ TestResult.*
 .idea/.idea.fschat/riderModule.iml
 
 CHAT_DATA/
+
+public/bundle.js*
+
+# NuGet Packages Directory
+paket-files/
+packages/
+
+# Node
+node_modules/
+project.lock.json
