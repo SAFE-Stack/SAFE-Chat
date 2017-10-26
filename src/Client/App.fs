@@ -5,8 +5,6 @@ open Elmish.Browser.Navigation
 open Elmish.Browser.UrlParser
 open Fable.Core
 open Fable.Core.JsInterop
-open Fable.Import
-open Fable.Import.Browser
 open Types
 open App.State
 open Global
@@ -50,7 +48,7 @@ let root model dispatch =
         [ ClassName "navbar-bg" ]
         [ div
             [ ClassName "container" ]
-            [ Navbar.View.root ] ]
+            [ Navbar.View.root model.userinfo ] ]
       div
         [ ClassName "section" ]
         [ div

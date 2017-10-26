@@ -1,4 +1,5 @@
 ﻿open System
+open System.IO
 
 open Suave
 open Suave.Filters
@@ -20,6 +21,8 @@ module TweakingSuave =
           utf8.GetBytes (JsonConvert.SerializeObject m)
         member x.deserialise m =
           JsonConvert.DeserializeObject<Map<string, obj>> (utf8.GetString m)
+
+let (</>) a b = Path.Combine(a, b)
 
 [<EntryPoint>]
 let main argv =
@@ -50,12 +53,15 @@ let main argv =
     let logger = Logging.Targets.create Logging.Verbose [| "Suave" |]
 
     let app = App.root >=> logWithLevelStructured Logging.Info logger logFormatStructured
+    let clientPath = (".." </> "Client" </> "public") |> Path.GetFullPath
 
     let config =
         { defaultConfig with
             logger = Targets.create LogLevel.Debug [|"ServerCode"; "Server" |]
             bindings = [ HttpBinding.create HTTP args.IP args.Port ]
             cookieSerialiser = TweakingSuave.JsonNetCookieSerialiser()
+
+            homeFolder = Some clientPath
 
             // FIXME I intentionally want new session on server restart so that user registers on ChatServer every time
             // serverKey = App.Secrets.readCookieSecret()

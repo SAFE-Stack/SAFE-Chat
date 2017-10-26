@@ -9,14 +9,25 @@ Sample chat application built with netcore, F#, Akka.net and Fable.
 * yarn (`npm i yarn -g`)
 * npm5: JS package manager
 
-
 ## Building and running the app
 
 * Install JS dependencies: `yarn`
-* **Move to `src` folder**: `cd src`
+* **Move to `src/Client` folder**: `cd src\Client`
 * Install F# dependencies: `dotnet restore`
-* Start Fable daemon and [Webpack](https://webpack.js.org/) dev server: `dotnet fable npm-start`
+* Build client bundle: `dotnet fable webpack -p`
+* **Move to `src/Server` folder**: `cd src\Server`
+* Install F# dependencies: `dotnet restore`
+* Run the server: `dotnet run`
+
+
+## Developing the app
+
+* Start the server (see instruction above)
+* **Move to `src/Client` folder**: `cd src\Client`
+* Start Fable daemon and [Webpack](https://webpack.js.org/) dev server: `dotnet fable webpack-dev-server`
 * In your browser, open: http://localhost:8080/
+
+> Notice: logon screen will redirect your browser to localhost:8083 (per configuration of server auth handler), you have manually change the port to 8080
 
 ## References
 

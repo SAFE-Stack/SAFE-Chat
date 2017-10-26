@@ -131,6 +131,14 @@ module View =
             Text " You are now logged off."
         ]
 
+module private Impl =
+
+    type WhoPayload = {Id: string; UserId: string; Nickname: string}
+
+    let toWho (u: UserSessionData) =
+        {Id = u.Id; Nickname = u.Nickname; UserId = (u.UserId.ToString())}
+
+
 let logger = Log.create "fschat"
 
 let returnPathOrHome = 
@@ -186,16 +194,23 @@ let root: WebPart =
         GET >=>
             session (fun session ->
                 choose [
-                    path "/" >=> (OK <| (View.index session |> Html.htmlToString))
-                    path "/logoff" >=> (
+                    path "/" >=> (
+                        match session with
+                        | NoSession -> found "/logon"
+                        | _ -> Files.browseFileHome "index.html"
+                        )
+                    path "/logon" >=>
+                        (OK <| (View.index session |> Html.htmlToString))  // FIXME rename index to login
+                    path "/logoff" >=>
                         deauthenticate
                         >=> (OK <| Html.htmlToString View.loggedoff)
-                        )
+
                     pathStarts "/api" >=> 
                         match session with
                         | UserLoggedOn u ->
                             let (Started (actorSystem, server)) = AppState.server   // FIXME kinda session fn
                             choose [
+                                GET >=> path "/api/who" >=> (u |> Impl.toWho |> Json.toJson |> ok)
                                 GET >=> path "/api/channels" >=> (ChatApi.listChannels server u.UserId)
                                 GET >=> pathScan "/api/channel/%s/info" (ChatApi.chanInfo server u.UserId)
                                 POST >=> pathScan "/api/channel/%s/join" (ChatApi.join server u.UserId)
@@ -204,8 +219,9 @@ let root: WebPart =
                             ]
                         | NoSession ->
                             BAD_REQUEST "Authorization required"
+
+                    Files.browseHome                            
                     ]
-                            
             )
 
         NOT_FOUND "Not Found"

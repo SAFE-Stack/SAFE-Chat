@@ -18,6 +18,7 @@ var babelOptions = fableUtils.resolveBabelOptions({
 });
 
 var isProduction = process.argv.indexOf("-p") >= 0;
+var port = process.env.SUAVE_FABLE_PORT || "8083";
 console.log("Bundling for " + (isProduction ? "production" : "development") + "...");
 
 module.exports = {
@@ -33,11 +34,14 @@ module.exports = {
         ]
     },
     devServer: {
-        contentBase: resolve('./public'),
-        port: 8080,
+        proxy: [{
+            context: ['/api', '/', '/logon', '/logoff'],
+            target: 'http://localhost:' + port,
+            changeOrigin: true
+        }],
         hot: true,
         inline: true
-    },
+      },
     module: {
         rules: [
             {

@@ -3,6 +3,8 @@ module Navbar.View
 open Fable.Helpers.React
 open Fable.Helpers.React.Props
 
+open UserInfo.Types
+
 let navButton classy href faClass txt =
     p
         [ ClassName "control" ]
@@ -18,23 +20,33 @@ let navButton classy href faClass txt =
                 [ ]
                 [ str txt ] ] ]
 
-let navButtons =
+let private userInfoText =
+    function
+    | NotLoggedIn -> "Please login"
+    | UserInfo u -> u.Nick
+    | Error x -> "error" + x.ToString()
+
+
+let navButtons userInfo =
     span
         [ ClassName "nav-item" ]
         [ div
             [ ClassName "field is-grouped" ]
-            [ navButton "twitter" "https://twitter.com/FableCompiler" "fa-twitter" "Twitter"
-              navButton "github" "https://github.com/fable-compiler/fable-elmish" "fa-github" "Fork me"
-              navButton "github" "https://gitter.im/fable-compiler/Fable" "fa-comments" "Gitter" ] ]
+            [
+                p [ ClassName "control" ]
+                  [ p [ClassName "userinfo"] [str <| userInfoText userInfo]]
+                navButton "twitter" "https://twitter.com/OlegZee" "fa-twitter" "Twitter"
+                navButton "" "/logoff" "fa-hand-o-right" "Log off"
+                ] ]
 
-let root =
+let root (userInfo: UserInfo) =
     nav
         [ ClassName "nav" ]
         [ div
             [ ClassName "nav-left" ]
             [ h1
                 [ ClassName "nav-item is-brand title is-4" ]
-                [ str "Elmish" ] ]
+                [ str "F# Chat" ] ]
           div
             [ ClassName "nav-right" ]
-            [ navButtons ] ]
+            [ navButtons userInfo ] ]

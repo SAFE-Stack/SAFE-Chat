@@ -6,6 +6,11 @@
     <!-- Global to the app -->
     <Compile Include="Global.fs" />
     <!-- Info -->
+    <Compile Include="UserInfo/Types.fs" />
+    <Compile Include="UserInfo/State.fs" />
+    <!-- Info -->
+    <Compile Include="Info/Types.fs" />
+    <Compile Include="Info/State.fs" />
     <Compile Include="Info/View.fs" />
     <!-- Counter -->
     <Compile Include="Counter/Types.fs" />

@@ -2,14 +2,13 @@ source https://www.nuget.org/api/v2
 source .nuget-packages
 storage: none
 
-clitool Microsoft.DotNet.Watcher.Tools 2.0.0
-
 nuget Suave
 nuget Suave.OAuth
 nuget Suave.Experimental
 nuget Akkling > 0.7.0
 nuget Akkling.Streams > 0.7.0
 nuget Newtonsoft.Json
+nuget Fable.JsonConverter
 
 nuget Microsoft.Extensions.Configuration
 nuget Microsoft.Extensions.Configuration.Json
@@ -21,4 +20,5 @@ nuget Fable.Elmish.React
 nuget Fable.Elmish.Browser
 nuget Fable.Elmish.Debugger
 
+clitool Microsoft.DotNet.Watcher.Tools 2.0.0
 clitool dotnet-fable
