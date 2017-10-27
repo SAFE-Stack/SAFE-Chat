@@ -138,36 +138,35 @@ let private extractMessage = function
     |_ -> None
 
 let connectWebSocket (system: ActorSystem) (server: ServerActor) me : WebPart =
-    let materializer = system.Materializer()
+    fun ctx -> async {
+        let materializer = system.Materializer()
 
-    // let server know websocket has gone (see onCompleteMessage)
-    // FIXME not sure if it works at all
-    let monitor t = async {
-        let! _ = t
-        let! reply = server <? Disconnect (me)
-        return ()
-    }
+        // let server know websocket has gone (see onCompleteMessage)
+        // FIXME not sure if it works at all
+        let monitor t = async {
+            let! _ = t
+            let! reply = server <? Disconnect (me)
+            return ()
+        }
 
-    let sessionFlow = createUserSessionFlow<Uuid,Uuid> materializer
-    let socketFlow =
-        Flow.empty<WsMessage, Akka.NotUsed>
-        |> Flow.watchTermination (fun x t -> (monitor t) |> Async.Start; x)
-        |> Flow.map extractMessage
-        |> Flow.filter Option.isSome
-        |> Flow.map Option.get
-        |> Flow.viaMat sessionFlow Keep.right
-        |> Flow.map (fun (channel: Uuid, message) -> encodeChannelMessage (channel.ToString()) message)
+        let sessionFlow = createUserSessionFlow<Uuid,Uuid> materializer
+        let socketFlow =
+            Flow.empty<WsMessage, Akka.NotUsed>
+            |> Flow.watchTermination (fun x t -> (monitor t) |> Async.Start; x)
+            |> Flow.map extractMessage
+            |> Flow.filter Option.isSome
+            |> Flow.map Option.get
+            |> Flow.viaMat sessionFlow Keep.right
+            |> Flow.map (fun (channel: Uuid, message) -> encodeChannelMessage (channel.ToString()) message)
 
-    let materialize materializer (source: Source<WsMessage, Akka.NotUsed>) (sink: Sink<WsMessage, Akka.NotUsed>) =
-        let listenChannel =
-            source
-            |> Source.viaMat socketFlow Keep.right
-            |> Source.toMat sink Keep.left
-            |> Graph.run materializer
+        let materialize materializer (source: Source<WsMessage, Akka.NotUsed>) (sink: Sink<WsMessage, Akka.NotUsed>) =
+            let listenChannel =
+                source
+                |> Source.viaMat socketFlow Keep.right
+                |> Source.toMat sink Keep.left
+                |> Graph.run materializer
 
-        server <? Connect (me, listenChannel) |> Async.RunSynchronously |> ignore
+            server <? Connect (me, listenChannel) |> Async.RunSynchronously |> ignore
 
-    fun ctx ->
-        async {
-            return! handShake (handleWebsocketMessages system materialize) ctx
-        }    
+        return! handShake (handleWebsocketMessages system materialize) ctx
+    }    

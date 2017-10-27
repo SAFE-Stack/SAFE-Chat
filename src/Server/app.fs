@@ -131,12 +131,14 @@ module View =
             Text " You are now logged off."
         ]
 
+module Payloads =
+
+    type WhoPayload = {Id: string; UserId: string; Nickname: string; Channels: string list}
+
 module private Impl =
 
-    type WhoPayload = {Id: string; UserId: string; Nickname: string}
-
-    let toWho (u: UserSessionData) =
-        {Id = u.Id; Nickname = u.Nickname; UserId = (u.UserId.ToString())}
+    let toWho (u: UserSessionData) : Payloads.WhoPayload =
+        {Id = u.Id; Nickname = u.Nickname; UserId = (u.UserId.ToString()); Channels = []}
 
 
 let logger = Log.create "fschat"
@@ -166,6 +168,12 @@ let session f =
             | Some id, Some nick, Some (ParseUuid userId) ->
                 f (UserLoggedOn {Id = id; Nickname = nick; UserId = userId})
             | _ -> f NoSession)
+
+let jsonNoCache =
+    Writers.setHeader "Cache-Control" "no-cache, no-store, must-revalidate"
+    >=> Writers.setHeader "Pragma" "no-cache"
+    >=> Writers.setHeader "Expires" "0"
+    >=> Writers.setMimeType "application/json"
 
 let root: WebPart =
     choose [
@@ -205,12 +213,12 @@ let root: WebPart =
                         deauthenticate
                         >=> (OK <| Html.htmlToString View.loggedoff)
 
-                    pathStarts "/api" >=> 
+                    pathStarts "/api" >=> jsonNoCache >=>
                         match session with
                         | UserLoggedOn u ->
                             let (Started (actorSystem, server)) = AppState.server   // FIXME kinda session fn
                             choose [
-                                GET >=> path "/api/who" >=> (u |> Impl.toWho |> Json.toJson |> ok)
+                                GET >=> path "/api/who" >=> (u |> Impl.toWho |> Json.json |> OK)
                                 GET >=> path "/api/channels" >=> (ChatApi.listChannels server u.UserId)
                                 GET >=> pathScan "/api/channel/%s/info" (ChatApi.chanInfo server u.UserId)
                                 POST >=> pathScan "/api/channel/%s/join" (ChatApi.join server u.UserId)
