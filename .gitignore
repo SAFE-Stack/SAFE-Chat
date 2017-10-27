@@ -31,7 +31,7 @@ TestResult.*
 
 CHAT_DATA/
 
-public/bundle.js*
+**/public/bundle.js*
 
 # NuGet Packages Directory
 paket-files/
@@ -40,3 +40,4 @@ packages/
 # Node
 node_modules/
 project.lock.json
+

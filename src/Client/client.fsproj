@@ -5,12 +5,13 @@
   <ItemGroup>
     <!-- Global to the app -->
     <Compile Include="Global.fs" />
-    <!-- Info -->
+    <!-- UserInfo -->
     <Compile Include="UserInfo/Types.fs" />
     <Compile Include="UserInfo/State.fs" />
+    <!-- ChatData -->
+    <Compile Include="ChatData/Types.fs" />
+    <Compile Include="ChatData/State.fs" />
     <!-- Info -->
-    <Compile Include="Info/Types.fs" />
-    <Compile Include="Info/State.fs" />
     <Compile Include="Info/View.fs" />
     <!-- Counter -->
     <Compile Include="Counter/Types.fs" />

@@ -43,7 +43,7 @@ let handleWebsocketMessages (system: ActorSystem)
                 ws.send Opcode.Text (Encoding.UTF8.GetBytes(text) |> ByteSegment) true |!> ctx.Self
                 ignored()
             | Data bytes ->
-                ws.send Opcode.Binary (ByteSegment bytes) true |!> ctx.Self
+                ws.send Binary (ByteSegment bytes) true |!> ctx.Self
                 ignored()
             | Close ->
                 // PoisonPill.Instance |!> ctx.Self
@@ -57,7 +57,7 @@ let handleWebsocketMessages (system: ActorSystem)
     let sink: Sink<WsMessage, Akka.NotUsed> = Sink.ActorRef(untyped sinkActor, PoisonPill.Instance)
     materialize materializer inputSource sink
 
-    fun cx -> 
+    fun _ -> 
         socket { 
             let loop = ref true
             while !loop do
@@ -67,9 +67,8 @@ let handleWebsocketMessages (system: ActorSystem)
                 | (Opcode.Text, data, true) -> 
                     let str = Encoding.UTF8.GetString data
                     sourceActor <! Text str
-                    ()
-                | (Opcode.Ping, _, _) ->
-                    do! ws.send Opcode.Pong emptyData true
+                | (Ping, _, _) ->
+                    do! ws.send Pong emptyData true
                 | (Opcode.Close, _, _) ->
                     // this finalizes the Source
                     sourceActor <! Close

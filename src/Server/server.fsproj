@@ -7,7 +7,6 @@
   <ItemGroup>
     <Compile Include="Uuid.fs" />
     <Compile Include="ChannelFlow.fs" />
-    <Compile Include="SessionStore.fs" />
     <Compile Include="ChatServer.fs" />
     <Compile Include="Diag.fs" />
     <Compile Include="Json.fs" />
@@ -18,6 +17,5 @@
     <Compile Include="app.fs" />
     <Compile Include="Program.fs" />
   </ItemGroup>
-
   <Import Project="..\..\.paket\Paket.Restore.targets" />
 </Project>
