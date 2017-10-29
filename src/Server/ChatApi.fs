@@ -16,6 +16,7 @@ open ChatServer
 open SocketFlow
 
 module Payloads =
+
     type ChanUserInfo = {
         name: string; online: bool; isbot: bool; lastSeen: System.DateTime
     }
@@ -28,6 +29,11 @@ module Payloads =
     }
     type UserEventRec = {
         id: int; ts: System.DateTime; user: ChanUserInfo
+    }
+
+    type Hello = {
+        userId: string; nickname: string
+        channels: ChannelInfo list
     }
 
     type SocketMessage =
@@ -61,24 +67,52 @@ open Implementation
 
 type private ServerActor = IActorRef<ServerControlMessage>
 
-/// Lists all channels.
-let listChannels (server: ServerActor) me : WebPart =
-    fun ctx -> async {
+let private getChannelList (server: ServerActor) me =
+    async {
         let! reply = server <? List
         match reply with
         | Error e ->
-            return! BAD_REQUEST e ctx
+            return Result.Error "Failed to get channel list"
         | ChannelList channelList ->
             let! reply2 = server <? GetUser me
             match reply2 with
             | Error e ->
-                return! BAD_REQUEST e ctx
+                return Result.Error "Failed to get current user"
             | UserInfo me ->
                 let imIn chanId = me.channels |> List.exists(fun ch -> ch.id = chanId)
-                let result = channelList |> List.map (mapChannel imIn) |> Json.json
-                return! OK result ctx
-            | _ -> return! BAD_REQUEST "Unknown reply from server, expected user info" ctx
-        | _ -> return! BAD_REQUEST "Unknown reply from server" ctx
+                let result = channelList |> List.map (mapChannel imIn)
+                return Ok result
+            | _ -> return Result.Error "Unknown reply from server, expected user info"
+        | _ -> return Result.Error "Unknown reply from server"
+    }
+
+let hello (server: ServerActor) me : WebPart =
+    fun ctx -> async {
+        let! reply = getChannelList server me
+
+        match reply with
+        | Result.Error e ->
+            return! BAD_REQUEST e ctx
+
+        | Ok channelList ->
+            let! (UserInfo u) = server <? GetUser me
+            let reply: Payloads.Hello = {
+                nickname = u.nick; userId = (u.id.ToString())
+                channels = channelList
+                }
+
+            return! OK (Json.json reply) ctx
+    }
+
+/// Lists all channels.
+let listChannels (server: ServerActor) me : WebPart =
+    fun ctx -> async {
+        let! reply = getChannelList server me
+        match reply with
+        | Result.Error e ->
+            return! BAD_REQUEST e ctx
+        | Ok channelList ->
+            return! OK (Json.json channelList) ctx
     }
 
 /// Gets channel info by channel name

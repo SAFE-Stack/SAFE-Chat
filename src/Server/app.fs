@@ -17,11 +17,6 @@ open Akkling
 // ---------------------------------
 // Web app
 // ---------------------------------
-type AppState = | Off | Started of actorSystem: ActorSystem * server: IActorRef<ChatServer.ServerControlMessage>
-module internal AppState =
-
-    let mutable server = Off
-    let mutable me = Uuid.New()
 
 module Secrets =
 
@@ -65,11 +60,14 @@ module Secrets =
         )
         // |> dump "oauth configs"
 
+type ServerActor = IActorRef<ChatServer.ServerControlMessage>
+let mutable private appServerState = None
+
 let startChatServer () =
     let actorSystem = ActorSystem.Create("chatapp")
     let chatServer = ChatServer.startServer actorSystem
 
-    AppState.server <- Started (actorSystem, chatServer)
+    appServerState <- Some (actorSystem, chatServer)
 
     // TODO add diag channels and actors
     ()
@@ -80,7 +78,7 @@ type UserSessionData = {
     UserId: Uuid
 }
 
-type Session = NoSession | UserLoggedOn of UserSessionData
+type Session = NoSession | UserLoggedOn of UserSessionData * ActorSystem * ServerActor
 
 module View =
 
@@ -89,7 +87,7 @@ module View =
     let partUser (session : Session) = 
         div ["id", "part-user"] [
             match session with
-            | UserLoggedOn session ->
+            | UserLoggedOn (session,_,_) ->
                 yield Text (sprintf "Logged on as %s" session.Nickname)
                 yield a "/logoff" [] [Text "Log off"]
             | _ ->
@@ -131,16 +129,6 @@ module View =
             Text " You are now logged off."
         ]
 
-module Payloads =
-
-    type WhoPayload = {Id: string; UserId: string; Nickname: string; Channels: string list}
-
-module private Impl =
-
-    let toWho (u: UserSessionData) : Payloads.WhoPayload =
-        {Id = u.Id; Nickname = u.Nickname; UserId = (u.UserId.ToString()); Channels = []}
-
-
 let logger = Log.create "fschat"
 
 let returnPathOrHome = 
@@ -158,15 +146,15 @@ let sessionStore setF = context (fun x ->
 
 let (|ParseUuid|_|) = Uuid.TryParse
 
-let session f = 
+let session (f: Session -> WebPart) = 
     statefulForSession
     >=> context (fun x -> 
         match x |> HttpContext.state with
         | None -> f NoSession
         | Some state ->
-            match state.get "id", state.get "nick", state.get "uid" with
-            | Some id, Some nick, Some (ParseUuid userId) ->
-                f (UserLoggedOn {Id = id; Nickname = nick; UserId = userId})
+            match state.get "id", state.get "nick", state.get "uid", appServerState with
+            | Some id, Some nick, Some (ParseUuid userId), Some (actorSystem, server) ->
+                f (UserLoggedOn ({Id = id; Nickname = nick; UserId = userId}, actorSystem, server))
             | _ -> f NoSession)
 
 let jsonNoCache =
@@ -184,7 +172,7 @@ let root: WebPart =
             authorize authorizeRedirectUri Secrets.oauthConfigs
                 (fun loginData ->
                     // register user, obtain userid and store in session
-                    let (Started (actorsystem, server)) = AppState.server
+                    let (Some (actorsystem, server)) = appServerState
                     let userId = server |> ChatServer.registerNewUser loginData.Name [] |> Async.RunSynchronously // FIXME async
 
                     statefulForSession
@@ -215,15 +203,14 @@ let root: WebPart =
 
                     pathStarts "/api" >=> jsonNoCache >=>
                         match session with
-                        | UserLoggedOn u ->
-                            let (Started (actorSystem, server)) = AppState.server   // FIXME kinda session fn
+                        | UserLoggedOn (u, actorSys, server) ->
                             choose [
-                                GET >=> path "/api/who" >=> (u |> Impl.toWho |> Json.json |> OK)
+                                GET >=> path "/api/hello" >=> (ChatApi.hello server u.UserId)
                                 GET >=> path "/api/channels" >=> (ChatApi.listChannels server u.UserId)
                                 GET >=> pathScan "/api/channel/%s/info" (ChatApi.chanInfo server u.UserId)
                                 POST >=> pathScan "/api/channel/%s/join" (ChatApi.join server u.UserId)
                                 POST >=> pathScan "/api/channel/%s/leave" (ChatApi.leave server u.UserId)
-                                path "/api/channel/socket" >=> (ChatApi.connectWebSocket actorSystem server u.UserId)
+                                path "/api/channel/socket" >=> (ChatApi.connectWebSocket actorSys server u.UserId)
                             ]
                         | NoSession ->
                             BAD_REQUEST "Authorization required"
