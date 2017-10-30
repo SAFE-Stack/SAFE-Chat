@@ -28,8 +28,9 @@ type Chat =
     | ChatData of ChatData
 
 type Msg =
-    | Connected of UserData
-    | Join of chan: string  // by name
+    | Connected of UserData * ChannelData list
+    | Join of chanName: string  // by name
+    | Joined of chan: ChannelData  // by name
     | Leave of chanId: string
     | RecvMessage of chanId: string * Message
     | PostMessage of chanId: string * text: string

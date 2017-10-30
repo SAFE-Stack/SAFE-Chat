@@ -7,6 +7,7 @@ open Akkling.Streams
 open Akka.Streams.Dsl
 
 open Suave
+open Suave.Logging
 open Suave.Successful
 open Suave.RequestErrors
 open Suave.WebSocket
@@ -63,6 +64,8 @@ module private Implementation =
     let mapChannel isMine (chan: ChatServer.ChannelInfo) =
         {Payloads.ChannelInfo.id = chan.id.ToString(); name = chan.name; topic = chan.topic; userCount = chan.userCount; users = []; joined = isMine chan.id}
 
+    let logger = Log.create "chatapi"        
+
 open Implementation
 
 type private ServerActor = IActorRef<ServerControlMessage>
@@ -72,12 +75,12 @@ let private getChannelList (server: ServerActor) me =
         let! reply = server <? List
         match reply with
         | Error e ->
-            return Result.Error "Failed to get channel list"
+            return Result.Error (sprintf "Failed to get channel list: %s" e)
         | ChannelList channelList ->
             let! reply2 = server <? GetUser me
             match reply2 with
             | Error e ->
-                return Result.Error "Failed to get current user"
+                return Result.Error (sprintf "Failed to get user by id '%s': %s" (me.ToString()) e)
             | UserInfo me ->
                 let imIn chanId = me.channels |> List.exists(fun ch -> ch.id = chanId)
                 let result = channelList |> List.map (mapChannel imIn)
@@ -92,6 +95,9 @@ let hello (server: ServerActor) me : WebPart =
 
         match reply with
         | Result.Error e ->
+            logger.error (Message.eventX "Failed to get channel list. Reason: {reason}"
+                >> Message.setFieldValue "reason" e
+            )
             return! BAD_REQUEST e ctx
 
         | Ok channelList ->
@@ -148,8 +154,9 @@ let join (server: ServerActor) me chan : WebPart =
         match x with
         | Error e ->
             return! BAD_REQUEST e ctx
-        | _ ->
-            return! OK "" ctx
+        | ChannelInfo info ->
+            let response = info |> mapChannel (fun _ -> true)
+            return! OK (Json.json response) ctx
     }    
 
 let leave (server: ServerActor) me chanIdStr : WebPart =

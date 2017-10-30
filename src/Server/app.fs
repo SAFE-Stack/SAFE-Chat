@@ -174,6 +174,8 @@ let root: WebPart =
                     // register user, obtain userid and store in session
                     let (Some (actorsystem, server)) = appServerState
                     let userId = server |> ChatServer.registerNewUser loginData.Name [] |> Async.RunSynchronously // FIXME async
+                    logger.info (Message.eventX "User registered by id {userid}"
+                        >> Message.setFieldValue "userid" (userId.ToString()))
 
                     statefulForSession
                     >=> sessionStore (fun store ->

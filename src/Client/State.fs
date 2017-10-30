@@ -25,17 +25,17 @@ let urlUpdate (result: Option<Page>) model =
 let init result =
   let (counter, counterCmd) = Counter.State.init()
   let (home, homeCmd) = Home.State.init()
-  let (uinfo, uinfoCmd) = UserInfo.State.init()
+  let (chinfo, chinfoCmd) = ChatData.State.init()
   let (model, cmd) =
     urlUpdate result
       { currentPage = Home
         counter = counter
         home = home
-        userinfo = uinfo }
+        chat = chinfo }
   model, Cmd.batch [ cmd
                      Cmd.map CounterMsg counterCmd
                      Cmd.map HomeMsg homeCmd 
-                     Cmd.map UserInfoMsg uinfoCmd
+                     Cmd.map ChatDataMsg chinfoCmd
                      ]
 
 let update msg model =
@@ -46,6 +46,6 @@ let update msg model =
   | HomeMsg msg ->
       let (home, homeCmd) = Home.State.update msg model.home
       { model with home = home }, Cmd.map HomeMsg homeCmd
-  | UserInfoMsg msg ->
-      let (uinfo, uinfoCmd) = UserInfo.State.update msg model.userinfo
-      { model with userinfo = uinfo }, Cmd.map UserInfoMsg uinfoCmd
+  | ChatDataMsg msg ->
+      let (chinfo, chinfoCmd) = ChatData.State.update msg model.chat
+      { model with chat = chinfo }, Cmd.map ChatDataMsg chinfoCmd

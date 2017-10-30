@@ -253,7 +253,7 @@ module ServerApi =
                 match addChannel createChannel channelName state with
                 | Ok (newState, chan) ->
                     let ks = user.mat |> Option.map (fun m -> m chan.id <| createChannelFlow chan.channelActor userId)
-                    Ok (newState |> updateUser (addUserChan chan.id ks) userId)
+                    Ok (newState |> updateUser (addUserChan chan.id ks) userId, chan)
                 | Result.Error error -> Result.Error error)
 
     let leave userId chanId state =
@@ -276,7 +276,7 @@ open Helpers
 /// Starts IRC server actor.
 let startServer (system: ActorSystem) =
 
-    let behavior state (ctx: Actor<ServerControlMessage>) =
+    let rec behavior (state: ServerData) (ctx: Actor<ServerControlMessage>) : ServerControlMessage -> Effect<'a> =
         let passError errtext =
             ctx.Sender() <! Error errtext
             ignored state
@@ -284,10 +284,10 @@ let startServer (system: ActorSystem) =
             | Ok result -> ctx.Sender() <! result; ignored state
             | Result.Error errtext -> passError errtext
         let update = function
-            | Ok newState -> ignored newState
+            | Ok newState -> become (behavior newState ctx)
             | Result.Error errText -> passError errText
         let replyAndUpdate = function
-            | Ok (newState, reply) -> ctx.Sender() <! reply; ignored newState
+            | Ok (newState, reply) -> ctx.Sender() <! reply;  become (behavior newState ctx)
             | Result.Error errText -> passError errText
         let mapReply f = Result.map (fun (ns, r) -> ns, f r)
 
@@ -308,12 +308,16 @@ let startServer (system: ActorSystem) =
         | DropChannel chanId ->         update (state |> ServerApi.dropChannel chanId)
 
         | Register (nick, channels) ->  state |> ServerApi.register None nick channels |> mapReply UserInfo |> replyAndUpdate
-        
+
         | Unregister userId ->          update (state |> ServerApi.unregister userId)
         | Connect (userId, mat) ->      update (state |> ServerApi.connect userId mat)
         | Disconnect userId ->          update (state |> ServerApi.disconnect userId)
 
-        | Join (userId, channelName) -> update(state |> ServerApi.join userId channelName (createChannel system))
+        | Join (userId, channelName) ->
+            state |> ServerApi.join userId channelName (createChannel system)
+            |> mapReply (getChannelInfo0 >> ChannelInfo)
+            |> replyAndUpdate
+
         | Leave (userId, chanId) ->     update (state |> ServerApi.leave userId chanId)
 
         | GetUser userId ->

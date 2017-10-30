@@ -48,7 +48,7 @@ let root model dispatch =
         [ ClassName "navbar-bg" ]
         [ div
             [ ClassName "container" ]
-            [ Navbar.View.root model.userinfo ] ]
+            [ Navbar.View.root model.chat ] ]
       div
         [ ClassName "section" ]
         [ div

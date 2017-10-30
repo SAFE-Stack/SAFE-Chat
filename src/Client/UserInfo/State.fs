@@ -12,7 +12,7 @@ let getUserInfo () =
     promise {
         let props =
             [Credentials RequestCredentials.Include]
-        let! response = Fetch.fetchAs<WhoPayload> "/api/who" props
+        let! response = Fetch.fetchAs<WhoPayload> "/api/hello" props
         return {Nick = response.Nickname; UserId = response.UserId}
     }
 
