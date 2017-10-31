@@ -4,24 +4,19 @@
   </PropertyGroup>
   <ItemGroup>
     <!-- Global to the app -->
-    <Compile Include="Global.fs" />
-    <!-- UserInfo -->
-    <Compile Include="UserInfo/Types.fs" />
-    <Compile Include="UserInfo/State.fs" />
-    <!-- ChatData -->
+    <Compile Include="Router.fs" />
+
     <Compile Include="ChatData/Types.fs" />
     <Compile Include="ChatData/State.fs" />
-    <!-- Info -->
+
     <Compile Include="Info/View.fs" />
-    <!-- Counter -->
-    <Compile Include="Counter/Types.fs" />
-    <Compile Include="Counter/State.fs" />
-    <Compile Include="Counter/View.fs" />
-    <!-- Home -->
+
+    <Compile Include="Channel/View.fs" />
+
     <Compile Include="Home/Types.fs" />
     <Compile Include="Home/State.fs" />
     <Compile Include="Home/View.fs" />
-    <!-- Navbar -->
+
     <Compile Include="Navbar/View.fs" />
     <!-- App -->
     <Compile Include="Types.fs" />

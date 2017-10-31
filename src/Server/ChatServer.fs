@@ -99,7 +99,7 @@ module internal Helpers =
     let disconnect (user: UserData) =
         {user with
             mat = None
-            channels = user.channels |> Map.map (fun chanId ks ->
+            channels = user.channels |> Map.map (fun _ ks ->
                 match ks with
                 | Some killSwitch -> killSwitch.Shutdown()
                 | _ -> ()
@@ -287,7 +287,7 @@ let startServer (system: ActorSystem) =
             | Ok newState -> become (behavior newState ctx)
             | Result.Error errText -> passError errText
         let replyAndUpdate = function
-            | Ok (newState, reply) -> ctx.Sender() <! reply;  become (behavior newState ctx)
+            | Ok (newState, reply) -> ctx.Sender() <! reply; become (behavior newState ctx)
             | Result.Error errText -> passError errText
         let mapReply f = Result.map (fun (ns, r) -> ns, f r)
 

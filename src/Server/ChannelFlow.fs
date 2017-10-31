@@ -42,12 +42,13 @@ let createChannel<'User when 'User: comparison> (system: ActorSystem) name =
         parties |> Map.iter (fun _ (_, subscriber) -> subscriber <! msg)
     let allMembers = Map.toSeq >> Seq.map (snd >> fst)
 
-    let behavior state (ctx: Actor<'User ChannelMessage>): obj -> _ =
+    let rec behavior state (ctx: Actor<'User ChannelMessage>): obj -> _ =
+        let updateState newState = become (behavior newState ctx) in
         function
         | Terminated (t,_,_) ->
             match state.Parties |> Map.tryFindKey (fun _ (_, ref) -> ref = t) with
             | Some key ->
-                {state with Parties = state.Parties |> Map.remove key} |> ignored
+                {state with Parties = state.Parties |> Map.remove key} |> updateState
             | _ -> ignored state
 
         | :? ChannelMessage<'User> as channelEvent ->
@@ -58,23 +59,22 @@ let createChannel<'User when 'User: comparison> (system: ActorSystem) name =
                 do monitor ctx subscriber |> ignore
                 let parties = state.Parties |> Map.add user (user, subscriber)
                 do dispatch state.Parties <| Joined (ts, user, parties |> allMembers)
-                incId { state with Parties = parties}
+                incId { state with Parties = parties} |> updateState
 
             | ParticipantLeft user ->
                 let parties = state.Parties |> Map.remove user
                 do dispatch state.Parties <| Left (ts, user, parties |> allMembers)
-                incId { state with Parties = parties}
+                incId { state with Parties = parties} |> updateState
 
             | NewMessage (user, message) ->
                 if state.Parties |> Map.containsKey user then
                     do dispatch state.Parties <| ChatMessage (ts, user, message)
-                incId state
+                incId state |> updateState
 
             | ListUsers ->
                 let users = state.Parties |> Map.toList |> List.map fst
                 ctx.Sender() <! users
-                state
-            |> ignored
+                ignored state
 
         | _ -> unhandled()
 

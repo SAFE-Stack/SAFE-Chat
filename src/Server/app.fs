@@ -67,9 +67,9 @@ let startChatServer () =
     let actorSystem = ActorSystem.Create("chatapp")
     let chatServer = ChatServer.startServer actorSystem
 
-    appServerState <- Some (actorSystem, chatServer)
+    do Diag.createDiagChannel actorSystem chatServer "Demo"
 
-    // TODO add diag channels and actors
+    appServerState <- Some (actorSystem, chatServer)
     ()
 
 type UserSessionData = {
@@ -133,11 +133,10 @@ let logger = Log.create "fschat"
 
 let returnPathOrHome = 
     request (fun x -> 
-        let path = 
-            match (x.queryParam "returnPath") with
-            | Choice1Of2 path -> path
-            | _ -> "/"
-        FOUND path)
+        match x.queryParam "returnPath" with
+        | Choice1Of2 path -> path
+        | _ -> "/"
+        |> FOUND)
 
 let sessionStore setF = context (fun x ->
     match HttpContext.state x with
@@ -148,8 +147,8 @@ let (|ParseUuid|_|) = Uuid.TryParse
 
 let session (f: Session -> WebPart) = 
     statefulForSession
-    >=> context (fun x -> 
-        match x |> HttpContext.state with
+    >=> context (HttpContext.state >>
+        function
         | None -> f NoSession
         | Some state ->
             match state.get "id", state.get "nick", state.get "uid", appServerState with

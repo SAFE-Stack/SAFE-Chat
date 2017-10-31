@@ -2,50 +2,37 @@ module App.State
 
 open Elmish
 open Elmish.Browser.Navigation
-open Elmish.Browser.UrlParser
 open Fable.Import.Browser
-open Global
+open Router
 open Types
 
-let pageParser: Parser<Page->Page,Page> =
-  oneOf [
-    map About (s "about")
-    map Counter (s "counter")
-    map Home (s "home")
-  ]
-
-let urlUpdate (result: Option<Page>) model =
-  match result with
-  | None ->
-    console.error("Error parsing url")
-    model,Navigation.modifyUrl (toHash model.currentPage)
-  | Some page ->
-      { model with currentPage = page }, []
+let urlUpdate (result: Option<Route>) model =
+    match result with
+    | None ->
+        console.error("Error parsing url")
+        model,Navigation.modifyUrl  "#" // no matching route - go home
+        // model,Navigation.modifyUrl (toHash model.currentPage)
+    | Some route ->
+        { model with currentPage = route }, []
 
 let init result =
-  let (counter, counterCmd) = Counter.State.init()
-  let (home, homeCmd) = Home.State.init()
-  let (chinfo, chinfoCmd) = ChatData.State.init()
-  let (model, cmd) =
-    urlUpdate result
-      { currentPage = Home
-        counter = counter
-        home = home
-        chat = chinfo }
-  model, Cmd.batch [ cmd
-                     Cmd.map CounterMsg counterCmd
-                     Cmd.map HomeMsg homeCmd 
-                     Cmd.map ChatDataMsg chinfoCmd
-                     ]
+    let (home, homeCmd) = Home.State.init()
+    let (chinfo, chinfoCmd) = ChatData.State.init()
+    let (model, cmd) =
+      urlUpdate result
+        { currentPage = Home
+          home = home
+          chat = chinfo }
+    model, Cmd.batch [ cmd
+                       Cmd.map HomeMsg homeCmd 
+                       Cmd.map ChatDataMsg chinfoCmd
+                       ]
 
 let update msg model =
-  match msg with
-  | CounterMsg msg ->
-      let (counter, counterCmd) = Counter.State.update msg model.counter
-      { model with counter = counter }, Cmd.map CounterMsg counterCmd
-  | HomeMsg msg ->
-      let (home, homeCmd) = Home.State.update msg model.home
-      { model with home = home }, Cmd.map HomeMsg homeCmd
-  | ChatDataMsg msg ->
-      let (chinfo, chinfoCmd) = ChatData.State.update msg model.chat
-      { model with chat = chinfo }, Cmd.map ChatDataMsg chinfoCmd
+    match msg with
+    | HomeMsg msg ->
+        let (home, homeCmd) = Home.State.update msg model.home
+        { model with home = home }, Cmd.map HomeMsg homeCmd
+    | ChatDataMsg msg ->
+        let (chinfo, chinfoCmd) = ChatData.State.update msg model.chat
+        { model with chat = chinfo }, Cmd.map ChatDataMsg chinfoCmd

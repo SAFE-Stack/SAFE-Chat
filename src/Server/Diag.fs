@@ -10,21 +10,21 @@ open ChatServer
 let createEchoActor (system: ActorSystem) botUserId =
     let getUserName uid = async {return uid.ToString()}    // FIXME display user nickname
 
-    let botHandler state (ctx: Actor<_>) =
+    let botHandler _ (ctx: Actor<_>) =
         function
         | ChatMessage (_, (userId: Uuid), Message message) ->
             do ctx.Sender() <!| async {
                 let! userName = getUserName userId
                 let reply = sprintf "\"%s\" said: %s" userName message
-                return ChannelMessage.NewMessage (botUserId, Message reply)
+                return NewMessage (botUserId, Message reply)
             }
             ()
-             // FIXME do not let bots reply to other bots when user.Person <> Person.Anonymous
+            // FIXME do not let bots reply to other bots when user.Person <> Person.Anonymous
         | Joined (_, userId, _) ->
             do ctx.Sender() <!| async {
                 let! userName = getUserName userId
                 let reply = sprintf "Welcome aboard, \"%s\"!" userName
-                return ChannelMessage.NewMessage (botUserId, Message reply)
+                return NewMessage (botUserId, Message reply)
             }
         | _ -> ()
         >> ignored
