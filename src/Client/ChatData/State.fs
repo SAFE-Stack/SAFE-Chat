@@ -25,7 +25,7 @@ module Payloads =
 module Conversions =
 
     let mapChannel (ch: Payloads.ChannelInfo): ChannelData =
-        {Id = ch.id; Name = ch.name; Topic = ch.topic; Users = []; Messages = []}
+        {Id = ch.id; Name = ch.name; Topic = ch.topic; Users = []; Messages = []; Joined = ch.joined}
 
 let getUserInfo () =
     promise {
@@ -63,6 +63,7 @@ let update msg state =
         ChatData data, []
     | Join chanName ->
         // FIXME verify already joined
+        printfn "joining %s" chanName
         state, joinChannelCmd chanName
     | Joined chan ->
         let (ChatData state) = state

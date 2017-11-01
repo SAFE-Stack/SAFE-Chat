@@ -67,7 +67,9 @@ let startChatServer () =
     let actorSystem = ActorSystem.Create("chatapp")
     let chatServer = ChatServer.startServer actorSystem
 
-    do Diag.createDiagChannel actorSystem chatServer "Demo"
+    do Diag.createDiagChannel actorSystem chatServer ("Demo", "Channel for testing purposes. Notice the bots are always ready to keep conversation.")
+    chatServer <! ChatServer.ServerControlMessage.NewChannel ("Test", "test channel #1")
+    chatServer <! ChatServer.ServerControlMessage.NewChannel ("Weather", "join channel to get updated")
 
     appServerState <- Some (actorSystem, chatServer)
     ()

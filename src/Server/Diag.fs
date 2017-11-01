@@ -31,13 +31,13 @@ let createEchoActor (system: ActorSystem) botUserId =
     in
     props <| (actorOf2 <| botHandler ()) |> spawn system "echobot"
 
-let createDiagChannel (system: ActorSystem) (server: IActorRef<_>) channelName =
+let createDiagChannel (system: ActorSystem) (server: IActorRef<_>) (channelName, topic) =
     let botUserId = {Uuid.i1 = 10000L; i2 = 1}
     let bot = createEchoActor system botUserId
 
     server <! UpdateState (fun state ->
         state
-        |> ServerApi.addChannel (createChannel system) channelName
+        |> ServerApi.addChannel (createChannel system) channelName topic
         |> Result.map (
             fun (state, chan) ->
                 chan.channelActor <! (NewParticipant (botUserId, bot))

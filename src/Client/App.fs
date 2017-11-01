@@ -27,19 +27,19 @@ let menuItem label page currentPage =
 let menu (chatData: Chat) currentPage =
 
     let channels = chatData |> function
-      | NotConnected -> 
+        | NotConnected -> [ p [] [str "connecting..."] ]
+        | ChatData data ->
         [
-            p [] [str "connecting..."]
-        ]
-      | ChatData data ->
-        [
-          if data.Channels |> Map.isEmpty |> not then
-              yield p [ClassName "menu-label"] [str "My Channels"]
-              for (_, ch) in data.Channels |> Map.toSeq do
-                yield menuItem ch.Name (Channel ch.Id) currentPage
+            if data.Channels |> Map.exists(fun _ v -> v.Joined) |> not then
+                yield p [ClassName "menu-label"] [str "My Channels"]
+                for (_, ch) in data.Channels |> Map.toSeq do
+                    if ch.Joined then
+                        yield menuItem ch.Name (Channel ch.Id) currentPage
 
-          yield p [ClassName "menu-label"] [str "Join channels"]
-          yield menuItem "Demo" (Channel "demo") currentPage
+            yield p [ClassName "menu-label"] [str "Join channels"]
+            for (_, ch) in data.Channels |> Map.toSeq do
+                if not ch.Joined then
+                    yield menuItem ch.Name (JoinChannel ch.Id) currentPage
         ]
     
     aside

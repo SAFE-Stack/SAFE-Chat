@@ -39,13 +39,13 @@ module ServerState =
 
 type ServerControlMessage =
     | List                                              // returns ChannelList
-    | NewChannel of name: string                        // returns ChannelInfo
+    | NewChannel of name: string * topic: string        // returns ChannelInfo
     | SetTopic of chan: Uuid * topic: string
     // RenameChan
     | FindChannel of name: string                       // return ChannelInfo
     | DropChannel of Uuid: Uuid
     // user specific commands
-    | Register of nick: string * channels: Uuid list   // return UserInfo
+    | Register of nick: string * channels: Uuid list    // return UserInfo
     | Unregister of user: Uuid
     | Connect of user: Uuid * mat: MaterializeFlow
     | Disconnect of user: Uuid
@@ -151,14 +151,14 @@ module ServerApi =
         }
 
     /// Creates a new channel or returns existing if channel already exists
-    let addChannel createChannel name (state: ServerData) =
+    let addChannel createChannel name topic (state: ServerData) =
         match state.channels |> List.tryFind (byChanName name) with
         | Some chan ->
             Ok (state, chan)
         | _ when isValidName name ->
             let channelActor = createChannel name
             let newChan = {
-                id = Uuid.New(); name = name; topic = ""; channelActor = channelActor }
+                id = Uuid.New(); name = name; topic = topic; channelActor = channelActor }
             Ok ({state with channels = newChan::state.channels}, newChan)
         | _ ->
             Result.Error "Invalid channel name"
@@ -250,7 +250,7 @@ module ServerApi =
             | user when user |> alreadyJoined state.channels channelName ->
                 Result.Error "User already joined this channel"
             | user ->
-                match addChannel createChannel channelName state with
+                match addChannel createChannel channelName "/// set topic for the new channel" state with
                 | Ok (newState, chan) ->
                     let ks = user.mat |> Option.map (fun m -> m chan.id <| createChannelFlow chan.channelActor userId)
                     Ok (newState |> updateUser (addUserChan chan.id ks) userId, chan)
@@ -276,7 +276,7 @@ open Helpers
 /// Starts IRC server actor.
 let startServer (system: ActorSystem) =
 
-    let rec behavior (state: ServerData) (ctx: Actor<ServerControlMessage>) : ServerControlMessage -> Effect<'a> =
+    let rec behavior (state: ServerData) (ctx: Actor<ServerControlMessage>) =
         let passError errtext =
             ctx.Sender() <! Error errtext
             ignored state
@@ -296,8 +296,8 @@ let startServer (system: ActorSystem) =
             ctx.Sender() <!| (state |> ServerApi.listChannels |> Async.map ChannelList)
             ignored state
 
-        | NewChannel name ->
-            state |> ServerApi.addChannel (createChannel system) name
+        | NewChannel (name, topic) ->
+            state |> ServerApi.addChannel (createChannel system) name topic
             |> mapReply (getChannelInfo0 >> ChannelInfo)
             |> replyAndUpdate
 
@@ -327,7 +327,7 @@ let startServer (system: ActorSystem) =
         | ReadState ->
             ctx.Sender() <! state; ignored state
         | UpdateState updater ->
-            state |> updater |> ignored
+            become (behavior (updater state) ctx)
 
     in
     props <| actorOf2 (behavior { channels = []; users = [] }) |> (spawn system "ircserver")

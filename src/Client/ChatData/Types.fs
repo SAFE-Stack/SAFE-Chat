@@ -15,6 +15,7 @@ type ChannelData = {
     Topic: string
     Users: UserData list
     Messages: Message list
+    Joined: bool
 }
 
 type ChatData = {

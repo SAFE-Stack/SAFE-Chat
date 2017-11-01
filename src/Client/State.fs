@@ -10,8 +10,10 @@ let urlUpdate (result: Option<Route>) model =
     match result with
     | None ->
         console.error("Error parsing url")
-        model,Navigation.modifyUrl  "#" // no matching route - go home
+        model, Navigation.modifyUrl  "#" // no matching route - go home
         // model,Navigation.modifyUrl (toHash model.currentPage)
+    | Some (JoinChannel chanId) ->
+        model, (ChatData.Types.Msg.Join chanId |> ChatDataMsg |> Cmd.ofMsg)
     | Some route ->
         { model with currentPage = route }, []
 
