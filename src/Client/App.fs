@@ -16,12 +16,17 @@ open Fable.Helpers.React
 open Fable.Helpers.React.Props
 
 let menuItem label page currentPage =
-    li
-        [ ]
-        [ a
+    li [] [a
             [ classList [ "is-active", page = currentPage ]
               Href (toHash page) ]
             [ str label ] ]
+
+let menuJoinChannelItem (ch: ChannelData) =
+    li [] [a
+            [ Href (JoinChannel ch.Id |> toHash) ]
+            [ str ch.Name
+              div [ ClassName "usercount" ] [str <| string ch.UserCount] ]
+            ]
 
 // TODO move to its own component/view
 let menu (chatData: Chat) currentPage =
@@ -30,7 +35,7 @@ let menu (chatData: Chat) currentPage =
         | NotConnected -> [ p [] [str "connecting..."] ]
         | ChatData data ->
         [
-            if data.Channels |> Map.exists(fun _ v -> v.Joined) |> not then
+            if data.Channels |> Map.exists(fun _ v -> v.Joined) then
                 yield p [ClassName "menu-label"] [str "My Channels"]
                 for (_, ch) in data.Channels |> Map.toSeq do
                     if ch.Joined then
@@ -39,7 +44,7 @@ let menu (chatData: Chat) currentPage =
             yield p [ClassName "menu-label"] [str "Join channels"]
             for (_, ch) in data.Channels |> Map.toSeq do
                 if not ch.Joined then
-                    yield menuItem ch.Name (JoinChannel ch.Id) currentPage
+                    yield menuJoinChannelItem ch
         ]
     
     aside
@@ -64,7 +69,7 @@ let root model dispatch =
         | Channel chan ->
             match model.chat with
             | ChatData chatdata when chatdata.Channels |> Map.containsKey chan
-              -> Channel.View.root chatdata.Channels.[chan]
+              -> Channel.View.root chatdata.Channels.[chan] (ChatDataMsg >> dispatch)
             | _ -> div [] [str "bad channel route" ]
 
     div

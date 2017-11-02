@@ -11,17 +11,15 @@ let simpleButton txt action dispatch =
         [ ClassName "column is-narrow" ]
         [ a
             [ ClassName "button"
+              Style [Float "right"]
               OnClick (fun _ -> action |> dispatch) ]
             [ str txt ] ]
 
-let root (model: ChannelData) =
+let root (model: ChannelData) dispatch =
     div
         [ ClassName "content" ]
-            [   h1 [] [str "Channel data"]
-                p []
-                    [ 
-                        b [] [str model.Name]
-                        p [] [str model.Topic]
-                    ] 
+            [   h1 [] [ str model.Name ]
+                simpleButton "Leave" (Leave model.Id) dispatch
+                p [] [str model.Topic]
                 p [] [str "TBD"]
             ]

@@ -148,9 +148,9 @@ let chanInfo (server: ServerActor) me (chanName: string) : WebPart =
             return! OK (chanInfo |> Json.json) ctx
     }
 
-let join (server: ServerActor) me chan : WebPart =
+let joinOrCreate (server: ServerActor) me channelName : WebPart =
     fun ctx -> async {
-        let! x = server <? Join (me, chan)
+        let! x = server <? JoinOrCreate (me, channelName)
         match x with
         | Error e ->
             return! BAD_REQUEST e ctx
@@ -158,6 +158,20 @@ let join (server: ServerActor) me chan : WebPart =
             let response = info |> mapChannel (fun _ -> true)
             return! OK (Json.json response) ctx
     }    
+
+let join (server: ServerActor) me chanIdStr : WebPart =
+    Uuid.TryParse chanIdStr |> function
+    | None -> BAD_REQUEST "invalid chanid"
+    | Some chanId ->
+        fun ctx -> async {
+            let! x = server <? Join (me, chanId)
+            match x with
+            | Error e ->
+                return! BAD_REQUEST e ctx
+            | ChannelInfo info ->
+                let response = info |> mapChannel (fun _ -> true)
+                return! OK (Json.json response) ctx
+        }    
 
 let leave (server: ServerActor) me chanIdStr : WebPart =
     fun ctx -> async {

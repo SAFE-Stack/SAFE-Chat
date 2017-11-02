@@ -25,23 +25,28 @@ module Payloads =
 module Conversions =
 
     let mapChannel (ch: Payloads.ChannelInfo): ChannelData =
-        {Id = ch.id; Name = ch.name; Topic = ch.topic; Users = []; Messages = []; Joined = ch.joined}
+        {Id = ch.id; Name = ch.name; Topic = ch.topic; Users = UserCount ch.userCount; Messages = []; Joined = ch.joined}
 
 let getUserInfo () =
     promise {
-        let props =
-            [Credentials RequestCredentials.Include]
+        let props = [Method HttpMethod.POST; Credentials RequestCredentials.Include]
         let! response = Fetch.fetchAs<Payloads.Hello> "/api/hello" props
         let channels = response.channels |> List.map Conversions.mapChannel
         return {Nick = response.nickname; UserId = response.userId}, channels
     }
 
-let joinChannel chanName =
+let joinChannel chanId =
     promise {
-        let props =
-            [Credentials RequestCredentials.Include]
-        let! response = Fetch.fetchAs<Payloads.ChannelInfo> (sprintf "/api/%s/join" chanName) props
+        let props = [Method HttpMethod.POST; Credentials RequestCredentials.Include]
+        let! response = Fetch.fetchAs<Payloads.ChannelInfo> (sprintf "/api/channel/%s/join" chanId) props
         return response |> Conversions.mapChannel
+    }
+
+let leaveChannel chanId =
+    promise {
+        let props = [Method HttpMethod.POST; Credentials RequestCredentials.Include]
+        let! response = Fetch.fetchAs<Payloads.ChannelInfo> (sprintf "/api/channel/%s/leave" chanId) props
+        return chanId
     }
 
 let loadUserInfoCmd = 
@@ -49,25 +54,35 @@ let loadUserInfoCmd =
 
 let joinChannelCmd chan = 
     Cmd.ofPromise joinChannel chan Joined FetchError
+
+let leaveChannelCmd chan = Cmd.ofPromise leaveChannel chan Left FetchError
     
 let init () : Chat * Cmd<Msg> =
   NotConnected, loadUserInfoCmd
 
 let update msg state =
     match msg with
+    | Nop -> state, []
     | Connected (me, channels) ->
         let data = {
             Me = me
             Channels = channels |> List.map (fun ch -> ch.Id, ch) |> Map.ofList
             Users = Map.empty}
         ChatData data, []
-    | Join chanName ->
-        // FIXME verify already joined
-        printfn "joining %s" chanName
-        state, joinChannelCmd chanName
+    | Join chanId ->
+        state, joinChannelCmd chanId
     | Joined chan ->
         let (ChatData state) = state
         ChatData {state with Channels = state.Channels |> Map.add chan.Id chan}, []
+    | Leave chanId ->
+        state, leaveChannelCmd chanId
+    
+    | Left chanId ->
+        let (ChatData state) = state
+        let updateChannel id f =
+            Map.map (fun k v -> if k = id then f v else v)
+        ChatData {state with Channels = state.Channels |> updateChannel chanId (fun ch -> {ch with Joined = false})}, []
+
 (*
     | Reset ->        NotLoggedIn, []
     | FetchError x -> Error x, []

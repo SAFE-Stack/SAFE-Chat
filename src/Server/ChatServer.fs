@@ -49,7 +49,8 @@ type ServerControlMessage =
     | Unregister of user: Uuid
     | Connect of user: Uuid * mat: MaterializeFlow
     | Disconnect of user: Uuid
-    | Join of user: Uuid * channelName: string
+    | JoinOrCreate of user: Uuid * channelName: string
+    | Join of user: Uuid * channelId: Uuid
     // | Nick of user: Uuid * newNick: string
     | Leave of user: Uuid * chanId: Uuid
     | GetUser of user: Uuid                             // returns UserInfo
@@ -106,8 +107,8 @@ module internal Helpers =
                 None)
         }
 
-    let alreadyJoined channels channelName (u: UserData) =
-        channels |> List.tryFind (byChanName channelName)
+    let alreadyJoined channels selectChan (u: UserData) =
+        channels |> List.tryFind selectChan
         |> function
         | Some ch when u.channels |> Map.containsKey ch.id -> true
         | _ -> false
@@ -196,11 +197,9 @@ module ServerApi =
         | _ -> Result.Error "Channel not found"
 
     let private userOp userId state =
-        match state.users |> List.tryFind (fun u -> u.id = userId) with
-        | None ->
-            Result.Error "User with such id not found"
-        | Some user ->
-            Ok user
+        state.users |> List.tryFind (byUserId userId) |> function
+        | None      -> Result.Error "User with such id not found"
+        | Some user -> Ok user
 
     // Turns user to an "online" mode, and user starts receiving messages from all channels he's subscribed
     let connect userId (mat: MaterializeFlow) state =
@@ -236,7 +235,7 @@ module ServerApi =
 
     let disconnect userId state =
         userOp userId state
-        |> Result.map (fun _ -> state |> updateUser Helpers.disconnect userId)
+        |> Result.map (fun _ -> state |> updateUser disconnect userId)
 
     // User leaves the chat server
     let unregister userId state =
@@ -244,10 +243,10 @@ module ServerApi =
         |> Result.map (fun _ ->
             state |> updateUser Helpers.disconnect userId |> removeUser (byUserId userId))
 
-    let join userId channelName createChannel state =
+    let joinOrCreate userId channelName createChannel state =
         userOp userId state
         |> Result.bind(function
-            | user when user |> alreadyJoined state.channels channelName ->
+            | user when user |> alreadyJoined state.channels (byChanName channelName) ->
                 Result.Error "User already joined this channel"
             | user ->
                 match addChannel createChannel channelName "/// set topic for the new channel" state with
@@ -255,6 +254,18 @@ module ServerApi =
                     let ks = user.mat |> Option.map (fun m -> m chan.id <| createChannelFlow chan.channelActor userId)
                     Ok (newState |> updateUser (addUserChan chan.id ks) userId, chan)
                 | Result.Error error -> Result.Error error)
+
+    let join userId channelId state =
+        userOp userId state
+        |> Result.bind(function
+            | user when user |> alreadyJoined state.channels (byChanId channelId) ->
+                Result.Error "User already joined this channel"
+            | user ->
+                state.channels |> List.tryFind (byChanId channelId) |> function
+                | Some chan ->
+                    let ks = user.mat |> Option.map (fun m -> m chan.id <| createChannelFlow chan.channelActor userId)
+                    Ok (state |> updateUser (addUserChan chan.id ks) userId, chan)
+                | _ -> Result.Error "Channel not found")
 
     let leave userId chanId state =
         userOp userId state
@@ -313,8 +324,13 @@ let startServer (system: ActorSystem) =
         | Connect (userId, mat) ->      update (state |> ServerApi.connect userId mat)
         | Disconnect userId ->          update (state |> ServerApi.disconnect userId)
 
-        | Join (userId, channelName) ->
-            state |> ServerApi.join userId channelName (createChannel system)
+        | JoinOrCreate (userId, channelName) ->
+            state |> ServerApi.joinOrCreate userId channelName (createChannel system)
+            |> mapReply (getChannelInfo0 >> ChannelInfo)
+            |> replyAndUpdate
+
+        | Join (userId, channelId) ->
+            state |> ServerApi.join userId channelId
             |> mapReply (getChannelInfo0 >> ChannelInfo)
             |> replyAndUpdate
 

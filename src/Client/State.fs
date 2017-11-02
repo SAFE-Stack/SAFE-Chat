@@ -13,7 +13,9 @@ let urlUpdate (result: Option<Route>) model =
         model, Navigation.modifyUrl  "#" // no matching route - go home
         // model,Navigation.modifyUrl (toHash model.currentPage)
     | Some (JoinChannel chanId) ->
-        model, (ChatData.Types.Msg.Join chanId |> ChatDataMsg |> Cmd.ofMsg)
+        model, Cmd.batch
+            [ ChatData.Types.Msg.Join chanId |> ChatDataMsg |> Cmd.ofMsg
+              Navigation.modifyUrl  "#"]
     | Some route ->
         { model with currentPage = route }, []
 

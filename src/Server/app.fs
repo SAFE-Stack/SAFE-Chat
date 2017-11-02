@@ -190,37 +190,37 @@ let root: WebPart =
                 (fun error -> OK <| sprintf "Authorization failed because of `%s`" error.Message)
             )
 
-        GET >=>
-            session (fun session ->
-                choose [
-                    path "/" >=> (
-                        match session with
-                        | NoSession -> found "/logon"
-                        | _ -> Files.browseFileHome "index.html"
-                        )
-                    path "/logon" >=>
-                        (OK <| (View.index session |> Html.htmlToString))  // FIXME rename index to login
-                    path "/logoff" >=>
-                        deauthenticate
-                        >=> (OK <| Html.htmlToString View.loggedoff)
+        session (fun session ->
+            choose [
+                GET >=> path "/" >=> (
+                    match session with
+                    | NoSession -> found "/logon"
+                    | _ -> Files.browseFileHome "index.html"
+                    )
+                GET >=> path "/logon" >=>
+                    (OK <| (View.index session |> Html.htmlToString))  // FIXME rename index to login
+                GET >=> path "/logoff" >=>
+                    deauthenticate
+                    >=> (OK <| Html.htmlToString View.loggedoff)
 
-                    pathStarts "/api" >=> jsonNoCache >=>
-                        match session with
-                        | UserLoggedOn (u, actorSys, server) ->
-                            choose [
-                                GET >=> path "/api/hello" >=> (ChatApi.hello server u.UserId)
-                                GET >=> path "/api/channels" >=> (ChatApi.listChannels server u.UserId)
-                                GET >=> pathScan "/api/channel/%s/info" (ChatApi.chanInfo server u.UserId)
-                                POST >=> pathScan "/api/channel/%s/join" (ChatApi.join server u.UserId)
-                                POST >=> pathScan "/api/channel/%s/leave" (ChatApi.leave server u.UserId)
-                                path "/api/channel/socket" >=> (ChatApi.connectWebSocket actorSys server u.UserId)
-                            ]
-                        | NoSession ->
-                            BAD_REQUEST "Authorization required"
+                pathStarts "/api" >=> jsonNoCache >=>
+                    match session with
+                    | UserLoggedOn (u, actorSys, server) ->
+                        choose [
+                            POST >=> path "/api/hello" >=> (ChatApi.hello server u.UserId)
+                            GET  >=> path "/api/channels" >=> (ChatApi.listChannels server u.UserId)
+                            GET  >=> pathScan "/api/channel/%s/info" (ChatApi.chanInfo server u.UserId)
+                            POST >=> pathScan "/api/channel/%s/join" (ChatApi.join server u.UserId)
+                            POST >=> pathScan "/api/channel/%s/joincreate" (ChatApi.joinOrCreate server u.UserId)
+                            POST >=> pathScan "/api/channel/%s/leave" (ChatApi.leave server u.UserId)
+                            path "/api/channel/socket" >=> (ChatApi.connectWebSocket actorSys server u.UserId)
+                        ]
+                    | NoSession ->
+                        BAD_REQUEST "Authorization required"
 
-                    Files.browseHome                            
-                    ]
-            )
+                Files.browseHome                            
+                ]
+        )
 
         NOT_FOUND "Not Found"
     ]
