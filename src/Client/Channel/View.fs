@@ -1,6 +1,5 @@
 module Channel.View
 
-open Fable.Core
 open Fable.Helpers.React
 open Fable.Helpers.React.Props
 

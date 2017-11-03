@@ -59,6 +59,7 @@ type ServerControlMessage =
     | ReadState
 
 type ServerReplyMessage =
+    | Done
     | ChannelList of ChannelInfo list
     | ChannelInfo of ChannelInfo
     | UserInfo of UserInfo
@@ -295,7 +296,7 @@ let startServer (system: ActorSystem) =
             | Ok result -> ctx.Sender() <! result; ignored state
             | Result.Error errtext -> passError errtext
         let update = function
-            | Ok newState -> become (behavior newState ctx)
+            | Ok newState -> ctx.Sender() <! Done; become (behavior newState ctx)
             | Result.Error errText -> passError errText
         let replyAndUpdate = function
             | Ok (newState, reply) -> ctx.Sender() <! reply; become (behavior newState ctx)

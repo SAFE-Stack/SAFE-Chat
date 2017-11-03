@@ -174,15 +174,15 @@ let join (server: ServerActor) me chanIdStr : WebPart =
         }    
 
 let leave (server: ServerActor) me chanIdStr : WebPart =
-    fun ctx -> async {
-        let (Some chanId) = Uuid.TryParse(chanIdStr)    // FIXME, let it understand both id and name
-        let! x = server <? Leave (me, chanId)
-        match x with
-        | Error e ->
-            return! BAD_REQUEST e ctx
-        | _ ->
-            return! OK "" ctx
-    }    
+    match Uuid.TryParse chanIdStr with
+    | None -> BAD_REQUEST "channel not found"
+    | Some chanId ->
+        fun ctx -> async {
+            let! result = server <? Leave (me, chanId)
+            match result with
+            | Error e -> return! BAD_REQUEST e ctx
+            | _ ->       return! OK "" ctx
+        }    
 
 // TODO need a socket protocol type
 

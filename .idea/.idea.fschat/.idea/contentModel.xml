@@ -6,6 +6,33 @@
       <e p="packages" t="ExcludeRecursive" />
       <e p="script.fsx" t="Include" />
       <e p="Solution Items" t="Include" />
+      <e p="src\Client" t="IncludeRecursive">
+        <e p="app.fs" t="Include" />
+        <e p="bin" t="ExcludeRecursive" />
+        <e p="Channel" t="Include">
+          <e p="View.fs" t="Include" />
+        </e>
+        <e p="ChatData" t="Include">
+          <e p="State.fs" t="Include" />
+          <e p="Types.fs" t="Include" />
+        </e>
+        <e p="client.fsproj" t="IncludeRecursive" />
+        <e p="Home" t="Include">
+          <e p="State.fs" t="Include" />
+          <e p="Types.fs" t="Include" />
+          <e p="View.fs" t="Include" />
+        </e>
+        <e p="Info" t="Include">
+          <e p="View.fs" t="Include" />
+        </e>
+        <e p="Navbar" t="Include">
+          <e p="View.fs" t="Include" />
+        </e>
+        <e p="obj" t="ExcludeRecursive" />
+        <e p="Router.fs" t="Include" />
+        <e p="State.fs" t="Include" />
+        <e p="Types.fs" t="Include" />
+      </e>
       <e p="src\Server" t="IncludeRecursive">
         <e p="app.fs" t="Include" />
         <e p="bin" t="ExcludeRecursive" />

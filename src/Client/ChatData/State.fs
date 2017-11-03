@@ -1,9 +1,11 @@
 module ChatData.State
 
 open Elmish
+open Elmish.Browser.Navigation
 open Fable.PowerPack
 open Fable.PowerPack.Fetch.Fetch_types
 
+open Router
 open Types
 
 module Payloads =
@@ -44,8 +46,8 @@ let joinChannel chanId =
 
 let leaveChannel chanId =
     promise {
-        let props = [Method HttpMethod.POST; Credentials RequestCredentials.Include]
-        let! response = Fetch.fetchAs<Payloads.ChannelInfo> (sprintf "/api/channel/%s/leave" chanId) props
+        let props = [Credentials RequestCredentials.Include]
+        let! _ = Fetch.postRecord (sprintf "/api/channel/%s/leave" chanId) () props
         return chanId
     }
 
@@ -73,11 +75,13 @@ let update msg state =
         state, joinChannelCmd chanId
     | Joined chan ->
         let (ChatData state) = state
-        ChatData {state with Channels = state.Channels |> Map.add chan.Id chan}, []
+        ChatData {state with Channels = state.Channels |> Map.add chan.Id chan}, Navigation.newUrl  <| toHash (Channel chan.Id)
     | Leave chanId ->
-        state, leaveChannelCmd chanId
+        state, Cmd.batch [ leaveChannelCmd chanId
+                           Navigation.newUrl  <| toHash Home]
     
     | Left chanId ->
+        printfn "Left %s" chanId
         let (ChatData state) = state
         let updateChannel id f =
             Map.map (fun k v -> if k = id then f v else v)
