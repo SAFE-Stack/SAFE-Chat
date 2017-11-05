@@ -24,41 +24,74 @@ let menuItem label page currentPage =
 let menuJoinChannelItem (ch: ChannelData) =
     li [] [a
             [ Href (JoinChannel ch.Id |> toHash) ]
-            [ str ch.Name
-              div [ ClassName "usercount" ] [str <| string ch.UserCount] ]
+            [ div [ClassName "control has-icons-right"]
+                [ i [ClassName "fa fa-plus"] []
+                  str " "; str ch.Name
+                  span [ ClassName "icon tag is-info is-right" ] [str <| string ch.UserCount] ]
+                ]
             ]
 
 // TODO move to its own component/view
-let menu (chatData: Chat) currentPage =
+let menu (chatData: Chat) currentPage dispatch =
 
-    let channels = chatData |> function
-        | NotConnected -> [ p [] [str "connecting..."] ]
-        | ChatData data ->
-        [
-            if data.Channels |> Map.exists(fun _ v -> v.Joined) then
-                yield p [ClassName "menu-label"] [str "My Channels"]
-                for (_, ch) in data.Channels |> Map.toSeq do
-                    if ch.Joined then
-                        yield menuItem ch.Name (Channel ch.Id) currentPage
-
-            yield p [ClassName "menu-label"] [str "Join channels"]
-            for (_, ch) in data.Channels |> Map.toSeq do
-                if not ch.Joined then
-                    yield menuJoinChannelItem ch
-        ]
+    let divCtl ctl = div [ClassName "control"] [ctl]
     
-    aside
+    match chatData with
+    | NotConnected ->
+      aside
         [ ClassName "menu" ]
         [ p
             [ ClassName "menu-label" ]
             [ str "General" ]
           ul
             [ ClassName "menu-list" ]
-            [ yield menuItem "Home" Home currentPage
-              yield menuItem "About" Route.About currentPage
-              yield hr []
-              yield! channels
-              ] ]
+            [ menuItem "Home" Home currentPage
+              menuItem "About" Route.About currentPage
+              hr []
+              p [] [str "connecting..."] ]
+        ]
+    | ChatData chat ->
+        aside
+            [ ClassName "menu" ]
+            [ p
+                [ ClassName "menu-label" ]
+                [ str "General" ]
+              ul
+                [ ClassName "menu-list" ]
+                [ yield menuItem "Home" Home currentPage
+                  yield menuItem "About" Route.About currentPage
+                  yield hr []
+                  if chat.Channels |> Map.exists(fun _ v -> v.Joined) then
+                    yield p [ClassName "menu-label"] [str "My Channels"]
+                    for (_, ch) in chat.Channels |> Map.toSeq do
+                        if ch.Joined then
+                            yield menuItem ch.Name (Channel ch.Id) currentPage
+
+                  if chat.Channels |> Map.exists(fun _ v -> not v.Joined) then
+                    yield p [ClassName "menu-label"] [str "Join channels"]
+                    for (_, ch) in chat.Channels |> Map.toSeq do
+                        if not ch.Joined then
+                            yield menuJoinChannelItem ch                  
+                  ]
+              p [ClassName "menu-label"] [str "... or create you own"]
+              div
+                [ ClassName "field has-addons" ]            
+                [ divCtl <|
+                    input
+                      [ ClassName "input"
+                        Type "text"
+                        Placeholder "Type the channel name"
+                        Value chat.NewChanName
+                        AutoFocus true
+                        OnChange (fun ev -> !!ev.target?value |> SetNewChanName |> dispatch )
+                        ]
+                  divCtl <|
+                    button
+                     [ ClassName "button is-primary" 
+                       OnClick (fun _ -> CreateJoin |> dispatch)]
+                     [str "Join"]
+                ]
+            ]
 
 let root model dispatch =
 
@@ -87,7 +120,7 @@ let root model dispatch =
                   [ ClassName "columns" ]
                   [ div
                       [ ClassName "column is-3" ]
-                      [ menu model.chat model.currentPage ]
+                      [ menu model.chat model.currentPage (ChatDataMsg >> dispatch)]
                     div
                       [ ClassName "column" ]
                       [ pageHtml model.currentPage ] ] ] ] ]

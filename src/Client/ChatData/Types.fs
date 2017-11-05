@@ -24,6 +24,7 @@ type ChatData = {
     Me: UserData
     Channels: Map<string, ChannelData>
     Users: Map<string, UserData>
+    NewChanName: string     // name for new channel (part of SetCreateChanName)
     }
 
 type Chat =
@@ -33,6 +34,8 @@ type Chat =
 type Msg =
     | Nop
     | Connected of UserData * ChannelData list
+    | SetNewChanName of string
+    | CreateJoin
     | Join of chanId: string
     | Joined of chan: ChannelData  // by name
     | Leave of chanId: string

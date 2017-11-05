@@ -44,6 +44,13 @@ let joinChannel chanId =
         return response |> Conversions.mapChannel
     }
 
+let createJoinChannel chanName =
+    promise {
+        let props = [Method HttpMethod.POST; Credentials RequestCredentials.Include]
+        let! response = Fetch.fetchAs<Payloads.ChannelInfo> (sprintf "/api/channel/%s/joincreate" chanName) props
+        return response |> Conversions.mapChannel
+    }
+
 let leaveChannel chanId =
     promise {
         let props = [Credentials RequestCredentials.Include]
@@ -51,12 +58,9 @@ let leaveChannel chanId =
         return chanId
     }
 
-let loadUserInfoCmd = 
-    Cmd.ofPromise getUserInfo () Connected FetchError
-
-let joinChannelCmd chan = 
-    Cmd.ofPromise joinChannel chan Joined FetchError
-
+let loadUserInfoCmd = Cmd.ofPromise getUserInfo () Connected FetchError
+let joinChannelCmd chan = Cmd.ofPromise joinChannel chan Joined FetchError
+let createJoinChannelCmd chan = Cmd.ofPromise createJoinChannel chan Joined FetchError
 let leaveChannelCmd chan = Cmd.ofPromise leaveChannel chan Left FetchError
     
 let init () : Chat * Cmd<Msg> =
@@ -64,13 +68,23 @@ let init () : Chat * Cmd<Msg> =
 
 let update msg state =
     match msg with
-    | Nop -> state, []
+    | Nop -> state, Cmd.none
     | Connected (me, channels) ->
         let data = {
             Me = me
             Channels = channels |> List.map (fun ch -> ch.Id, ch) |> Map.ofList
-            Users = Map.empty}
-        ChatData data, []
+            Users = Map.empty; NewChanName = ""}
+        ChatData data, Cmd.none
+    | SetNewChanName name ->
+        let (ChatData state) = state
+        printfn "SetNewChanName '%s'" name
+        ChatData {state with NewChanName = name }, Cmd.none
+        
+    | CreateJoin ->
+        let (ChatData chat) = state
+        state, Cmd.batch
+                [ createJoinChannelCmd chat.NewChanName
+                  Cmd.ofMsg <| SetNewChanName ""]
     | Join chanId ->
         state, joinChannelCmd chanId
     | Joined chan ->
@@ -83,9 +97,9 @@ let update msg state =
     | Left chanId ->
         printfn "Left %s" chanId
         let (ChatData state) = state
-        let updateChannel id f =
-            Map.map (fun k v -> if k = id then f v else v)
-        ChatData {state with Channels = state.Channels |> updateChannel chanId (fun ch -> {ch with Joined = false})}, []
+        let updateChannel id f = Map.map (fun k v -> if k = id then f v else v)
+        let setJoined v ch = {ch with Joined = v}
+        ChatData {state with Channels = state.Channels |> updateChannel chanId (setJoined false)}, Cmd.none
 
 (*
     | Reset ->        NotLoggedIn, []

@@ -168,8 +168,6 @@ let root: WebPart =
     choose [
         warbler(fun _ ->
             let authorizeRedirectUri ="http://localhost:8083/oalogin" in   // FIXME hardcoded path
-            // Note: logon state for current user is stored in global variable, which is ok for demo purposes.
-            // in your application you shoud store such kind of data to session data
             authorize authorizeRedirectUri Secrets.oauthConfigs
                 (fun loginData ->
                     // register user, obtain userid and store in session
