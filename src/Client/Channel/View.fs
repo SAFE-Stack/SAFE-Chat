@@ -3,7 +3,7 @@ module Channel.View
 open Fable.Helpers.React
 open Props
 
-open ChatData.Types
+open Chat.Types
 
 let simpleButton txt action dispatch =
     div

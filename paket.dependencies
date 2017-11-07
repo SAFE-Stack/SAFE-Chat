@@ -19,6 +19,7 @@ nuget Fable.Core
 nuget Fable.Elmish.React
 nuget Fable.Elmish.Browser
 nuget Fable.Elmish.Debugger
+nuget Fable.Websockets.Elmish
 
 clitool Microsoft.DotNet.Watcher.Tools 2.0.0
 clitool dotnet-fable

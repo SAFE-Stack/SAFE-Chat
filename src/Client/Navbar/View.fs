@@ -1,9 +1,9 @@
 module Navbar.View
 
 open Fable.Helpers.React
-open Fable.Helpers.React.Props
+open Props
 
-open ChatData.Types
+open Chat.Types
 
 let navButton classy href faClass txt =
     p
@@ -23,8 +23,7 @@ let navButton classy href faClass txt =
 let private userInfoText =
     function
     | NotConnected -> "Please login"
-    | ChatData {Me = user} -> user.Nick
-
+    | Connected (me, _) -> me.Nick
 
 let navButtons chat =
     span
@@ -38,7 +37,7 @@ let navButtons chat =
                 navButton "" "/logoff" "fa-hand-o-right" "Log off"
                 ] ]
 
-let root (chat: Chat) =
+let root (chat: ChatState) =
     nav
         [ ClassName "nav" ]
         [ div

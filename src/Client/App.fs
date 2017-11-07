@@ -3,17 +3,18 @@ module App.View
 open Elmish
 open Elmish.Browser.Navigation
 open Elmish.Browser.UrlParser
-open Fable.Core
+open Fable.Websockets.Elmish
 open Fable.Core.JsInterop
+
 open Types
 open App.State
 open Router
-open ChatData.Types
+open Chat.Types
 
 importAll "./sass/main.sass"
 
 open Fable.Helpers.React
-open Fable.Helpers.React.Props
+open Props
 
 let menuItem label page currentPage =
     li [] [a
@@ -32,7 +33,7 @@ let menuJoinChannelItem (ch: ChannelData) =
             ]
 
 // TODO move to its own component/view
-let menu (chatData: Chat) currentPage dispatch =
+let menu (chatData: ChatState) currentPage dispatch =
 
     let divCtl ctl = div [ClassName "control"] [ctl]
     
@@ -50,7 +51,7 @@ let menu (chatData: Chat) currentPage dispatch =
               hr []
               p [] [str "connecting..."] ]
         ]
-    | ChatData chat ->
+    | Connected (_,chat) ->
         aside
             [ ClassName "menu" ]
             [ p
@@ -101,8 +102,8 @@ let root model dispatch =
         | Home -> Home.View.root model.home (HomeMsg >> dispatch)
         | Channel chan ->
             match model.chat with
-            | ChatData chatdata when chatdata.Channels |> Map.containsKey chan
-              -> Channel.View.root chatdata.Channels.[chan] (ChatDataMsg >> dispatch)
+            | Connected (_,chatdata) when chatdata.Channels |> Map.containsKey chan
+              -> Channel.View.root chatdata.Channels.[chan] (ApplicationMsg >> ChatDataMsg >> dispatch)
             | _ -> div [] [str "bad channel route" ]
 
     div
@@ -120,7 +121,7 @@ let root model dispatch =
                   [ ClassName "columns" ]
                   [ div
                       [ ClassName "column is-3" ]
-                      [ menu model.chat model.currentPage (ChatDataMsg >> dispatch)]
+                      [ menu model.chat model.currentPage (ApplicationMsg >> ChatDataMsg >> dispatch)]
                     div
                       [ ClassName "column" ]
                       [ pageHtml model.currentPage ] ] ] ] ]

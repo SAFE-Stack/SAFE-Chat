@@ -16,53 +16,25 @@ open ChannelFlow
 open ChatServer
 open SocketFlow
 
-module Payloads =
-
-    type ChanUserInfo = {
-        name: string; online: bool; isbot: bool; lastSeen: System.DateTime
-    }
-    type ChannelInfo = {
-        id: string; name: string; userCount: int; topic: string; joined: bool; users: ChanUserInfo list
-    }
-
-    type MessageRec = {
-        id: int; ts: System.DateTime; text: string; chan: string; author: string
-    }
-    type UserEventRec = {
-        id: int; ts: System.DateTime; user: ChanUserInfo
-    }
-
-    type Hello = {
-        userId: string; nickname: string
-        channels: ChannelInfo list
-    }
-
-    type SocketMessage =
-    | ChanMsg of MessageRec
-    | UserJoined of UserEventRec * chan: string
-    | UserLeft of UserEventRec * chan: string
-    | NewChannel of ChannelInfo
-    | RemoveChannel of ChannelInfo
-
-open Payloads
+open FsChat
 
 module private Implementation =
 
     let encodeChannelMessage channel : Uuid ChatClientMessage -> WsMessage =
         // FIXME fill user info
-        let userInfo userid = {name = userid.ToString(); online = true; isbot = false; lastSeen = System.DateTime.Now}
+        let userInfo userid : Protocol.ChanUserInfo = {name = userid.ToString(); online = true; isbot = false; lastSeen = System.DateTime.Now}
 
         function
         | ChatMessage ((id, ts), author, Message message) ->
-            ChanMsg {id = id; ts = ts; text = message; chan = channel; author = author.ToString()}
+            Protocol.ChanMsg {id = id; ts = ts; text = message; chan = channel; author = author.ToString()}
         | Joined ((id, ts), user, _) ->
-            UserJoined  ({id = id; ts = ts; user = userInfo user}, channel)
+            Protocol.UserJoined  ({id = id; ts = ts; user = userInfo user}, channel)
         | Left ((id, ts), user, _) ->
-            UserLeft  ({id = id; ts = ts; user = userInfo user}, channel)
+            Protocol.UserLeft  ({id = id; ts = ts; user = userInfo user}, channel)
         >> Json.json >> Text
 
-    let mapChannel isMine (chan: ChatServer.ChannelInfo) =
-        {Payloads.ChannelInfo.id = chan.id.ToString(); name = chan.name; topic = chan.topic; userCount = chan.userCount; users = []; joined = isMine chan.id}
+    let mapChannel isMine (chan: ChatServer.ChannelInfo) : Protocol.ChannelInfo =
+        {id = chan.id.ToString(); name = chan.name; topic = chan.topic; userCount = chan.userCount; users = []; joined = isMine chan.id}
 
     let logger = Log.create "chatapi"        
 
@@ -102,7 +74,7 @@ let hello (server: ServerActor) me : WebPart =
 
         | Ok channelList ->
             let! (UserInfo u) = server <? GetUser me
-            let reply: Payloads.Hello = {
+            let reply: Protocol.Hello = {
                 nickname = u.nick; userId = (u.id.ToString())
                 channels = channelList
                 }
@@ -130,13 +102,13 @@ let chanInfo (server: ServerActor) me (chanName: string) : WebPart =
         | Result.Error e ->
             return! BAD_REQUEST e ctx
         | Ok channel ->
-            let userInfo userId :Payloads.ChanUserInfo list =
+            let userInfo userId :Protocol.ChanUserInfo list =
                 serverState.users |> List.tryFind (fun u -> u.id = userId)
-                |> Option.map
+                |> Option.map<_, Protocol.ChanUserInfo>
                     (fun user -> {name = user.nick; online = true; isbot = false; lastSeen = System.DateTime.Now}) // FIXME
                 |> Option.toList
 
-            let chanInfo: Payloads.ChannelInfo = {
+            let chanInfo: Protocol.ChannelInfo = {
                 id = channel.id.ToString()
                 name = channel.name
                 topic = channel.topic
@@ -189,7 +161,7 @@ let leave (server: ServerActor) me chanIdStr : WebPart =
 // extracts message from websocket reply, only handles User input (channel * string)
 let private extractMessage = function
     | Text t ->
-        let payload = t |> Json.unjson<Payloads.MessageRec>
+        let payload = t |> Json.unjson<Protocol.ClientSocketMsg>
         match Uuid.TryParse payload.chan with
         | Some chanId ->
             Some (chanId, Message payload.text)

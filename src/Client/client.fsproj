@@ -4,10 +4,11 @@
   </PropertyGroup>
   <ItemGroup>
     <!-- Global to the app -->
+    <Compile Include="../Shared/ChatProtocol.fs" />
     <Compile Include="Router.fs" />
 
-    <Compile Include="ChatData/Types.fs" />
-    <Compile Include="ChatData/State.fs" />
+    <Compile Include="Chat/Types.fs" />
+    <Compile Include="Chat/State.fs" />
 
     <Compile Include="Info/View.fs" />
 
