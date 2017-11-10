@@ -12,7 +12,7 @@
     <Compile Include="Diag.fs" />
     <Compile Include="Json.fs" />
     <Compile Include="SocketFlow.fs" />
-    <Compile Include="ChatApi.fs" />
+    <Compile Include="RestApi.fs" />
     <Compile Include="views.fs" />
     <Compile Include="OAuth.fs" />
     <Compile Include="app.fs" />

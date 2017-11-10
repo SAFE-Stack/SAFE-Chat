@@ -19,6 +19,7 @@ module ServerState =
     type UserData = {
         id: Uuid
         nick: string
+        euid: string option
         email: string option
         mat: MaterializeFlow option
         channels: Map<Uuid, UniqueKillSwitch option>
@@ -45,7 +46,7 @@ type ServerControlMessage =
     | FindChannel of name: string                       // return ChannelInfo
     | DropChannel of Uuid: Uuid
     // user specific commands
-    | Register of nick: string * channels: Uuid list    // return UserInfo
+    | Register of nick: string * euid: string option * channels: Uuid list    // return UserInfo
     | Unregister of user: Uuid
     | Connect of user: Uuid * mat: MaterializeFlow
     | Disconnect of user: Uuid
@@ -219,14 +220,14 @@ module ServerApi =
                 Result.Ok (state |> updateUser connectUser userId)
         )
 
-    let register (userId: Uuid option) nick channels state =
+    let register (userId: Uuid option) nick euid channels state =
         match state.users |> List.exists(fun u -> u.nick = nick || Some u.id = userId) with
         | true ->
             Result.Error "User with such nick (or Id) already exists"
         | _ ->
             let newUserId = userId |> Option.defaultValue (Uuid.New())
             let newUser = {
-                id = newUserId; nick = nick; email = None; mat = None
+                id = newUserId; euid = euid; nick = nick; email = None; mat = None
                 channels = state.channels
                     |> List.filter(fun chan -> channels |> List.contains chan.id)
                     |> List.map (fun chan -> chan.id, None)
@@ -319,7 +320,7 @@ let startServer (system: ActorSystem) =
         | SetTopic (chanId, topic) ->   update (state |> ServerApi.setTopic chanId topic)
         | DropChannel chanId ->         update (state |> ServerApi.dropChannel chanId)
 
-        | Register (nick, channels) ->  state |> ServerApi.register None nick channels |> mapReply UserInfo |> replyAndUpdate
+        | Register (nick, euid, channels) ->  state |> ServerApi.register None nick euid channels |> mapReply UserInfo |> replyAndUpdate
 
         | Unregister userId ->          update (state |> ServerApi.unregister userId)
         | Connect (userId, mat) ->      update (state |> ServerApi.connect userId mat)
@@ -349,12 +350,28 @@ let startServer (system: ActorSystem) =
     in
     props <| actorOf2 (behavior { channels = []; users = [] }) |> (spawn system "ircserver")
 
-let registerNewUser nick channels (server: IActorRef<ServerControlMessage>) =
+let registerNewUser nick euid channels (server: IActorRef<ServerControlMessage>) =
     async {
-        let! reply = server <? Register (nick, channels)
-        return reply
-            |> function
-            | UserInfo userInfo -> userInfo.id
-            | Error e -> failwith e; Uuid.Empty // FIXME
+        let! (serverState: ServerState.ServerData) = server <? ReadState
+        let existingUser =
+            if euid |> Option.isSome then
+                serverState.users |> List.tryFind (fun u -> u.euid = euid)
+            else
+                None
+
+        match existingUser with
+        | Some x -> return x.id
+        | _ ->
+            let! reply = server <? Register (nick, euid, channels)
+            return reply
+                |> function
+                | UserInfo userInfo -> userInfo.id
+                | Error e -> failwith e; Uuid.Empty // FIXME
+    }
+
+let locateUser predicate (server: IActorRef<ServerControlMessage>) =
+    async {
+        let! (serverState: ServerState.ServerData) = server <? ReadState
+        return serverState.users |> List.tryFind predicate
     }
 

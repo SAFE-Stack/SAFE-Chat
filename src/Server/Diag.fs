@@ -6,20 +6,21 @@ open Akkling
 open ChannelFlow
 open ChatServer
 
+let private isBot (userId: Uuid) = userId.i1 < 100000L
+
 /// Creates an actor for echo bot.
 let createEchoActor (system: ActorSystem) botUserId =
     let getUserName uid = async {return uid.ToString()}    // FIXME display user nickname
 
     let botHandler _ (ctx: Actor<_>) =
         function
-        | ChatMessage (_, (userId: Uuid), Message message) ->
+        | ChatMessage (_, (userId: Uuid), Message message) when not (isBot userId) ->
             do ctx.Sender() <!| async {
                 let! userName = getUserName userId
                 let reply = sprintf "\"%s\" said: %s" userName message
                 return NewMessage (botUserId, Message reply)
             }
             ()
-            // FIXME do not let bots reply to other bots when user.Person <> Person.Anonymous
         | Joined (_, userId, _) ->
             do ctx.Sender() <!| async {
                 let! userName = getUserName userId

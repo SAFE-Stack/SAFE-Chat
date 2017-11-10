@@ -74,22 +74,14 @@ let startChatServer () =
     appServerState <- Some (actorSystem, chatServer)
     ()
 
-type UserSessionData = {
-    Nickname: string
-    Id: string
-    UserId: Uuid
-}
-
-type Session = NoSession | UserLoggedOn of UserSessionData * ActorSystem * ServerActor
-
 module View =
 
     open Suave.Html
 
-    let partUser (session : Session) = 
+    let partUser (session : RestApi.Session) = 
         div ["id", "part-user"] [
             match session with
-            | UserLoggedOn (session,_,_) ->
+            | RestApi.UserLoggedOn (session,_,_) ->
                 yield Text (sprintf "Logged on as %s" session.Nickname)
                 yield a "/logoff" [] [Text "Log off"]
             | _ ->
@@ -147,22 +139,16 @@ let sessionStore setF = context (fun x ->
 
 let (|ParseUuid|_|) = Uuid.TryParse
 
-let session (f: Session -> WebPart) = 
+let session (f: RestApi.Session -> WebPart) = 
     statefulForSession
     >=> context (HttpContext.state >>
         function
-        | None -> f NoSession
+        | None -> f RestApi.NoSession
         | Some state ->
             match state.get "id", state.get "nick", state.get "uid", appServerState with
             | Some id, Some nick, Some (ParseUuid userId), Some (actorSystem, server) ->
-                f (UserLoggedOn ({Id = id; Nickname = nick; UserId = userId}, actorSystem, server))
-            | _ -> f NoSession)
-
-let jsonNoCache =
-    Writers.setHeader "Cache-Control" "no-cache, no-store, must-revalidate"
-    >=> Writers.setHeader "Pragma" "no-cache"
-    >=> Writers.setHeader "Expires" "0"
-    >=> Writers.setMimeType "application/json"
+                f (RestApi.UserLoggedOn ({Id = id; Nickname = nick; UserId = userId}, actorSystem, server))
+            | _ -> f RestApi.NoSession)
 
 let root: WebPart =
     choose [
@@ -172,7 +158,7 @@ let root: WebPart =
                 (fun loginData ->
                     // register user, obtain userid and store in session
                     let (Some (actorsystem, server)) = appServerState
-                    let userId = server |> ChatServer.registerNewUser loginData.Name [] |> Async.RunSynchronously // FIXME async
+                    let userId = server |> ChatServer.registerNewUser loginData.Name (Some loginData.Id) [] |> Async.RunSynchronously // FIXME async
                     logger.info (Message.eventX "User registered by id {userid}"
                         >> Message.setFieldValue "userid" (userId.ToString()))
 
@@ -188,11 +174,37 @@ let root: WebPart =
                 (fun error -> OK <| sprintf "Authorization failed because of `%s`" error.Message)
             )
 
+        warbler(fun _ ->
+            GET >=> path "/logonfast" >=> ( // FIXME remove in prod builds
+                let (Some (actorsystem, server)) = appServerState
+                let externalId, nick = "11111112222222333333", "Joe"
+
+                let reply = server <? ChatServer.List |> Async.RunSynchronously
+                let demoChannel =
+                    match reply with
+                    | ChatServer.ChannelList channelList -> channelList
+                    | _ -> []
+                    |> List.tryFind (fun c -> c.name = "Demo")
+                    |> Option.map (fun c -> c.id)
+                    |> Option.toList
+
+                let userId = server |> ChatServer.registerNewUser nick (Some externalId) demoChannel |> Async.RunSynchronously
+
+                statefulForSession
+                >=> sessionStore (fun store ->
+                        store.set "id" externalId
+                    >=> store.set "nick" nick
+                    >=> store.set "uid" (userId.ToString())
+                )
+                >=> FOUND "/"
+                )
+        )
+
         session (fun session ->
             choose [
                 GET >=> path "/" >=> (
                     match session with
-                    | NoSession -> found "/logon"
+                    | RestApi.NoSession -> found "/logonfast"
                     | _ -> Files.browseFileHome "index.html"
                     )
                 GET >=> path "/logon" >=>
@@ -201,20 +213,7 @@ let root: WebPart =
                     deauthenticate
                     >=> (OK <| Html.htmlToString View.loggedoff)
 
-                pathStarts "/api" >=> jsonNoCache >=>
-                    match session with
-                    | UserLoggedOn (u, actorSys, server) ->
-                        choose [
-                            POST >=> path "/api/hello" >=> (ChatApi.hello server u.UserId)
-                            GET  >=> path "/api/channels" >=> (ChatApi.listChannels server u.UserId)
-                            GET  >=> pathScan "/api/channel/%s/info" (ChatApi.chanInfo server u.UserId)
-                            POST >=> pathScan "/api/channel/%s/join" (ChatApi.join server u.UserId)
-                            POST >=> pathScan "/api/channel/%s/joincreate" (ChatApi.joinOrCreate server u.UserId)
-                            POST >=> pathScan "/api/channel/%s/leave" (ChatApi.leave server u.UserId)
-                            path "/api/channel/socket" >=> (ChatApi.connectWebSocket actorSys server u.UserId)
-                        ]
-                    | NoSession ->
-                        BAD_REQUEST "Authorization required"
+                RestApi.api session
 
                 Files.browseHome                            
                 ]

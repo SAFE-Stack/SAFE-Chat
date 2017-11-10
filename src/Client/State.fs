@@ -15,7 +15,7 @@ let urlUpdate (result: Option<Route>) model =
         // model,Navigation.modifyUrl (toHash model.currentPage)
     | Some (JoinChannel chanId) ->
         model, Cmd.batch
-            [ Chat.Types.Msg.Join chanId |> ApplicationMsg |> ChatDataMsg |> Cmd.ofMsg
+            [ Chat.Types.AppMsg.Join chanId |> ApplicationMsg |> ChatDataMsg |> Cmd.ofMsg
               Navigation.modifyUrl  "#"]
     | Some route ->
         { model with currentPage = route }, []
@@ -23,11 +23,7 @@ let urlUpdate (result: Option<Route>) model =
 let init result =
     let (home, homeCmd) = Home.State.init()
     let (chinfo, chinfoCmd) = Chat.State.init()
-    let (model, cmd) =
-      urlUpdate result
-        { currentPage = Home
-          home = home
-          chat = chinfo }
+    let (model, cmd) = urlUpdate result { currentPage = Home; home = home; chat = chinfo }
     model, Cmd.batch [ cmd
                        Cmd.map HomeMsg homeCmd 
                        Cmd.map (ChatDataMsg) chinfoCmd

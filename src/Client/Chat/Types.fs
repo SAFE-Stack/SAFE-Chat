@@ -28,7 +28,7 @@ type ChannelData = {
 } with member this.UserCount = match this.Users with |UserCount c -> c | UserList list -> List.length list
 
 type ChatData = {
-    socket: SocketHandle<Protocol.ServerSocketMsg, Protocol.ClientSocketMsg>
+    socket: SocketHandle<Protocol.ServerMsg, Protocol.ClientMsg>
     Channels: Map<string, ChannelData>
     Users: Map<string, UserInfo>
     NewChanName: string     // name for new channel (part of SetCreateChanName)
@@ -40,7 +40,7 @@ type ChatState =
     | Connected of UserInfo * ChatData
 
 // TODO shorten the list
-type Msg =
+type AppMsg =
     | Nop
     | Hello of UserInfo * ChannelData list
     | SetNewChanName of string
@@ -57,4 +57,4 @@ type Msg =
     | FetchError of exn
 
 // TODO rename to Msg
-type MsgType = Msg<Protocol.ServerSocketMsg, Protocol.ClientSocketMsg, Msg>
+type MsgType = Msg<Protocol.ServerMsg, Protocol.ClientMsg, AppMsg>

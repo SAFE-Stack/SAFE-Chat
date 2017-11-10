@@ -4,24 +4,28 @@ open System
 open System.Text
 
 open Akka.Actor
+open Akka.Streams
 open Akka.Streams.Dsl
 open Akkling
 open Akkling.Streams
 
+open Suave.Logging
 open Suave.Sockets
 open Suave.Sockets.Control
 open Suave.WebSocket
-open Akka.Streams
 
 type WsMessage =
     | Text of string
     | Data of byte array
     | Close
+    | Ignore
 
-// Provides websocket handshaking.
+let private logger = Log.create "socketflow"
+
+// Provides websocket handshaking. Connects web socket to a pair of Source and Sync.
 // 'materialize'
 let handleWebsocketMessages (system: ActorSystem)
-    (materialize: IMaterializer -> Source<WsMessage, Akka.NotUsed> -> Sink<WsMessage, Akka.NotUsed> -> unit) (ws : WebSocket)
+    (materialize: IMaterializer -> Source<WsMessage, Akka.NotUsed> -> Sink<WsMessage, _> -> unit) (ws : WebSocket)
     =
     let materializer = system.Materializer()
     let sourceActor, inputSource =
@@ -30,35 +34,46 @@ let handleWebsocketMessages (system: ActorSystem)
 
     let emptyData = ByteSegment [||]
 
+    let asyncIgnore f = async {
+        let! _ = f
+        return WsMessage.Ignore :> obj
+    }
+
     // sink for flow that sends messages to websocket
-    let sinkBehavior _ (ctx: Actor<_>): obj -> _ =
+    let sinkBehavior _ (ctx: Actor<obj>): obj -> _ =
         function
-        | Terminated _ ->
-            ws.send Opcode.Close emptyData true |> Async.Ignore |> Async.Start
-            ignored ()
         | :? WsMessage as wsmsg ->
             wsmsg |> function
+            | Terminated _ ->
+                ws.send Opcode.Close emptyData true |> Async.Ignore |> Async.Start
+                stop()
             | Text text ->
                 // using pipeTo operator just to wait for async send operation to complete
-                ws.send Opcode.Text (Encoding.UTF8.GetBytes(text) |> ByteSegment) true |!> ctx.Self
+                ws.send Opcode.Text (Encoding.UTF8.GetBytes(text) |> ByteSegment) true
+                    |> asyncIgnore |!> ctx.Self
                 ignored()
             | Data bytes ->
-                ws.send Binary (ByteSegment bytes) true |!> ctx.Self
+                ws.send Binary (ByteSegment bytes) true |> asyncIgnore |!> ctx.Self
+                ignored()
+            | Ignore ->
                 ignored()
             | Close ->
-                // PoisonPill.Instance |!> ctx.Self
                 stop()
         | _ ->
             ignored ()
-        
+
     let sinkActor =
         props <| actorOf2 (sinkBehavior ()) |> (spawn system null) |> retype
 
-    let sink: Sink<WsMessage, Akka.NotUsed> = Sink.ActorRef(untyped sinkActor, PoisonPill.Instance)
-    materialize materializer inputSource sink
+    let sink: Sink<WsMessage,_> = Sink.ActorRef(untyped sinkActor, Text "asdfsdf") // TODO PoisonPill.Instance
+    do materialize materializer inputSource sink
+
+    logger.debug (Message.eventX "materialized socket sink")
 
     fun _ -> 
-        socket { 
+        socket {
+            do! ws.send Opcode.Text (Encoding.UTF8.GetBytes("test test test") |> ByteSegment) true
+            
             let loop = ref true
             while !loop do
                 let! msg = ws.read()

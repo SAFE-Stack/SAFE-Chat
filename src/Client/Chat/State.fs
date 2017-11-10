@@ -56,11 +56,12 @@ module Commands =
     let leaveChannelCmd chan = Cmd.ofPromise leaveChannel chan Left FetchError
 
 open Commands
+open System.Text.RegularExpressions
 
 let init () : ChatState * Cmd<MsgType> =
-  NotConnected, Cmd.tryOpenSocket "ws://localhost:8083/websocket"
+  NotConnected, Cmd.tryOpenSocket "ws://localhost:8083/api/channel/socket"
 
-let applicationMsgUpdate (msg: Msg) state: (ChatState * MsgType Cmd) =
+let applicationMsgUpdate (msg: AppMsg) state: (ChatState * MsgType Cmd) =
     match msg with
     | Nop -> state, Cmd.none
     | Hello (me, channels) ->
@@ -91,14 +92,42 @@ let applicationMsgUpdate (msg: Msg) state: (ChatState * MsgType Cmd) =
         let updateChannel id f = Map.map (fun k v -> if k = id then f v else v)
         let setJoined v ch = {ch with Joined = v}
         Connected (me, {state with Channels = state.Channels |> updateChannel chanId (setJoined false)}), Cmd.none
+    
+    | Disconnected ->
+        NotConnected, Cmd.none
     |> function | (state, cmd) -> state, Cmd.map ApplicationMsg cmd
+
+let mapChanData (chan: Protocol.ChannelInfo) : ChannelData =
+    { Id = chan.id
+      Name = chan.name
+      Topic = chan.topic
+      Users = UserCount chan.userCount
+      Messages = []
+      Joined = chan.joined }
+
+let socketMsgUpdate (msg: Protocol.ClientMsg) prevState : ChatState * Cmd<MsgType> =
+    match msg with
+    | Protocol.ClientMsg.Hello hello ->
+        let (Connected (_, prevChat)) = prevState
+        let chatData =
+          { ChatData.Empty with
+                socket = prevChat.socket
+                Channels = hello.channels |> List.map (fun ch -> ch.id, mapChanData ch) |> Map.ofList
+                }
+        let me = { UserInfo.Anon with Nick = hello.nickname; UserId = hello.userId }
+        Connected (me, chatData), Cmd.none
+
+    | other ->
+        printfn "Socket message %A" other
+        prevState, Cmd.none
 
 let inline update msg prevState = 
     match msg with
     | ApplicationMsg amsg -> applicationMsgUpdate amsg prevState
     | WebsocketMsg (socket, Opened) ->
         Connected (UserInfo.Anon, { ChatData.Empty with socket = socket }), Cmd.none
-    | WebsocketMsg (_, Msg socketMsg) -> prevState, Cmd.none  // TODO (socketMsgUpdate socketMsg prevState)
+    | WebsocketMsg (_, Msg socketMsg) ->
+        socketMsgUpdate socketMsg prevState
     | _ -> (prevState, Cmd.none)
 
 (*

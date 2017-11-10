@@ -14,7 +14,7 @@ module Protocol =
         id: int; ts: System.DateTime; user: ChanUserInfo
     }
 
-    type ClientSocketMsg = {
+    type ServerMsg = {
         id: int; ts: System.DateTime; text: string; chan: string; author: string
     }
 
@@ -24,9 +24,9 @@ module Protocol =
     }
 
     /// The messages from server to client
-    type ServerSocketMsg =
+    type ClientMsg =
         | Hello of Hello
-        | ChanMsg of ClientSocketMsg
+        | ChanMsg of ServerMsg
         | UserJoined of UserEventRec * chan: string
         | UserLeft of UserEventRec * chan: string
         | NewChannel of ChannelInfo
