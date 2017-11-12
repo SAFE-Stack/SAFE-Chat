@@ -28,10 +28,6 @@ type AppMsg =
     | Joined of chan: ChannelData  // by name
     | Leave of chanId: string
     | Left of chanId: string
-    | RecvMessage of chanId: string * Message
-    | PostMessage of chanId: string * text: string
-    | UserJoined of chanId: string * UserInfo
-    | UserLeft of chanId: string * UserInfo
     | FetchError of exn
 
 // TODO rename to Msg

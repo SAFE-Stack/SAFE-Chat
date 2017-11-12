@@ -3,6 +3,7 @@ open Elmish
 
 open Types
 open FsChat
+open Fable.Import
 
 let init () : ChannelData * Cmd<Msg> =
   ChannelData.Empty, Cmd.none
@@ -21,3 +22,6 @@ let update (msg: Msg) state: (ChannelData * Msg Cmd) =
             {state with PostText = ""}, Cmd.ofMsg (Forward userMessage)
         | _ ->
             state, Cmd.none
+    | Forward _ ->
+        Browser.console.error "Forward message is not expected in channel update."
+        state, Cmd.none

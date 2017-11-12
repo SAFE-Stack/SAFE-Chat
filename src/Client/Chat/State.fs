@@ -49,6 +49,7 @@ module Commands =
     let leaveChannelCmd chan = Cmd.ofPromise leaveChannel chan Left FetchError
 
 open Commands
+open Fable.Import
 
 let init () : ChatState * Cmd<MsgType> =
   NotConnected, Cmd.tryOpenSocket "ws://localhost:8083/api/socket"
@@ -71,7 +72,7 @@ let applicationMsgUpdate (msg: AppMsg) state: (ChatState * MsgType Cmd) =
                 Connected (me, { chat with Channels = chat.Channels |> Map.add chanId chan }),
                     cmd |> Cmd.map (fun c -> ChannelMsg (chanId, c) |> ApplicationMsg)
             | _ ->
-                // TODO log failure
+                Browser.console.error <| sprintf "Failed to process channel message. Channel '%s' not found" chanId
                 state, Cmd.none
 
         | SetNewChanName name ->
@@ -91,8 +92,13 @@ let applicationMsgUpdate (msg: AppMsg) state: (ChatState * MsgType Cmd) =
         
         | Left chanId ->
             Connected (me, chat |> updateChannel chanId (setJoined false)), Cmd.none
+
+        | FetchError e ->
+            Browser.console.error <| sprintf "Fetch error %A" e
+            state, Cmd.none
+
     | _ ->
-        // TODO log failure
+        Browser.console.error <| "Failed to process channel message. Server is not connected"
         state, Cmd.none
    
 
