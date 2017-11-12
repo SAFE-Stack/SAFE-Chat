@@ -7,9 +7,12 @@ open Fetch.Fetch_types
 
 open Fable.Websockets.Elmish
 open Fable.Websockets.Protocol
+open Fable.Websockets.Elmish.Types
 
 open Router
-open Types
+
+open Channel.Types
+open Chat.Types
 
 open FsChat
 
@@ -19,14 +22,6 @@ module Conversions =
         {Id = ch.id; Name = ch.name; Topic = ch.topic; Users = UserCount ch.userCount; Messages = []; Joined = ch.joined; PostText = ""}
 
 module Commands =
-
-    let getUserInfo () =
-        promise {
-            let props = [Method HttpMethod.POST; Credentials RequestCredentials.Include]
-            let! response = Fetch.fetchAs<Protocol.HelloInfo> "/api/hello" props
-            let channels = response.channels |> List.map Conversions.mapChannel
-            return {Nick = response.nickname; Email = None; UserId = response.userId}, channels
-        }
 
     let joinChannel chanId =
         promise {
@@ -49,13 +44,11 @@ module Commands =
             return chanId
         }
 
-    let loadUserInfoCmd = Cmd.ofPromise getUserInfo () Hello FetchError
     let joinChannelCmd chan = Cmd.ofPromise joinChannel chan Joined FetchError
     let createJoinChannelCmd chan = Cmd.ofPromise createJoinChannel chan Joined FetchError
     let leaveChannelCmd chan = Cmd.ofPromise leaveChannel chan Left FetchError
 
 open Commands
-open System.Runtime.InteropServices.ComTypes
 
 let init () : ChatState * Cmd<MsgType> =
   NotConnected, Cmd.tryOpenSocket "ws://localhost:8083/api/socket"
@@ -63,64 +56,45 @@ let init () : ChatState * Cmd<MsgType> =
 let applicationMsgUpdate (msg: AppMsg) state: (ChatState * MsgType Cmd) =
 
     let updateChannel chanId f s = {s with Channels = s.Channels |> Map.map (fun k v -> if k = chanId then (f v) else v)}
-
-    let updateChan chanId f =
-        let (Connected (me, state)) = state
-        Connected (me, state |> updateChannel chanId f)
-
-    let setText v ch = {ch with PostText = v}
     let setJoined v ch = {ch with Joined = v}
 
-    match msg with
-    | Nop -> state, Cmd.none
-    | SetPostText (chanId, text) ->
-        // let newState = updateChan chanId (setText text)
-        let (Connected (me, state)) = state
-        let f = (setText text)
-        let newState = Connected (me,
-            {state with Channels = state.Channels |> Map.map (fun k v -> if k =chanId then (f v) else v)})
+    match state with
+    | Connected (me, chat) ->
+        match msg with
+        | Nop -> state, Cmd.none
+        | ChannelMsg (chanId, Forward msg) ->
+            state, Cmd.ofSocketMessage chat.socket (Protocol.UserMessage {msg with chan = chanId})
+        | ChannelMsg (chanId, msg) ->
+            match chat.Channels |> Map.tryFind chanId with
+            | Some prevChan ->
+                let chan, cmd = Channel.State.update msg prevChan
+                Connected (me, { chat with Channels = chat.Channels |> Map.add chanId chan }),
+                    cmd |> Cmd.map (fun c -> ChannelMsg (chanId, c) |> ApplicationMsg)
+            | _ ->
+                // TODO log failure
+                state, Cmd.none
 
-        printfn "ST %A" newState
-        newState, Cmd.none
-
-    | PostText chanId ->
-        let (Connected (_, chat)) = state
-        let message = chat.Channels |> Map.tryFind chanId |> Option.map (fun ch -> ch.PostText)
-        match message with
-        | Some text ->
-            let userMessage = Protocol.UserMessage {id = 1; ts = System.DateTime.Now; text = text; chan = chanId; author = "xxx"}
-            updateChan chanId (setText ""), Cmd.ofSocketMessage chat.socket userMessage
-        | _ ->
-            state, Cmd.none
-
-    | Hello (me, channels) ->
-        let data = {ChatData.Empty with Channels = channels |> List.map (fun ch -> ch.Id, ch) |> Map.ofList}
-        Connected (me, data), Cmd.none
-
-    | SetNewChanName name ->
-        let (Connected (me, state)) = state
-        Connected (me, {state with NewChanName = name }), Cmd.none
+        | SetNewChanName name ->
+            Connected (me, {chat with NewChanName = name }), Cmd.none
+            
+        | CreateJoin ->
+            state, Cmd.batch
+                    [ createJoinChannelCmd chat.NewChanName |> Cmd.map ApplicationMsg
+                      Cmd.ofMsg <| SetNewChanName "" |> Cmd.map ApplicationMsg]
+        | Join chanId ->
+            state, joinChannelCmd chanId |> Cmd.map ApplicationMsg
+        | Joined chan ->
+            Connected (me, {chat with Channels = chat.Channels |> Map.add chan.Id chan}), Navigation.newUrl  <| toHash (Channel chan.Id)
+        | Leave chanId ->
+            state, Cmd.batch [ leaveChannelCmd chanId |> Cmd.map ApplicationMsg
+                               Navigation.newUrl  <| toHash Home |> Cmd.map ApplicationMsg]
         
-    | CreateJoin ->
-        let (Connected (me, state)) = state
-        Connected (me, state), Cmd.batch
-                [ createJoinChannelCmd state.NewChanName |> Cmd.map ApplicationMsg
-                  Cmd.ofMsg <| SetNewChanName "" |> Cmd.map ApplicationMsg]
-    | Join chanId ->
-        state, joinChannelCmd chanId |> Cmd.map ApplicationMsg
-    | Joined chan ->
-        let (Connected (me, state)) = state
-        Connected (me, {state with Channels = state.Channels |> Map.add chan.Id chan}), Navigation.newUrl  <| toHash (Channel chan.Id)
-    | Leave chanId ->
-        state, Cmd.batch [ leaveChannelCmd chanId |> Cmd.map ApplicationMsg
-                           Navigation.newUrl  <| toHash Home |> Cmd.map ApplicationMsg]
-    
-    | Left chanId ->
-        printfn "Left %s" chanId
-        updateChan chanId (setJoined false), Cmd.none
-    
-    | Disconnected ->
-        NotConnected, Cmd.none
+        | Left chanId ->
+            Connected (me, chat |> updateChannel chanId (setJoined false)), Cmd.none
+    | _ ->
+        // TODO log failure
+        state, Cmd.none
+   
 
 let updateChan chanId (f: ChannelData -> ChannelData) (chat: ChatData) : ChatData =
     let update cid = if cid = chanId then f else id
@@ -160,7 +134,8 @@ let socketMsgUpdate (msg: Protocol.ClientMsg) prevState : ChatState * Cmd<MsgTyp
 
 let inline update msg prevState = 
     match msg with
-    | ApplicationMsg amsg -> applicationMsgUpdate amsg prevState
+    | ApplicationMsg amsg ->
+        applicationMsgUpdate amsg prevState
     | WebsocketMsg (socket, Opened) ->
         Connected (UserInfo.Anon, { ChatData.Empty with socket = socket }), Cmd.none
     | WebsocketMsg (_, Msg socketMsg) ->

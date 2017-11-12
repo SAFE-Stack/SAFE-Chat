@@ -9,6 +9,7 @@ open Fable.Core.JsInterop
 open Types
 open App.State
 open Router
+open Channel.Types
 open Chat.Types
 
 importAll "./sass/main.sass"
@@ -23,7 +24,6 @@ let menuItem label page currentPage =
             [ str label ] ]
 
 let menuJoinChannelItem (ch: ChannelData) =
-    printfn "menuJoinChannelItem %A" ch
     li [] [a
             [ Href (JoinChannel ch.Id |> toHash) ]
             [ div [ClassName "control has-icons-right"]
@@ -53,7 +53,6 @@ let menu (chatData: ChatState) currentPage dispatch =
               p [] [str "connecting..."] ]
         ]
     | Connected (_,chat) ->
-        printfn "ch %A" chat
         aside
             [ ClassName "menu" ]
             [ p
@@ -105,7 +104,8 @@ let root model dispatch =
         | Channel chan ->
             match model.chat with
             | Connected (_,chatdata) when chatdata.Channels |> Map.containsKey chan
-              -> Channel.View.root chatdata.Channels.[chan] (ApplicationMsg >> ChatDataMsg >> dispatch)
+              -> Channel.View.root chatdata.Channels.[chan]
+                  ((fun m -> ChannelMsg (chan, m)) >> ApplicationMsg >> ChatDataMsg >> dispatch)
             | _ -> div [] [str "bad channel route" ]
 
     div

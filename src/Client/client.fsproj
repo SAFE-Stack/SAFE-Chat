@@ -7,12 +7,14 @@
     <Compile Include="../Shared/ChatProtocol.fs" />
     <Compile Include="Router.fs" />
 
+    <Compile Include="Channel/Types.fs" />
+    <Compile Include="Channel/State.fs" />
+    <Compile Include="Channel/View.fs" />
+
     <Compile Include="Chat/Types.fs" />
     <Compile Include="Chat/State.fs" />
 
     <Compile Include="Info/View.fs" />
-
-    <Compile Include="Channel/View.fs" />
 
     <Compile Include="Home/Types.fs" />
     <Compile Include="Home/State.fs" />

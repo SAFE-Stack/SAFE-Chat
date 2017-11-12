@@ -4,27 +4,7 @@ open FsChat
 open Fable.Websockets.Elmish
 open Fable.Websockets.Elmish.Types
 
-type UserInfo = {Nick: string; Email: string option; UserId: string}
-with static member Anon = {Nick = "anonymous"; Email = None; UserId = "0"}
-
-type Message = {
-    Id: int
-    Ts: System.DateTime
-    Text: string
-    AuthorId: string
-}
-
-type UsersInfo = | UserCount of int | UserList of UserInfo list
-
-type ChannelData = {
-    Id: string
-    Name: string
-    Topic: string
-    Users: UsersInfo
-    Messages: Message list
-    Joined: bool
-    PostText: string
-} with member this.UserCount = match this.Users with |UserCount c -> c | UserList list -> List.length list
+open Channel.Types
 
 type ChatData = {
     socket: SocketHandle<Protocol.ServerMsg, Protocol.ClientMsg>
@@ -41,10 +21,8 @@ type ChatState =
 // TODO shorten the list
 type AppMsg =
     | Nop
-    | Hello of UserInfo * ChannelData list
+    | ChannelMsg of chanId: string * Channel.Types.Msg
     | SetNewChanName of string
-    | SetPostText of chanId: string * text: string
-    | PostText of chanId: string
     | CreateJoin
     | Join of chanId: string
     | Joined of chan: ChannelData  // by name
@@ -54,7 +32,6 @@ type AppMsg =
     | PostMessage of chanId: string * text: string
     | UserJoined of chanId: string * UserInfo
     | UserLeft of chanId: string * UserInfo
-    | Disconnected
     | FetchError of exn
 
 // TODO rename to Msg

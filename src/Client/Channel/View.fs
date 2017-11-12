@@ -4,7 +4,7 @@ open Fable.Core.JsInterop
 open Fable.Helpers.React
 open Props
 
-open Chat.Types
+open Types
 
 let private divCtl ctl = div [ClassName "control"] [ctl]
 
@@ -34,12 +34,12 @@ let postMessage model dispatch =
             Placeholder "Type the message here"
             Value model.PostText
             AutoFocus true
-            OnChange (fun ev -> SetPostText (model.Id, !!ev.target?value) |> dispatch )
+            OnChange (fun ev -> !!ev.target?value |> (SetPostText >> dispatch))
             ]
       divCtl <|
         button
          [ ClassName "button is-primary" 
-           OnClick (fun _ -> model.Id |> PostText |> dispatch)]
+           OnClick (fun _ -> PostText |> dispatch)]
          [str "Post"]
     ]
 
@@ -47,7 +47,7 @@ let root (model: ChannelData) dispatch =
     div
       [ ClassName "content" ]
         [   h1 [] [ str model.Name ]
-            simpleButton "Leave" (Leave model.Id) dispatch
+            simpleButton "Leave" Leave dispatch
             p [] [str model.Topic]
             postMessage model dispatch
             chanMessages model.Messages
