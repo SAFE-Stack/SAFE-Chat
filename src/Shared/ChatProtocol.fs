@@ -15,7 +15,7 @@ module Protocol =
     }
 
     type ChannelMsg = {
-        id: int; ts: System.DateTime; text: string; chan: string; author: string
+        id: int; ts: System.DateTime; text: string; chan: string; author: string    // FIXME id, author and ts are not needed for UserMessage
     }
 
     type ServerMsg =

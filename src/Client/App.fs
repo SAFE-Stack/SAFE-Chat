@@ -23,6 +23,7 @@ let menuItem label page currentPage =
             [ str label ] ]
 
 let menuJoinChannelItem (ch: ChannelData) =
+    printfn "menuJoinChannelItem %A" ch
     li [] [a
             [ Href (JoinChannel ch.Id |> toHash) ]
             [ div [ClassName "control has-icons-right"]
@@ -52,6 +53,7 @@ let menu (chatData: ChatState) currentPage dispatch =
               p [] [str "connecting..."] ]
         ]
     | Connected (_,chat) ->
+        printfn "ch %A" chat
         aside
             [ ClassName "menu" ]
             [ p

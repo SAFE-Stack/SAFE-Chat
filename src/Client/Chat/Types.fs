@@ -1,8 +1,6 @@
 module Chat.Types
 
 open FsChat
-open Fable.Websockets.Client
-open Fable.Websockets.Protocol
 open Fable.Websockets.Elmish
 open Fable.Websockets.Elmish.Types
 
@@ -25,6 +23,7 @@ type ChannelData = {
     Users: UsersInfo
     Messages: Message list
     Joined: bool
+    PostText: string
 } with member this.UserCount = match this.Users with |UserCount c -> c | UserList list -> List.length list
 
 type ChatData = {
@@ -44,6 +43,8 @@ type AppMsg =
     | Nop
     | Hello of UserInfo * ChannelData list
     | SetNewChanName of string
+    | SetPostText of chanId: string * text: string
+    | PostText of chanId: string
     | CreateJoin
     | Join of chanId: string
     | Joined of chan: ChannelData  // by name
