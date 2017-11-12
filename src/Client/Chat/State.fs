@@ -24,7 +24,7 @@ module Commands =
     let getUserInfo () =
         promise {
             let props = [Method HttpMethod.POST; Credentials RequestCredentials.Include]
-            let! response = Fetch.fetchAs<Protocol.Hello> "/api/hello" props
+            let! response = Fetch.fetchAs<Protocol.HelloInfo> "/api/hello" props
             let channels = response.channels |> List.map Conversions.mapChannel
             return {Nick = response.nickname; Email = None; UserId = response.userId}, channels
         }
@@ -57,9 +57,12 @@ module Commands =
 
 open Commands
 open System.Text.RegularExpressions
+open Fable.Import.Browser
+open Fable.Websockets
+open Fable.PowerPack.PromiseSeq
 
 let init () : ChatState * Cmd<MsgType> =
-  NotConnected, Cmd.tryOpenSocket "ws://localhost:8083/api/channel/socket"
+  NotConnected, Cmd.tryOpenSocket "ws://localhost:8083/api/socket"
 
 let applicationMsgUpdate (msg: AppMsg) state: (ChatState * MsgType Cmd) =
     match msg with
@@ -105,21 +108,41 @@ let mapChanData (chan: Protocol.ChannelInfo) : ChannelData =
       Messages = []
       Joined = chan.joined }
 
-let socketMsgUpdate (msg: Protocol.ClientMsg) prevState : ChatState * Cmd<MsgType> =
-    match msg with
-    | Protocol.ClientMsg.Hello hello ->
-        let (Connected (_, prevChat)) = prevState
-        let chatData =
-          { ChatData.Empty with
-                socket = prevChat.socket
-                Channels = hello.channels |> List.map (fun ch -> ch.id, mapChanData ch) |> Map.ofList
-                }
-        let me = { UserInfo.Anon with Nick = hello.nickname; UserId = hello.userId }
-        Connected (me, chatData), Cmd.none
+let updateChan chanId (f: ChannelData -> ChannelData) (chat: ChatData) : ChatData =
+    let update cid = if cid = chanId then f else id
+    { chat with Channels = chat.Channels |> Map.map update }
 
+let appendMessage (msg: Protocol.ChannelMsg) (chan: ChannelData) =
+    let newMessage: Message =
+      { Id = msg.id; AuthorId = msg.author; Ts = msg.ts
+        Text = msg.text }
+    {chan with Messages = chan.Messages @ [newMessage]}
+
+let chatUpdate (msg: Protocol.ClientMsg) (state: ChatData) : ChatData * Cmd<MsgType> =
+    match msg with
+    | Protocol.ClientMsg.ChanMsg chanMsg ->
+        updateChan chanMsg.chan (appendMessage chanMsg) state, Cmd.none
+    | _ ->
+        state, Cmd.none
+
+let socketMsgUpdate (msg: Protocol.ClientMsg) prevState : ChatState * Cmd<MsgType> =
+    match prevState with
+    | Connected (me, prevChatState) ->
+        match msg with
+        | Protocol.ClientMsg.Hello hello ->
+            let chatData =
+              { ChatData.Empty with
+                    socket = prevChatState.socket
+                    Channels = hello.channels |> List.map (fun ch -> ch.id, mapChanData ch) |> Map.ofList
+                    }
+            let me = { UserInfo.Anon with Nick = hello.nickname; UserId = hello.userId }
+            Connected (me, chatData), Cmd.none
+        | protocolMsg ->
+            let chatData, cmds = chatUpdate protocolMsg prevChatState
+            Connected (me, chatData), cmds
     | other ->
         printfn "Socket message %A" other
-        prevState, Cmd.none
+        (prevState, Cmd.none)
 
 let inline update msg prevState = 
     match msg with

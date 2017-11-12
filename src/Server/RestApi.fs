@@ -84,7 +84,7 @@ module private Implementation =
 
             | Ok channelList ->
                 let! (UserInfo u) = server <? GetUser me
-                let reply: Protocol.Hello = {
+                let reply = Protocol.Hello {
                     nickname = u.nick; userId = (u.id.ToString())
                     channels = channelList
                     }
@@ -171,12 +171,35 @@ module private Implementation =
     // extracts message from websocket reply, only handles User input (channel * string)
     let extractMessage = function
         | Text t ->
-            let payload = t |> Json.unjson<Protocol.ServerMsg>
-            match Uuid.TryParse payload.chan with
-            | Some chanId ->
-                Some (chanId, Message payload.text)
-            | _ -> None
+            match t |> Json.unjson<Protocol.ServerMsg> with
+            | Protocol.UserMessage msg ->
+                match Uuid.TryParse msg.chan with
+                | Some chanId ->
+                    Some (chanId, Message msg.text)
+                | _ -> None
         |_ -> None
+
+    let makeHelloMsg (server: ServerActor) me =
+        async {
+            // TODO run on server side using ReadState
+            let! reply = getChannelList server me
+
+            match reply with
+            | Result.Error e ->
+                logger.error (Message.eventX "Failed to get channel list. Reason: {reason}"
+                    >> Message.setFieldValue "reason" e
+                )
+                let errText = sprintf "Failed to get channel list. Reason: '%s'" e
+                return errText |> Protocol.AuthFail |> Protocol.Error
+
+            | Ok channelList ->
+                let! (UserInfo u) = server <? GetUser me
+         
+                return Protocol.Hello <| {
+                    nickname = u.nick; userId = (u.id.ToString())
+                    channels = channelList
+                    }
+        }
 
     let connectWebSocket (system: ActorSystem) (server: ServerActor) me : WebPart =
         fun ctx -> async {
@@ -200,17 +223,13 @@ module private Implementation =
                 |> Flow.viaMat sessionFlow Keep.right
                 |> Flow.map (fun (channel: Uuid, message) -> encodeChannelMessage (channel.ToString()) message)
 
-            let helloMessage =  // FIXME retrieve data from server
-                let hello: Protocol.Hello = { userId = me.ToString(); nickname = "NICK";
-                  channels = [{id = "111"; name = "test"; userCount = 2; topic = "test topic"; joined = true; users = []}]
-                  }
-                hello |> Protocol.ClientMsg.Hello |> Json.json |> Text
+            let! helloMessage = makeHelloMsg server me  // FIXME retrieve data from server
 
             let materialize materializer (source: Source<WsMessage, Akka.NotUsed>) (sink: Sink<WsMessage, _>) =
                 let listenChannel =
                     source
                     |> Source.viaMat socketFlow Keep.right
-                    |> Source.mergeMat (Source.Single helloMessage) Keep.left
+                    |> Source.mergeMat (Source.Single (helloMessage |> Json.json |> Text)) Keep.left
                     // |> Source.alsoToMat logSink Keep.left
                     |> Source.toMat sink Keep.left
                     |> Graph.run materializer
@@ -241,7 +260,7 @@ let api (session: Session): WebPart =
                 POST >=> pathScan "/api/channel/%s/join" (join server u.UserId)
                 POST >=> pathScan "/api/channel/%s/joincreate" (joinOrCreate server u.UserId)
                 POST >=> pathScan "/api/channel/%s/leave" (leave server u.UserId)
-                path "/api/channel/socket" >=> (connectWebSocket actorSys server u.UserId)
+                path "/api/socket" >=> (connectWebSocket actorSys server u.UserId)
             ]
         | NoSession ->
             BAD_REQUEST "Authorization required"

@@ -14,19 +14,26 @@ module Protocol =
         id: int; ts: System.DateTime; user: ChanUserInfo
     }
 
-    type ServerMsg = {
+    type ChannelMsg = {
         id: int; ts: System.DateTime; text: string; chan: string; author: string
     }
 
-    type Hello = {
+    type ServerMsg =
+        | UserMessage of ChannelMsg
+
+    type HelloInfo = {
         userId: string; nickname: string
         channels: ChannelInfo list
     }
 
+    type ClientErrMsg =
+        | AuthFail of string
+
     /// The messages from server to client
     type ClientMsg =
-        | Hello of Hello
-        | ChanMsg of ServerMsg
+        | Error of ClientErrMsg
+        | Hello of HelloInfo
+        | ChanMsg of ChannelMsg
         | UserJoined of UserEventRec * chan: string
         | UserLeft of UserEventRec * chan: string
         | NewChannel of ChannelInfo

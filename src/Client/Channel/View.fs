@@ -14,11 +14,18 @@ let simpleButton txt action dispatch =
               OnClick (fun _ -> action |> dispatch) ]
             [ str txt ] ]
 
+let chanMessages (messages: Message list) =
+    div
+      []
+      [ for m in messages ->
+          p [] [str m.Text]
+      ]
 let root (model: ChannelData) dispatch =
     div
-        [ ClassName "content" ]
-            [   h1 [] [ str model.Name ]
-                simpleButton "Leave" (Leave model.Id) dispatch
-                p [] [str model.Topic]
-                p [] [str "TBD"]
-            ]
+      [ ClassName "content" ]
+        [   h1 [] [ str model.Name ]
+            simpleButton "Leave" (Leave model.Id) dispatch
+            p [] [str model.Topic]
+            p [] [str "TBD"]
+            chanMessages model.Messages
+        ]
