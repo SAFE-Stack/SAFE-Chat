@@ -18,8 +18,15 @@ open FsChat
 
 module Conversions =
 
+    let mapUserInfo (u: Protocol.ChanUserInfo): UserInfo =
+        {UserId = u.id; Nick = u.nick; IsBot = u.isbot; Online = u.online}
+
     let mapChannel (ch: Protocol.ChannelInfo): ChannelData =
-        {Id = ch.id; Name = ch.name; Topic = ch.topic; Users = UserCount ch.userCount; Messages = []; Joined = ch.joined; PostText = ""}
+        let usersInfo =
+            match ch.userCount, ch.users with
+            | cnt, [] -> UserCount cnt
+            | _, lst -> lst |> List.map (fun ch -> ch.id, mapUserInfo ch) |> Map.ofList |> UserList
+        {Id = ch.id; Name = ch.name; Topic = ch.topic; Users = usersInfo; Messages = []; Joined = ch.joined; PostText = ""}
 
 module Commands =
 

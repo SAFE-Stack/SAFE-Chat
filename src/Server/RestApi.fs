@@ -34,7 +34,8 @@ module private Implementation =
 
     let encodeChannelMessage channel : Uuid ChatClientMessage -> WsMessage =
         // FIXME fill user info
-        let userInfo userid : Protocol.ChanUserInfo = {name = userid.ToString(); online = true; isbot = false; lastSeen = System.DateTime.Now}
+        let userInfo userid : Protocol.ChanUserInfo =
+            {id = userid.ToString(); nick = userid.ToString(); online = true; isbot = false; lastSeen = System.DateTime.Now}
 
         function
         | ChatMessage ((id, ts), author, Message message) ->
@@ -115,7 +116,7 @@ module private Implementation =
                 let userInfo userId :Protocol.ChanUserInfo list =
                     serverState.users |> List.tryFind (fun u -> u.id = userId)
                     |> Option.map<_, Protocol.ChanUserInfo>
-                        (fun user -> {name = user.nick; online = true; isbot = false; lastSeen = System.DateTime.Now}) // FIXME
+                        (fun user -> {id = user.id.ToString(); nick = user.nick; online = true; isbot = false; lastSeen = System.DateTime.Now}) // FIXME
                     |> Option.toList
 
                 let chanInfo: Protocol.ChannelInfo = {

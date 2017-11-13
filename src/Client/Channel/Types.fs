@@ -1,7 +1,7 @@
 module Channel.Types
 
-type UserInfo = {Nick: string; Email: string option; UserId: string}
-with static member Anon = {Nick = "anonymous"; Email = None; UserId = "0"}
+type UserInfo = {UserId: string; Nick: string; IsBot: bool; Online: bool}
+with static member Anon = {Nick = "anonymous"; UserId = "0"; IsBot = false; Online = false}
 
 type Message = {
     Id: int
@@ -10,7 +10,7 @@ type Message = {
     AuthorId: string
 }
 
-type UsersInfo = | UserCount of int | UserList of UserInfo list
+type UsersInfo = | UserCount of int | UserList of Map<string, UserInfo>
 
 type ChannelData = {
     Id: string
@@ -21,7 +21,7 @@ type ChannelData = {
     Joined: bool
     PostText: string
 } with
-    member this.UserCount = match this.Users with |UserCount c -> c | UserList list -> List.length list
+    member this.UserCount = match this.Users with |UserCount c -> c | UserList list -> Map.count list
     static member Empty = {Id = null; Name = null; Topic = ""; Users = UserCount 0; Messages = []; Joined = false; PostText = ""}
 
 type Msg =
