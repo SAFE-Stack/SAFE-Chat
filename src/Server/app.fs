@@ -81,8 +81,8 @@ module View =
     let partUser (session : RestApi.Session) = 
         div ["id", "part-user"] [
             match session with
-            | RestApi.UserLoggedOn (session,_,_) ->
-                yield Text (sprintf "Logged on as %s" session.Nickname)
+            | RestApi.UserLoggedOn (ChatServer.UserNick nick,_,_) ->
+                yield Text (sprintf "Logged on as %s" nick)
                 yield a "/logoff" [] [Text "Log off"]
             | _ ->
                 yield Text "Log on via: "
@@ -145,9 +145,9 @@ let session (f: RestApi.Session -> WebPart) =
         function
         | None -> f RestApi.NoSession
         | Some state ->
-            match state.get "id", state.get "nick", state.get "uid", appServerState with
-            | Some id, Some nick, Some (ParseUuid userId), Some (actorSystem, server) ->
-                f (RestApi.UserLoggedOn ({Id = id; Nickname = nick; UserId = userId}, actorSystem, server))
+            match state.get "nick", appServerState with
+            | Some nick, Some (actorSystem, server) ->
+                f (RestApi.UserLoggedOn (ChatServer.UserNick nick, actorSystem, server))
             | _ -> f RestApi.NoSession)
 
 let root: WebPart =
@@ -158,16 +158,13 @@ let root: WebPart =
                 (fun loginData ->
                     // register user, obtain userid and store in session
                     let (Some (actorsystem, server)) = appServerState
-                    let userId = server |> ChatServer.registerNewUser loginData.Name (Some loginData.Id) [] |> Async.RunSynchronously // FIXME async
-                    logger.info (Message.eventX "User registered by id {userid}"
-                        >> Message.setFieldValue "userid" (userId.ToString()))
+                    let nick, name = loginData.Name, loginData.Name // TODO lookup for user nickname in db
+                    do server |> ChatServer.registerNewUser (ChatServer.UserNick nick) name (Some loginData.Id) [] |> Async.RunSynchronously // FIXME async
+                    logger.info (Message.eventX "User registered by nickname {nick}"
+                        >> Message.setFieldValue "nick" nick)
 
                     statefulForSession
-                    >=> sessionStore (fun store ->
-                            store.set "id" loginData.Id
-                        >=> store.set "nick" loginData.Name
-                        >=> store.set "uid" (userId.ToString())
-                    )
+                    >=> sessionStore (fun store -> store.set "nick" loginData.Name)
                     >=> FOUND "/"
                 )
                 (fun () -> FOUND "/loggedoff")
@@ -177,7 +174,7 @@ let root: WebPart =
         warbler(fun _ ->
             GET >=> path "/logonfast" >=> ( // FIXME remove in prod builds
                 let (Some (actorsystem, server)) = appServerState
-                let externalId, nick = "11111112222222333333", "Joe"
+                let externalId, nick, name = "11111112222222333333", "Joe", "Joe Smith"
 
                 let reply = server <? ChatServer.List |> Async.RunSynchronously
                 let demoChannel =
@@ -188,14 +185,10 @@ let root: WebPart =
                     |> Option.map (fun c -> c.id)
                     |> Option.toList
 
-                let userId = server |> ChatServer.registerNewUser nick (Some externalId) demoChannel |> Async.RunSynchronously
+                do server |> ChatServer.registerNewUser (ChatServer.UserNick nick) name (Some externalId) demoChannel |> Async.RunSynchronously
 
                 statefulForSession
-                >=> sessionStore (fun store ->
-                        store.set "id" externalId
-                    >=> store.set "nick" nick
-                    >=> store.set "uid" (userId.ToString())
-                )
+                >=> sessionStore (fun store -> store.set "nick" nick)
                 >=> FOUND "/"
                 )
         )

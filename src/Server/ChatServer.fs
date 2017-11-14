@@ -9,16 +9,19 @@ open Akkling
 
 open ChannelFlow
 
-type MaterializeFlow = Uuid -> Flow<Message,Uuid ChatClientMessage, Akka.NotUsed> -> UniqueKillSwitch
+type UserNick = UserNick of string
+type MaterializeFlow = Uuid -> Flow<Message, UserNick ChatClientMessage, Akka.NotUsed> -> UniqueKillSwitch
 
-type ChannelInfo = {id: Uuid; name: string; topic: string; userCount: int; users: Uuid list}
-type UserInfo = {id: Uuid; nick: string; email: string option; channels: ChannelInfo list}
+type ChannelInfo = {id: Uuid; name: string; topic: string; userCount: int; users: UserNick list}
+type UserInfo = {nick: UserNick; name: string; email: string option; channels: ChannelInfo list}
+
+let getNickname (UserNick nick) = nick
 
 module ServerState =
 
     type UserData = {
-        id: Uuid
-        nick: string
+        nick: UserNick
+        name: string
         euid: string option
         email: string option
         mat: MaterializeFlow option
@@ -30,7 +33,7 @@ module ServerState =
         id: Uuid
         name: string
         topic: string
-        channelActor: IActorRef<Uuid ChannelMessage>
+        channelActor: IActorRef<UserNick ChannelMessage>
     }
 
     type ServerData = {
@@ -44,17 +47,16 @@ type ServerControlMessage =
     | SetTopic of chan: Uuid * topic: string
     // RenameChan
     | FindChannel of name: string                       // return ChannelInfo
-    | DropChannel of Uuid: Uuid
+    | DropChannel of chan: Uuid
     // user specific commands
-    | Register of nick: string * euid: string option * channels: Uuid list    // return UserInfo
-    | Unregister of user: Uuid
-    | Connect of user: Uuid * mat: MaterializeFlow
-    | Disconnect of user: Uuid
-    | JoinOrCreate of user: Uuid * channelName: string
-    | Join of user: Uuid * channelId: Uuid
-    // | Nick of user: Uuid * newNick: string
-    | Leave of user: Uuid * chanId: Uuid
-    | GetUser of user: Uuid                             // returns UserInfo
+    | Register of nick: UserNick * name: string * euid: string option * channels: Uuid list    // return UserInfo
+    | Unregister of UserNick
+    | Connect of UserNick * mat: MaterializeFlow
+    | Disconnect of UserNick
+    | JoinOrCreate of UserNick * channelName: string
+    | Join of UserNick * channelId: Uuid
+    | Leave of UserNick * chanId: Uuid
+    | GetUser of UserNick                             // returns UserInfo
 
     | UpdateState of (ServerState.ServerData -> ServerState.ServerData)
     | ReadState
@@ -86,13 +88,13 @@ module internal Helpers =
 
     let byChanId id c = (c:ChannelData).id = id
     let byChanName name c = (c:ChannelData).name = name
-    let byUserId id u = (u:UserData).id = id
+    let byUserNick nick u = (u:UserData).nick = nick
 
     let setChannelTopic topic (chan: ChannelData) =
         {chan with topic = topic}
 
-    let updateUser f userId serverState: ServerData =
-        let u (user: UserData) = if user.id = userId then f user else user
+    let updateUser f userNick serverState: ServerData =
+        let u (user: UserData) = if user.nick = userNick then f user else user
         in
         updateUsers u serverState
 
@@ -120,7 +122,7 @@ module internal Helpers =
     
     let getChannelInfo (data: ChannelData) =
         async {
-            let! (users: Uuid list) = data.channelActor <? ListUsers
+            let! (users: UserNick list) = data.channelActor <? ListUsers
             return {id = data.id; name = data.name; topic = data.topic; userCount = users |> List.length; users = users}
         }
     let getChannelInfo0 (data: ChannelData) =
@@ -130,8 +132,7 @@ module internal Helpers =
         let getChan ids =
             channels |> List.filter (fun chan -> ids |> Map.containsKey chan.id)
             |> List.map getChannelInfo0 // FIXME does not return userCount
-        { id = data.id; nick = data.nick; email = data.email
-          channels = data.channels |> getChan}
+        { nick = data.nick; name = data.name; email = data.email; channels = data.channels |> getChan}
 
     module Async =
         let map f workflow = async {
@@ -198,14 +199,14 @@ module ServerApi =
             Ok {newState with channels = state.channels |> List.filter (not << byChanId chanId)}
         | _ -> Result.Error "Channel not found"
 
-    let private userOp userId state =
-        state.users |> List.tryFind (byUserId userId) |> function
+    let private userOp userNick state =
+        state.users |> List.tryFind (byUserNick userNick) |> function
         | None      -> Result.Error "User with such id not found"
         | Some user -> Ok user
 
     // Turns user to an "online" mode, and user starts receiving messages from all channels he's subscribed
-    let connect userId (mat: MaterializeFlow) state =
-        userOp userId state
+    let connect userNick (mat: MaterializeFlow) state =
+        userOp userNick state
         |> Result.bind(function
             | user when user.mat |> Option.isSome ->
                 Result.Error "User already connected"
@@ -214,20 +215,19 @@ module ServerApi =
                     state.channels
                     |> List.filter(fun chan -> channels |> Map.containsKey chan.id)
                     |> List.map (fun chan ->
-                        chan.id, Some (createChannelFlow chan.channelActor userId |> mat chan.id))
+                        chan.id, Some (createChannelFlow chan.channelActor userNick |> mat chan.id))
                     |> Map.ofList
                 let connectUser user = { user with mat = Some mat; channels = user.channels |> connectChannels}
-                Result.Ok (state |> updateUser connectUser userId)
+                Result.Ok (state |> updateUser connectUser userNick)
         )
 
-    let register (userId: Uuid option) nick euid channels state =
-        match state.users |> List.exists(fun u -> u.nick = nick || Some u.id = userId) with
+    let register nick name euid channels state =
+        match state.users |> List.exists(fun u -> u.nick = nick) with
         | true ->
-            Result.Error "User with such nick (or Id) already exists"
+            Result.Error "User with such nick already exists"
         | _ ->
-            let newUserId = userId |> Option.defaultValue (Uuid.New())
             let newUser = {
-                id = newUserId; euid = euid; nick = nick; email = None; mat = None
+                euid = euid; nick = nick; name = name; email = None; mat = None
                 channels = state.channels
                     |> List.filter(fun chan -> channels |> List.contains chan.id)
                     |> List.map (fun chan -> chan.id, None)
@@ -240,10 +240,10 @@ module ServerApi =
         |> Result.map (fun _ -> state |> updateUser disconnect userId)
 
     // User leaves the chat server
-    let unregister userId state =
-        userOp userId state
+    let unregister userNick state =
+        userOp userNick state
         |> Result.map (fun _ ->
-            state |> updateUser Helpers.disconnect userId |> removeUser (byUserId userId))
+            state |> updateUser Helpers.disconnect userNick |> removeUser (byUserNick userNick))
 
     let joinOrCreate userId channelName createChannel state =
         userOp userId state
@@ -320,26 +320,26 @@ let startServer (system: ActorSystem) =
         | SetTopic (chanId, topic) ->   update (state |> ServerApi.setTopic chanId topic)
         | DropChannel chanId ->         update (state |> ServerApi.dropChannel chanId)
 
-        | Register (nick, euid, channels) ->  state |> ServerApi.register None nick euid channels |> mapReply UserInfo |> replyAndUpdate
+        | Register (nick, name, euid, channels) ->  state |> ServerApi.register nick name euid channels |> mapReply UserInfo |> replyAndUpdate
 
         | Unregister userId ->          update (state |> ServerApi.unregister userId)
         | Connect (userId, mat) ->      update (state |> ServerApi.connect userId mat)
         | Disconnect userId ->          update (state |> ServerApi.disconnect userId)
 
-        | JoinOrCreate (userId, channelName) ->
-            state |> ServerApi.joinOrCreate userId channelName (createChannel system)
+        | JoinOrCreate (userNick, channelName) ->
+            state |> ServerApi.joinOrCreate userNick channelName (createChannel system)
             |> mapReply (getChannelInfo0 >> ChannelInfo)
             |> replyAndUpdate
 
-        | Join (userId, channelId) ->
-            state |> ServerApi.join userId channelId
+        | Join (userNick, channelId) ->
+            state |> ServerApi.join userNick channelId
             |> mapReply (getChannelInfo0 >> ChannelInfo)
             |> replyAndUpdate
 
-        | Leave (userId, chanId) ->     update (state |> ServerApi.leave userId chanId)
+        | Leave (userNick, chanId) ->     update (state |> ServerApi.leave userNick chanId)
 
-        | GetUser userId ->
-            state |> ServerApi.getUserInfo userId
+        | GetUser userNick ->
+            state |> ServerApi.getUserInfo userNick
             |> Result.map UserInfo
             |> reply
         | ReadState ->
@@ -350,7 +350,7 @@ let startServer (system: ActorSystem) =
     in
     props <| actorOf2 (behavior { channels = []; users = [] }) |> (spawn system "ircserver")
 
-let registerNewUser nick euid channels (server: IActorRef<ServerControlMessage>) =
+let registerNewUser nick name euid channels (server: IActorRef<ServerControlMessage>) =
     async {
         let! (serverState: ServerState.ServerData) = server <? ReadState
         let existingUser =
@@ -360,13 +360,13 @@ let registerNewUser nick euid channels (server: IActorRef<ServerControlMessage>)
                 None
 
         match existingUser with
-        | Some x -> return x.id
+        | Some x -> return ()
         | _ ->
-            let! reply = server <? Register (nick, euid, channels)
+            let! reply = server <? Register (nick, name, euid, channels)
             return reply
                 |> function
-                | UserInfo userInfo -> userInfo.id
-                | Error e -> failwith e; Uuid.Empty // FIXME
+                | UserInfo _ -> ()
+                | Error e -> failwith e
     }
 
 let locateUser predicate (server: IActorRef<ServerControlMessage>) =

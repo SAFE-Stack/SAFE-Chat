@@ -19,27 +19,20 @@ open ChatServer
 open SocketFlow
 
 open FsChat
-open System
-
-type UserSessionData = {
-    Nickname: string
-    Id: string
-    UserId: Uuid
-}
 
 type private ServerActor = IActorRef<ChatServer.ServerControlMessage>
-type Session = NoSession | UserLoggedOn of UserSessionData * ActorSystem * ServerActor
+type Session = NoSession | UserLoggedOn of UserNick * ActorSystem * ServerActor
 
 module private Implementation =
 
-    let encodeChannelMessage channel : Uuid ChatClientMessage -> WsMessage =
+    let encodeChannelMessage channel : UserNick ChatClientMessage -> WsMessage =
         // FIXME fill user info
-        let userInfo userid : Protocol.ChanUserInfo =
-            {id = userid.ToString(); nick = userid.ToString(); online = true; isbot = false; lastSeen = System.DateTime.Now}
+        let userInfo (UserNick nickname) : Protocol.ChanUserInfo =
+            {nick = nickname; name = "TBD"; email = None; online = true; isbot = false; lastSeen = System.DateTime.Now}
 
         function
-        | ChatMessage ((id, ts), author, Message message) ->
-            Protocol.ChanMsg {id = id; ts = ts; text = message; chan = channel; author = author.ToString()}
+        | ChatMessage ((id, ts),  UserNick author, Message message) ->
+            Protocol.ChanMsg {id = id; ts = ts; text = message; chan = channel; author = author}
         | Joined ((id, ts), user, _) ->
             Protocol.UserJoined  ({id = id; ts = ts; user = userInfo user}, channel)
         | Left ((id, ts), user, _) ->
@@ -85,8 +78,9 @@ module private Implementation =
 
             | Ok channelList ->
                 let! (UserInfo u) = server <? GetUser me
+                let (UserNick nickname) = u.nick
                 let reply = Protocol.Hello {
-                    nickname = u.nick; userId = (u.id.ToString())
+                    nick = nickname; name = u.name; email = u.email
                     channels = channelList
                     }
 
@@ -113,10 +107,11 @@ module private Implementation =
             | Result.Error e ->
                 return! BAD_REQUEST e ctx
             | Ok channel ->
-                let userInfo userId :Protocol.ChanUserInfo list =
-                    serverState.users |> List.tryFind (fun u -> u.id = userId)
+                let getNickname (UserNick nick) = nick
+                let userInfo userNick :Protocol.ChanUserInfo list =
+                    serverState.users |> List.tryFind (fun u -> u.nick = userNick)
                     |> Option.map<_, Protocol.ChanUserInfo>
-                        (fun user -> {id = user.id.ToString(); nick = user.nick; online = true; isbot = false; lastSeen = System.DateTime.Now}) // FIXME
+                        (fun user -> {nick = getNickname user.nick; name = user.name; email = user.email; online = true; isbot = false; lastSeen = System.DateTime.Now}) // FIXME
                     |> Option.toList
 
                 let chanInfo: Protocol.ChannelInfo = {
@@ -195,11 +190,7 @@ module private Implementation =
 
             | Ok channelList ->
                 let! (UserInfo u) = server <? GetUser me
-         
-                return Protocol.Hello <| {
-                    nickname = u.nick; userId = (u.id.ToString())
-                    channels = channelList
-                    }
+                return Protocol.Hello <| {nick = getNickname u.nick; name = u.name; email = u.email; channels = channelList}
         }
 
     let connectWebSocket (system: ActorSystem) (server: ServerActor) me : WebPart =
@@ -214,7 +205,7 @@ module private Implementation =
                 return ()
             }
 
-            let sessionFlow = createUserSessionFlow<Uuid,Uuid> materializer
+            let sessionFlow = createUserSessionFlow<UserNick,Uuid> materializer
             let socketFlow =
                 Flow.empty<WsMessage, Akka.NotUsed>
                 |> Flow.watchTermination (fun x t -> (monitor t) |> Async.Start; x)
@@ -253,15 +244,15 @@ let jsonNoCache =
 let api (session: Session): WebPart =
     pathStarts "/api" >=> jsonNoCache >=>
         match session with
-        | UserLoggedOn (u, actorSys, server) ->
+        | UserLoggedOn (nick, actorSys, server) ->
             choose [
-                POST >=> path "/api/hello" >=> (hello server u.UserId)
-                GET  >=> path "/api/channels" >=> (listChannels server u.UserId)
-                GET  >=> pathScan "/api/channel/%s/info" (chanInfo server u.UserId)
-                POST >=> pathScan "/api/channel/%s/join" (join server u.UserId)
-                POST >=> pathScan "/api/channel/%s/joincreate" (joinOrCreate server u.UserId)
-                POST >=> pathScan "/api/channel/%s/leave" (leave server u.UserId)
-                path "/api/socket" >=> (connectWebSocket actorSys server u.UserId)
+                POST >=> path "/api/hello" >=> (hello server nick)
+                GET  >=> path "/api/channels" >=> (listChannels server nick)
+                GET  >=> pathScan "/api/channel/%s/info" (chanInfo server nick)
+                POST >=> pathScan "/api/channel/%s/join" (join server nick)
+                POST >=> pathScan "/api/channel/%s/joincreate" (joinOrCreate server nick)
+                POST >=> pathScan "/api/channel/%s/leave" (leave server nick)
+                path "/api/socket" >=> (connectWebSocket actorSys server nick)
             ]
         | NoSession ->
             BAD_REQUEST "Authorization required"

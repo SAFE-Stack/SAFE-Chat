@@ -19,13 +19,13 @@ open FsChat
 module Conversions =
 
     let mapUserInfo (u: Protocol.ChanUserInfo): UserInfo =
-        {UserId = u.id; Nick = u.nick; IsBot = u.isbot; Online = u.online}
+        {Nick = u.nick; Name = u.nick; Email = u.email; IsBot = u.isbot; Online = u.online}
 
     let mapChannel (ch: Protocol.ChannelInfo): ChannelData =
         let usersInfo =
             match ch.userCount, ch.users with
             | cnt, [] -> UserCount cnt
-            | _, lst -> lst |> List.map (fun ch -> ch.id, mapUserInfo ch) |> Map.ofList |> UserList
+            | _, lst -> lst |> List.map (fun ch -> ch.nick, mapUserInfo ch) |> Map.ofList |> UserList
         {Id = ch.id; Name = ch.name; Topic = ch.topic; Users = usersInfo; Messages = []; Joined = ch.joined; PostText = ""}
 
 module Commands =
@@ -136,7 +136,7 @@ let socketMsgUpdate (msg: Protocol.ClientMsg) prevState : ChatState * Cmd<MsgTyp
                     socket = prevChatState.socket
                     Channels = hello.channels |> List.map (fun ch -> ch.id, Conversions.mapChannel ch) |> Map.ofList
                     }
-            let me = { UserInfo.Anon with Nick = hello.nickname; UserId = hello.userId }
+            let me: UserInfo = { Nick = hello.nick; Name = hello.name; Email = hello.email; Online = true; IsBot = false }
             Connected (me, chatData), Cmd.none
         | protocolMsg ->
             let chatData, cmds = chatUpdate protocolMsg prevChatState

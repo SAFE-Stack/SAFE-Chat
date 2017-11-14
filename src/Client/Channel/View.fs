@@ -22,7 +22,7 @@ let chanMessages (users: Map<string, UserInfo>) (messages: Message list) =
     let content (m: Message) =
       let user =
         users |> Map.tryFind m.AuthorId
-        |> function | Some u -> u | _ -> {UserId = m.AuthorId; Nick = "#" + m.AuthorId; IsBot = false; Online = false}
+        |> function | Some u -> u | _ -> {Nick = m.AuthorId; Name = ""; Email = None; IsBot = false; Online = false}
 
       [ strong [] [str user.Nick]; str " "; small [] [str "31m"]
         br []
@@ -48,7 +48,7 @@ let chanMessages (users: Map<string, UserInfo>) (messages: Message list) =
                         [ ClassName "level is-mobile"]
                         [ div
                             [ ClassName "level-left"]
-                            [ for cls in ["fa-reply"; "fa-retweet"; "fa-heart"] ->
+                            [ for cls in [] -> // "fa-reply"; "fa-retweet"; "fa-heart"] ->
                                 a
                                   [ ClassName "level-item"]
                                   [ span
@@ -82,7 +82,6 @@ let postMessage model dispatch =
 
 let root (model: ChannelData) dispatch =
     let users = model.Users |> function | UserCount _ -> Map.empty | UserList list -> list
-    let users = Map.empty |> Map.add "YK9kGV-xsFEoAO" {UserId = "YK9YHthke9YrHT"; Nick = "olegz"; IsBot = false; Online = true}
     div
       [ ClassName "content" ]
         [   h1 [] [ str model.Name ]

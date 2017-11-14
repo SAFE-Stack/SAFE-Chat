@@ -6,26 +6,23 @@ open Akkling
 open ChannelFlow
 open ChatServer
 
-let private isBot (userId: Uuid) = userId.i1 < 100000L
-
 /// Creates an actor for echo bot.
-let createEchoActor (system: ActorSystem) botUserId =
-    let getUserName uid = async {return uid.ToString()}    // FIXME display user nickname
+let createEchoActor (system: ActorSystem) botNick =
+    let isBot (userNick: UserNick) = userNick = botNick // FIXME
 
     let botHandler _ (ctx: Actor<_>) =
         function
-        | ChatMessage (_, (userId: Uuid), Message message) when not (isBot userId) ->
+        | ChatMessage (_, (userNick: UserNick), Message message) when not (isBot userNick) ->
             do ctx.Sender() <!| async {
-                let! userName = getUserName userId
-                let reply = sprintf "\"%s\" said: %s" userName message
-                return NewMessage (botUserId, Message reply)
+                let (UserNick nickname) = userNick
+                let reply = sprintf "@%s said: %s" nickname message
+                return NewMessage (botNick, Message reply)
             }
             ()
-        | Joined (_, userId, _) ->
+        | Joined (_, UserNick nickname, _) ->
             do ctx.Sender() <!| async {
-                let! userName = getUserName userId
-                let reply = sprintf "Welcome aboard, \"%s\"!" userName
-                return NewMessage (botUserId, Message reply)
+                let reply = sprintf "Welcome aboard, \"@%s\"!" nickname
+                return NewMessage (botNick, Message reply)
             }
         | _ -> ()
         >> ignored
@@ -33,15 +30,15 @@ let createEchoActor (system: ActorSystem) botUserId =
     props <| (actorOf2 <| botHandler ()) |> spawn system "echobot"
 
 let createDiagChannel (system: ActorSystem) (server: IActorRef<_>) (channelName, topic) =
-    let botUserId = {Uuid.i1 = 10000L; i2 = 1}
-    let bot = createEchoActor system botUserId
+    let echoNick = UserNick "echo"
+    let bot = createEchoActor system echoNick
 
     server <! UpdateState (fun state ->
         state
         |> ServerApi.addChannel (createChannel system) channelName topic
         |> Result.map (
             fun (state, chan) ->
-                chan.channelActor <! (NewParticipant (botUserId, bot))
+                chan.channelActor <! (NewParticipant (echoNick, bot))
                 state
         )
         |> function

@@ -4,7 +4,7 @@ namespace FsChat
 module Protocol =
 
     type ChanUserInfo = {
-        id: string; nick: string; online: bool; isbot: bool; lastSeen: System.DateTime
+        nick: string; name: string; email: string option; online: bool; isbot: bool; lastSeen: System.DateTime
     }
     type ChannelInfo = {
         id: string; name: string; userCount: int; topic: string; joined: bool; users: ChanUserInfo list
@@ -22,7 +22,9 @@ module Protocol =
         | UserMessage of ChannelMsg
 
     type HelloInfo = {
-        userId: string; nickname: string
+        nick: string
+        name: string
+        email: string option
         channels: ChannelInfo list
     }
 
