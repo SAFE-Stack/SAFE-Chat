@@ -1,6 +1,7 @@
 Akkling
 Akkling.Streams
 Suave
+Suave.OAuth
 Suave.Experimental
 Newtonsoft.Json
 Fable.JsonConverter
