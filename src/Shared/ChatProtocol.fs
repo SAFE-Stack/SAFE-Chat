@@ -20,6 +20,9 @@ module Protocol =
 
     type ServerMsg =
         | UserMessage of ChannelMsg
+        | Join of chanId: string    // TODO add req id (pass back in response message)
+        | JoinOrCreate of chanName: string
+        | Leave of chanId: string
 
     type HelloInfo = {
         nick: string
@@ -30,6 +33,7 @@ module Protocol =
 
     type ClientErrMsg =
         | AuthFail of string
+        | CannotProcess of reqId: string * message: string
 
     /// The messages from server to client
     type ClientMsg =

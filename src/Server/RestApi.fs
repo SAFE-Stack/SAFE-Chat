@@ -19,13 +19,15 @@ open ChatServer
 open SocketFlow
 
 open FsChat
+open Akkling.Streams
+open Akka.Routing
 
 type private ServerActor = IActorRef<ChatServer.ServerControlMessage>
 type Session = NoSession | UserLoggedOn of UserNick * ActorSystem * ServerActor
 
 module private Implementation =
 
-    let encodeChannelMessage channel : UserNick ChatClientMessage -> WsMessage =
+    let encodeChannelMessage channel : UserNick ChatClientMessage -> Protocol.ClientMsg =
         // FIXME fill user info
         let userInfo (UserNick nickname) : Protocol.ChanUserInfo =
             {nick = nickname; name = "TBD"; email = None; online = true; isbot = false; lastSeen = System.DateTime.Now}
@@ -37,7 +39,6 @@ module private Implementation =
             Protocol.UserJoined  ({id = id; ts = ts; user = userInfo user}, channel)
         | Left ((id, ts), user, _) ->
             Protocol.UserLeft  ({id = id; ts = ts; user = userInfo user}, channel)
-        >> Json.json >> Text
 
     let mapChannel isMine (chan: ChatServer.ChannelInfo) : Protocol.ChannelInfo =
         {id = chan.id.ToString(); name = chan.name; topic = chan.topic; userCount = chan.userCount; users = []; joined = isMine chan.id}
@@ -137,19 +138,18 @@ module private Implementation =
                 return! OK (Json.json response) ctx
         }    
 
-    let join (server: ServerActor) me chanIdStr : WebPart =
-        Uuid.TryParse chanIdStr |> function
-        | None -> BAD_REQUEST "invalid chanid"
-        | Some chanId ->
-            fun ctx -> async {
+    let join (server: ServerActor) me chanIdStr =
+        async {
+            match Uuid.TryParse chanIdStr with
+            | Some chanId ->
                 let! x = server <? Join (me, chanId)
                 match x with
-                | Error e ->
-                    return! BAD_REQUEST e ctx
                 | ChannelInfo info ->
-                    let response = info |> mapChannel (fun _ -> true)
-                    return! OK (Json.json response) ctx
-            }    
+                    return Ok (info |> mapChannel (fun _ -> true))
+                | Error e ->
+                    return Result.Error e
+            | None -> return Result.Error "invalid channel id"
+        }    
 
     let leave (server: ServerActor) me chanIdStr : WebPart =
         match Uuid.TryParse chanIdStr with
@@ -162,18 +162,16 @@ module private Implementation =
                 | _ ->       return! OK "" ctx
             }    
 
+    let processControlMessage =
+        let processMsg : Protocol.ServerMsg option -> Protocol.ClientMsg list Async = function
+            //| Protocol.Join chanId ->
+            | m ->
+                async {
+                    return [Protocol.CannotProcess ("", sprintf "not implemented: %A" m) |> Protocol.ClientMsg.Error]
+                }
+        let source = Flow.empty<_, Akka.NotUsed>
+        source |> Flow.asyncMap 1 processMsg |> Flow.collect id
     // TODO need a socket protocol type
-
-    // extracts message from websocket reply, only handles User input (channel * string)
-    let extractMessage = function
-        | Text t ->
-            match t |> Json.unjson<Protocol.ServerMsg> with
-            | Protocol.UserMessage msg ->
-                match Uuid.TryParse msg.chan with
-                | Some chanId ->
-                    Some (chanId, Message msg.text)
-                | _ -> None
-        |_ -> None
 
     let makeHelloMsg (server: ServerActor) me =
         async {
@@ -193,7 +191,21 @@ module private Implementation =
                 return Protocol.Hello <| {nick = getNickname u.nick; name = u.name; email = u.email; channels = channelList}
         }
 
+    // extracts message from websocket reply, only handles User input (channel * string)
+    let extractMessage = function
+        | Text t -> t |> Json.unjson<Protocol.ServerMsg> |> Some
+        |_ -> None
+
+    let extractUserMessage = function
+        | Some (Protocol.UserMessage msg) ->
+            match Uuid.TryParse msg.chan with
+            | Some chanId ->
+                Some (chanId, Message msg.text)
+            | _ -> None
+        |_ -> None
+
     let connectWebSocket (system: ActorSystem) (server: ServerActor) me : WebPart =
+
         fun ctx -> async {
             let materializer = system.Materializer()
 
@@ -206,14 +218,23 @@ module private Implementation =
             }
 
             let sessionFlow = createUserSessionFlow<UserNick,Uuid> materializer
-            let socketFlow =
-                Flow.empty<WsMessage, Akka.NotUsed>
-                |> Flow.watchTermination (fun x t -> (monitor t) |> Async.Start; x)
-                |> Flow.map extractMessage
+
+            let userMessageFlow =
+                Flow.empty<Protocol.ServerMsg option, Akka.NotUsed>
+                |> Flow.map extractUserMessage
                 |> Flow.filter Option.isSome
                 |> Flow.map Option.get
                 |> Flow.viaMat sessionFlow Keep.right
                 |> Flow.map (fun (channel: Uuid, message) -> encodeChannelMessage (channel.ToString()) message)
+
+            let combineFlow = FlowImpl.split2 userMessageFlow processControlMessage Keep.left
+
+            let socketFlow =
+                Flow.empty<WsMessage, Akka.NotUsed>
+                |> Flow.watchTermination (fun x t -> (monitor t) |> Async.Start; x)
+                |> Flow.map extractMessage
+                |> Flow.viaMat combineFlow Keep.right
+                |> Flow.map (Json.json >> Text)
 
             let! helloMessage = makeHelloMsg server me  // FIXME retrieve data from server
 
@@ -249,7 +270,6 @@ let api (session: Session): WebPart =
                 POST >=> path "/api/hello" >=> (hello server nick)
                 GET  >=> path "/api/channels" >=> (listChannels server nick)
                 GET  >=> pathScan "/api/channel/%s/info" (chanInfo server nick)
-                POST >=> pathScan "/api/channel/%s/join" (join server nick)
                 POST >=> pathScan "/api/channel/%s/joincreate" (joinOrCreate server nick)
                 POST >=> pathScan "/api/channel/%s/leave" (leave server nick)
                 path "/api/socket" >=> (connectWebSocket actorSys server nick)

@@ -96,9 +96,8 @@ let createChannelFlow<'User> (channelActor: IActorRef<_>) (user: 'User) =
     // materialization where the chatActor will send its messages to.
     // This source will only buffer one element and will fail if the client doesn't read
     // messages fast enough.
-    let fout =
-        Source.actorRef OverflowStrategy.Fail 1
-        |> Source.mapMaterializedValue (fun (sub: IActorRef<'User ChatClientMessage>) -> channelActor <! NewParticipant (user, sub); Akka.NotUsed.Instance)
+    let notifyNew sub = channelActor <! NewParticipant (user, sub); Akka.NotUsed.Instance
+    let fout = Source.actorRef OverflowStrategy.Fail 1 |> Source.mapMaterializedValue notifyNew
 
     Flow.ofSinkAndSource fin fout
 
@@ -106,21 +105,21 @@ let createChannelFlow<'User> (channelActor: IActorRef<_>) (user: 'User) =
 /// User session multiplexer. Creates a flow that receives user messages for multiple channels, binds each stream to channel flow
 /// and finally collects the messages from multiple channels into single stream.
 /// When materialized return a "connect" function which, given channel and channel flow, adds it to session. "Connect" returns a killswitch to remove the channel.
-let createUserSessionFlow<'User, 'Chan when 'Chan: equality>
+let createUserSessionFlow<'User, 'ChanId when 'ChanId: equality>
     (materializer: Akka.Streams.IMaterializer) =
 
-    let inhub = BroadcastHub.Sink<'Chan * Message>(bufferSize = 256)
-    let outhub = MergeHub.Source<'Chan * 'User ChatClientMessage>(perProducerBufferSize = 16)
+    let inhub = BroadcastHub.Sink<'ChanId * Message>(bufferSize = 256)
+    let outhub = MergeHub.Source<'ChanId * 'User ChatClientMessage>(perProducerBufferSize = 16)
 
     let sourceTo (sink) (source: Source<'TOut, 'TMat>) = source.To(sink)
 
     let combine
-            (producer: Source<'Chan * Message, Akka.NotUsed>)
-            (consumer: Sink<'Chan * 'User ChatClientMessage, Akka.NotUsed>)
-            (chanId: 'Chan) (chanFlow: Flow<Message, 'User ChatClientMessage, Akka.NotUsed>) =
+            (producer: Source<'ChanId * Message, Akka.NotUsed>)
+            (consumer: Sink<'ChanId * 'User ChatClientMessage, Akka.NotUsed>)
+            (chanId: 'ChanId) (chanFlow: Flow<Message, 'User ChatClientMessage, Akka.NotUsed>) =
 
         let infilter =
-            Flow.empty<'Chan * Message, Akka.NotUsed>
+            Flow.empty<'ChanId * Message, Akka.NotUsed>
             |> Flow.filter (fst >> (=) chanId)
             |> Flow.map snd
 

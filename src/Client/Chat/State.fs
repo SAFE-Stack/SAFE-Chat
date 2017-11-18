@@ -2,8 +2,6 @@ module Chat.State
 
 open Elmish
 open Elmish.Browser.Navigation
-open Fable.PowerPack
-open Fetch.Fetch_types
 
 open Fable.Websockets.Elmish
 open Fable.Websockets.Protocol
@@ -28,34 +26,6 @@ module Conversions =
             | _, lst -> lst |> List.map (fun ch -> ch.nick, mapUserInfo ch) |> Map.ofList |> UserList
         {Id = ch.id; Name = ch.name; Topic = ch.topic; Users = usersInfo; Messages = []; Joined = ch.joined; PostText = ""}
 
-module Commands =
-
-    let joinChannel chanId =
-        promise {
-            let props = [Method HttpMethod.POST; Credentials RequestCredentials.Include]
-            let! response = Fetch.fetchAs<Protocol.ChannelInfo> (sprintf "/api/channel/%s/join" chanId) props
-            return response |> Conversions.mapChannel
-        }
-
-    let createJoinChannel chanName =
-        promise {
-            let props = [Method HttpMethod.POST; Credentials RequestCredentials.Include]
-            let! response = Fetch.fetchAs<Protocol.ChannelInfo> (sprintf "/api/channel/%s/joincreate" chanName) props
-            return response |> Conversions.mapChannel
-        }
-
-    let leaveChannel chanId =
-        promise {
-            let props = [Credentials RequestCredentials.Include]
-            let! _ = Fetch.postRecord (sprintf "/api/channel/%s/leave" chanId) () props
-            return chanId
-        }
-
-    let joinChannelCmd chan = Cmd.ofPromise joinChannel chan Joined FetchError
-    let createJoinChannelCmd chan = Cmd.ofPromise createJoinChannel chan Joined FetchError
-    let leaveChannelCmd chan = Cmd.ofPromise leaveChannel chan Left FetchError
-
-open Commands
 open Fable.Import
 
 let init () : ChatState * Cmd<MsgType> =
@@ -87,15 +57,15 @@ let applicationMsgUpdate (msg: AppMsg) state: (ChatState * MsgType Cmd) =
             
         | CreateJoin ->
             state, Cmd.batch
-                    [ createJoinChannelCmd chat.NewChanName |> Cmd.map ApplicationMsg
+                    [ Cmd.ofSocketMessage chat.socket (Protocol.Join chat.NewChanName)
                       Cmd.ofMsg <| SetNewChanName "" |> Cmd.map ApplicationMsg]
         | Join chanId ->
-            state, joinChannelCmd chanId |> Cmd.map ApplicationMsg
+            state, Cmd.ofSocketMessage chat.socket (Protocol.Join chanId)
+        | Leave chanId ->
+            state, Cmd.ofSocketMessage chat.socket (Protocol.Leave chanId)
+
         | Joined chan ->
             Connected (me, {chat with Channels = chat.Channels |> Map.add chan.Id chan}), Navigation.newUrl  <| toHash (Channel chan.Id)
-        | Leave chanId ->
-            state, Cmd.batch [ leaveChannelCmd chanId |> Cmd.map ApplicationMsg
-                               Navigation.newUrl  <| toHash Home |> Cmd.map ApplicationMsg]
         
         | Left chanId ->
             Connected (me, chat |> updateChannel chanId (setJoined false)), Cmd.none
