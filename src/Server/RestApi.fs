@@ -19,11 +19,14 @@ open ChatServer
 open SocketFlow
 
 open FsChat
-open Akkling.Streams
-open Akka.Routing
 
 type private ServerActor = IActorRef<ChatServer.ServerControlMessage>
 type Session = NoSession | UserLoggedOn of UserNick * ActorSystem * ServerActor
+
+type IncomingMessage =
+    | ChannelMessage of Uuid * Message
+    | ControlMessage of Protocol.ServerMsg
+    | Trash
 
 module private Implementation =
 
@@ -72,9 +75,7 @@ module private Implementation =
 
             match reply with
             | Result.Error e ->
-                logger.error (Message.eventX "Failed to get channel list. Reason: {reason}"
-                    >> Message.setFieldValue "reason" e
-                )
+                logger.error (Message.eventX "Failed to get channel list. Reason: {reason}" >> Message.setFieldValue "reason" e)
                 return! BAD_REQUEST e ctx
 
             | Ok channelList ->
@@ -138,6 +139,8 @@ module private Implementation =
                 return! OK (Json.json response) ctx
         }    
 
+    let sendError errorText = Protocol.CannotProcess ("", errorText) |> Protocol.ClientMsg.Error
+
     let join (server: ServerActor) me chanIdStr =
         async {
             match Uuid.TryParse chanIdStr with
@@ -145,10 +148,10 @@ module private Implementation =
                 let! x = server <? Join (me, chanId)
                 match x with
                 | ChannelInfo info ->
-                    return Ok (info |> mapChannel (fun _ -> true))
+                    return info |> mapChannel (fun _ -> true) |> Protocol.JoinedChannel
                 | Error e ->
-                    return Result.Error e
-            | None -> return Result.Error "invalid channel id"
+                    return sendError e
+            | None -> return sendError "invalid channel id"
         }    
 
     let leave (server: ServerActor) me chanIdStr : WebPart =
@@ -161,17 +164,6 @@ module private Implementation =
                 | Error e -> return! BAD_REQUEST e ctx
                 | _ ->       return! OK "" ctx
             }    
-
-    let processControlMessage =
-        let processMsg : Protocol.ServerMsg option -> Protocol.ClientMsg list Async = function
-            //| Protocol.Join chanId ->
-            | m ->
-                async {
-                    return [Protocol.CannotProcess ("", sprintf "not implemented: %A" m) |> Protocol.ClientMsg.Error]
-                }
-        let source = Flow.empty<_, Akka.NotUsed>
-        source |> Flow.asyncMap 1 processMsg |> Flow.collect id
-    // TODO need a socket protocol type
 
     let makeHelloMsg (server: ServerActor) me =
         async {
@@ -192,19 +184,43 @@ module private Implementation =
         }
 
     // extracts message from websocket reply, only handles User input (channel * string)
-    let extractMessage = function
-        | Text t -> t |> Json.unjson<Protocol.ServerMsg> |> Some
-        |_ -> None
+    let extractMessage message =
+        try
+            match message with
+            | Text t ->
+                match t |> Json.unjson<Protocol.ServerMsg> with
+                | Protocol.UserMessage msg ->
+                    match Uuid.TryParse msg.chan with
+                    | Some chanId -> ChannelMessage (chanId, Message msg.text)
+                    | _ -> Trash
+                | message -> ControlMessage message                
+            |_ -> Trash
+        with e ->
+            do logger.error (Message.eventX "Failed to parse message '{msg}': {e}" >> Message.setFieldValue "msg" message  >> Message.setFieldValue "e" e)
+            Trash
+    let isChannelMessage = function
+        | ChannelMessage (_,_) -> true | _ -> false
+    let extractChannelMessage (ChannelMessage (chan, message)) = chan, message
 
-    let extractUserMessage = function
-        | Some (Protocol.UserMessage msg) ->
-            match Uuid.TryParse msg.chan with
-            | Some chanId ->
-                Some (chanId, Message msg.text)
-            | _ -> None
-        |_ -> None
+    let isControlMessage = function
+        | ControlMessage _ -> true | _ -> false
+    let extractControlMessage (ControlMessage message) = message
 
     let connectWebSocket (system: ActorSystem) (server: ServerActor) me : WebPart =
+
+        let processControlMessage : Flow<Protocol.ServerMsg, Protocol.ClientMsg, _> =
+            let processMsg (message: Protocol.ServerMsg) : Protocol.ClientMsg list Async =
+                async {
+                    match message with
+                    | Protocol.Join chanId ->
+                        let! result = join server me chanId
+                        return [result]
+                    | m ->
+                        do logger.error (Message.eventX "Unhandled message {msg}" >> Message.setFieldValue "msg" m)
+                        // return []
+                        return [Protocol.CannotProcess ("", sprintf "not implemented: %A" m) |> Protocol.ClientMsg.Error]
+                }
+            Flow.empty<_, Akka.NotUsed> |> Flow.asyncMap 10 processMsg |> Flow.collect id
 
         fun ctx -> async {
             let materializer = system.Materializer()
@@ -212,6 +228,7 @@ module private Implementation =
             // let server know websocket has gone (see onCompleteMessage)
             // FIXME not sure if it works at all
             let monitor t = async {
+                logger.debug (Message.eventX "Monitor triggered for user {me}" >> Message.setFieldValue "me" me)
                 let! _ = t
                 let! reply = server <? Disconnect (me)
                 return ()
@@ -220,19 +237,27 @@ module private Implementation =
             let sessionFlow = createUserSessionFlow<UserNick,Uuid> materializer
 
             let userMessageFlow =
-                Flow.empty<Protocol.ServerMsg option, Akka.NotUsed>
-                |> Flow.map extractUserMessage
-                |> Flow.filter Option.isSome
-                |> Flow.map Option.get
+                Flow.empty<IncomingMessage, Akka.NotUsed>
+                |> Flow.filter isChannelMessage
+                |> Flow.map extractChannelMessage
+                |> Flow.log "User flow"
                 |> Flow.viaMat sessionFlow Keep.right
                 |> Flow.map (fun (channel: Uuid, message) -> encodeChannelMessage (channel.ToString()) message)
 
-            let combineFlow = FlowImpl.split2 userMessageFlow processControlMessage Keep.left
+            let controlFlow =   // FIXME could be simplified
+                Flow.empty<IncomingMessage, Akka.NotUsed>
+                |> Flow.filter isControlMessage
+                |> Flow.map extractControlMessage
+                |> Flow.log "Control flow"
+                |> Flow.via processControlMessage
+
+            let combineFlow = FlowImpl.split2 userMessageFlow controlFlow Keep.left
 
             let socketFlow =
                 Flow.empty<WsMessage, Akka.NotUsed>
                 |> Flow.watchTermination (fun x t -> (monitor t) |> Async.Start; x)
                 |> Flow.map extractMessage
+                |> Flow.log "Extracting message"
                 |> Flow.viaMat combineFlow Keep.right
                 |> Flow.map (Json.json >> Text)
 
@@ -243,7 +268,6 @@ module private Implementation =
                     source
                     |> Source.viaMat socketFlow Keep.right
                     |> Source.mergeMat (Source.Single (helloMessage |> Json.json |> Text)) Keep.left
-                    // |> Source.alsoToMat logSink Keep.left
                     |> Source.toMat sink Keep.left
                     |> Graph.run materializer
 

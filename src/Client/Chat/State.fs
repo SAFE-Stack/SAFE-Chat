@@ -57,22 +57,18 @@ let applicationMsgUpdate (msg: AppMsg) state: (ChatState * MsgType Cmd) =
             
         | CreateJoin ->
             state, Cmd.batch
-                    [ Cmd.ofSocketMessage chat.socket (Protocol.Join chat.NewChanName)
+                    [ Cmd.ofSocketMessage chat.socket (Protocol.JoinOrCreate chat.NewChanName)
                       Cmd.ofMsg <| SetNewChanName "" |> Cmd.map ApplicationMsg]
         | Join chanId ->
             state, Cmd.ofSocketMessage chat.socket (Protocol.Join chanId)
         | Leave chanId ->
             state, Cmd.ofSocketMessage chat.socket (Protocol.Leave chanId)
 
-        | Joined chan ->
-            Connected (me, {chat with Channels = chat.Channels |> Map.add chan.Id chan}), Navigation.newUrl  <| toHash (Channel chan.Id)
-        
+        // TODO filter whatever is left below
+
+
         | Left chanId ->
             Connected (me, chat |> updateChannel chanId (setJoined false)), Cmd.none
-
-        | FetchError e ->
-            Browser.console.error <| sprintf "Fetch error %A" e
-            state, Cmd.none
 
     | _ ->
         Browser.console.error <| "Failed to process channel message. Server is not connected"
@@ -108,6 +104,11 @@ let socketMsgUpdate (msg: Protocol.ClientMsg) prevState : ChatState * Cmd<MsgTyp
                     }
             let me: UserInfo = { Nick = hello.nick; Name = hello.name; Email = hello.email; Online = true; IsBot = false }
             Connected (me, chatData), Cmd.none
+        | Protocol.ClientMsg.JoinedChannel chanInfo ->
+            Connected (me,
+                {prevChatState with
+                    Channels = prevChatState.Channels |> Map.add chanInfo.id (Conversions.mapChannel chanInfo)}),
+                Navigation.newUrl  <| toHash (Channel chanInfo.id)
         | protocolMsg ->
             let chatData, cmds = chatUpdate protocolMsg prevChatState
             Connected (me, chatData), cmds

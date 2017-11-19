@@ -10,9 +10,11 @@
         <e p="app.fs" t="Include" />
         <e p="bin" t="ExcludeRecursive" />
         <e p="Channel" t="Include">
+          <e p="State.fs" t="Include" />
+          <e p="Types.fs" t="Include" />
           <e p="View.fs" t="Include" />
         </e>
-        <e p="ChatData" t="Include">
+        <e p="Chat" t="Include">
           <e p="State.fs" t="Include" />
           <e p="Types.fs" t="Include" />
         </e>
@@ -37,18 +39,19 @@
         <e p="app.fs" t="Include" />
         <e p="bin" t="ExcludeRecursive" />
         <e p="ChannelFlow.fs" t="Include" />
-        <e p="ChatApi.fs" t="Include" />
         <e p="ChatServer.fs" t="Include" />
         <e p="Diag.fs" t="Include" />
+        <e p="FlowImpl.fs" t="Include" />
         <e p="Json.fs" t="Include" />
-        <e p="OAuth.fs" t="Include" />
         <e p="obj" t="ExcludeRecursive" />
         <e p="Program.fs" t="Include" />
+        <e p="RestApi.fs" t="Include" />
         <e p="server.fsproj" t="IncludeRecursive" />
         <e p="SocketFlow.fs" t="Include" />
         <e p="Uuid.fs" t="Include" />
         <e p="views.fs" t="Include" />
       </e>
+      <e p="src\Shared\ChatProtocol.fs" t="Include" />
     </e>
     <e p="C:\Users\olegz\.Rider2017.2\system\resharper-host\local\Transient\ReSharperHost\v10\SolutionCaches\_fschat.1716599987.00" t="ExcludeRecursive" />
   </component>

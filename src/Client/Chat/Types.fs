@@ -24,10 +24,10 @@ type AppMsg =
     | SetNewChanName of string
     | CreateJoin
     | Join of chanId: string
-    | Joined of chan: ChannelData  // by name
+
+    //| Joined of chan: ChannelData  // by name
     | Leave of chanId: string
     | Left of chanId: string
-    | FetchError of exn
 
 // TODO rename to Msg
 type MsgType = Msg<Protocol.ServerMsg, Protocol.ClientMsg, AppMsg>

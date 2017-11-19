@@ -11,6 +11,7 @@ open Suave.Successful
 open Suave.RequestErrors
 open Suave.State.CookieStateStore
 
+open Akka.Configuration
 open Akka.Actor
 open Akkling
 
@@ -64,7 +65,21 @@ type ServerActor = IActorRef<ChatServer.ServerControlMessage>
 let mutable private appServerState = None
 
 let startChatServer () =
-    let actorSystem = ActorSystem.Create("chatapp")
+    let config = ConfigurationFactory.ParseString """akka {  
+    stdout-loglevel = DEBUG
+    loglevel = DEBUG
+    // actor {                
+    //     debug {  
+    //           receive = on 
+    //           autoreceive = on
+    //           lifecycle = on
+    //           event-stream = on
+    //           unhandled = on
+    //     }
+    // }
+    }  
+    """
+    let actorSystem = ActorSystem.Create("chatapp", config)
     let chatServer = ChatServer.startServer actorSystem
 
     do Diag.createDiagChannel actorSystem chatServer ("Demo", "Channel for testing purposes. Notice the bots are always ready to keep conversation.")
