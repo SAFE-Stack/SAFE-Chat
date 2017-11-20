@@ -42,6 +42,8 @@ let applicationMsgUpdate (msg: AppMsg) state: (ChatState * MsgType Cmd) =
         | Nop -> state, Cmd.none
         | ChannelMsg (chanId, Forward msg) ->
             state, Cmd.ofSocketMessage chat.socket (Protocol.UserMessage {msg with chan = chanId})
+        | ChannelMsg (chanId, Msg.Leave) ->
+            state, Cmd.ofSocketMessage chat.socket (Protocol.ServerMsg.Leave chanId)
         | ChannelMsg (chanId, msg) ->
             match chat.Channels |> Map.tryFind chanId with
             | Some prevChan ->

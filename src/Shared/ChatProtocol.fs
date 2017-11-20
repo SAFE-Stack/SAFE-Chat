@@ -41,6 +41,7 @@ module Protocol =
         | Hello of HelloInfo
         | ChanMsg of ChannelMsg
         | JoinedChannel of ChannelInfo  // client joined a channel
+        | LeftChannel of chanId: string
 
         // The following types are incomplete
         | UserJoined of UserEventRec * chan: string

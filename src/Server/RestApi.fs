@@ -69,37 +69,6 @@ module private Implementation =
             | _ -> return Result.Error "Unknown reply from server"
         }
 
-    let hello (server: ServerActor) me : WebPart =
-        fun ctx -> async {
-            let! reply = getChannelList server me
-
-            match reply with
-            | Result.Error e ->
-                logger.error (Message.eventX "Failed to get channel list. Reason: {reason}" >> Message.setFieldValue "reason" e)
-                return! BAD_REQUEST e ctx
-
-            | Ok channelList ->
-                let! (UserInfo u) = server <? GetUser me
-                let (UserNick nickname) = u.nick
-                let reply = Protocol.Hello {
-                    nick = nickname; name = u.name; email = u.email
-                    channels = channelList
-                    }
-
-                return! OK (Json.json reply) ctx
-        }
-
-    /// Lists all channels.
-    let listChannels (server: ServerActor) me : WebPart =
-        fun ctx -> async {
-            let! reply = getChannelList server me
-            match reply with
-            | Result.Error e ->
-                return! BAD_REQUEST e ctx
-            | Ok channelList ->
-                return! OK (Json.json channelList) ctx
-        }
-
     /// Gets channel info by channel name
     let chanInfo (server: ServerActor) me (chanName: string) : WebPart =
         fun ctx -> async {
@@ -127,43 +96,6 @@ module private Implementation =
 
                 return! OK (chanInfo |> Json.json) ctx
         }
-
-    let joinOrCreate (server: ServerActor) me channelName : WebPart =
-        fun ctx -> async {
-            let! x = server <? JoinOrCreate (me, channelName)
-            match x with
-            | Error e ->
-                return! BAD_REQUEST e ctx
-            | ChannelInfo info ->
-                let response = info |> mapChannel (fun _ -> true)
-                return! OK (Json.json response) ctx
-        }    
-
-    let sendError errorText = Protocol.CannotProcess ("", errorText) |> Protocol.ClientMsg.Error
-
-    let join (server: ServerActor) me chanIdStr =
-        async {
-            match Uuid.TryParse chanIdStr with
-            | Some chanId ->
-                let! x = server <? Join (me, chanId)
-                match x with
-                | ChannelInfo info ->
-                    return info |> mapChannel (fun _ -> true) |> Protocol.JoinedChannel
-                | Error e ->
-                    return sendError e
-            | None -> return sendError "invalid channel id"
-        }    
-
-    let leave (server: ServerActor) me chanIdStr : WebPart =
-        match Uuid.TryParse chanIdStr with
-        | None -> BAD_REQUEST "channel not found"
-        | Some chanId ->
-            fun ctx -> async {
-                let! result = server <? Leave (me, chanId)
-                match result with
-                | Error e -> return! BAD_REQUEST e ctx
-                | _ ->       return! OK "" ctx
-            }    
 
     let makeHelloMsg (server: ServerActor) me =
         async {
@@ -211,14 +143,8 @@ module private Implementation =
         let processControlMessage : Flow<Protocol.ServerMsg, Protocol.ClientMsg, _> =
             let processMsg (message: Protocol.ServerMsg) : Protocol.ClientMsg list Async =
                 async {
-                    match message with
-                    | Protocol.Join chanId ->
-                        let! result = join server me chanId
-                        return [result]
-                    | m ->
-                        do logger.error (Message.eventX "Unhandled message {msg}" >> Message.setFieldValue "msg" m)
-                        // return []
-                        return [Protocol.CannotProcess ("", sprintf "not implemented: %A" m) |> Protocol.ClientMsg.Error]
+                    let! reply = server <? ServerMessage ("", me, message)
+                    return [reply]
                 }
             Flow.empty<_, Akka.NotUsed> |> Flow.asyncMap 10 processMsg |> Flow.collect id
 
@@ -291,11 +217,7 @@ let api (session: Session): WebPart =
         match session with
         | UserLoggedOn (nick, actorSys, server) ->
             choose [
-                POST >=> path "/api/hello" >=> (hello server nick)
-                GET  >=> path "/api/channels" >=> (listChannels server nick)
                 GET  >=> pathScan "/api/channel/%s/info" (chanInfo server nick)
-                POST >=> pathScan "/api/channel/%s/joincreate" (joinOrCreate server nick)
-                POST >=> pathScan "/api/channel/%s/leave" (leave server nick)
                 path "/api/socket" >=> (connectWebSocket actorSys server nick)
             ]
         | NoSession ->

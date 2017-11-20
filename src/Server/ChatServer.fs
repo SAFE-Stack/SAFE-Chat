@@ -8,10 +8,12 @@ open Akka.Streams.Dsl
 open Akkling
 
 open ChannelFlow
+open FsChat
 
 type UserNick = UserNick of string
 type MaterializeFlow = Uuid -> Flow<Message, UserNick ChatClientMessage, Akka.NotUsed> -> UniqueKillSwitch
 
+// TODO user Protocol instead
 type ChannelInfo = {id: Uuid; name: string; topic: string; userCount: int; users: UserNick list}
 type UserInfo = {nick: UserNick; name: string; email: string option; channels: ChannelInfo list}
 
@@ -42,6 +44,9 @@ module ServerState =
     }
 
 type ServerControlMessage =
+    | ServerMessage of requestId: string * UserNick * Protocol.ServerMsg
+
+    // TODO remove the rest
     | List                                              // returns ChannelList
     | NewChannel of name: string * topic: string        // returns ChannelInfo
     | SetTopic of chan: Uuid * topic: string
@@ -53,15 +58,13 @@ type ServerControlMessage =
     | Unregister of UserNick
     | Connect of UserNick * mat: MaterializeFlow
     | Disconnect of UserNick
-    | JoinOrCreate of UserNick * channelName: string
-    | Join of UserNick * channelId: Uuid
-    | Leave of UserNick * chanId: Uuid
     | GetUser of UserNick                             // returns UserInfo
 
     | UpdateState of (ServerState.ServerData -> ServerState.ServerData)
     | ReadState
 
 type ServerReplyMessage =
+    | ClientMessage of Protocol.ClientMsg
     | Done
     | ChannelList of ChannelInfo list
     | ChannelInfo of ChannelInfo
@@ -277,7 +280,7 @@ module ServerApi =
                 Result.Error "User is not joined channel"
             | Some kso ->
                 kso |> Option.map (fun ks -> ks.Shutdown()) |> ignore
-                Ok (state |> updateUser (leaveChan chanId) userId))
+                Ok (state |> updateUser (leaveChan chanId) userId, chanId))
 
     let getUserInfo userId state =
         userOp userId state
@@ -293,6 +296,22 @@ let startServer (system: ActorSystem) =
         let passError errtext =
             ctx.Sender() <! Error errtext
             ignored state
+        let passError1 reqId errtext =
+            ctx.Sender() <! (Protocol.CannotProcess (reqId, errtext) |> Protocol.ClientMsg.Error)
+            ignored state
+
+        let replyAndUpdate1 reqId = function
+            | Ok (newState, reply) -> ctx.Sender() <! reply; become (behavior newState ctx)
+            | Result.Error errText -> passError1 reqId errText
+
+        let reply1 reqId = function
+            | Ok result -> ctx.Sender() <! result; ignored state
+            | Result.Error errtext -> passError1 reqId errtext
+
+        let update1 reqId = function
+            | Ok newState -> ctx.Sender() <! Done; become (behavior newState ctx)
+            | Result.Error errText -> passError1 reqId errText
+
         let reply = function
             | Ok result -> ctx.Sender() <! result; ignored state
             | Result.Error errtext -> passError errtext
@@ -304,7 +323,33 @@ let startServer (system: ActorSystem) =
             | Result.Error errText -> passError errText
         let mapReply f = Result.map (fun (ns, r) -> ns, f r)
 
+        let mapChannel isMine (chan: ChannelInfo) : Protocol.ChannelInfo =
+            {id = chan.id.ToString(); name = chan.name; topic = chan.topic; userCount = chan.userCount; users = []; joined = isMine chan.id}
+        let mapChannelMine = mapChannel (fun _ -> true)
+
         function
+        | ServerMessage (requestId, user, msg) ->
+            match msg with
+            | Protocol.ServerMsg.Join chanIdStr ->
+                match Uuid.TryParse chanIdStr with
+                | Some channelId ->
+                    state |> ServerApi.join user channelId
+                    |> mapReply (getChannelInfo0 >> mapChannelMine >> Protocol.JoinedChannel)
+                    |> replyAndUpdate1 requestId
+                | _ -> passError1 requestId "bad channel id"
+            | Protocol.ServerMsg.JoinOrCreate channelName ->
+                state |> ServerApi.joinOrCreate user channelName (createChannel system)
+                |> mapReply (getChannelInfo0 >> mapChannelMine >> Protocol.JoinedChannel)
+                |> replyAndUpdate1 requestId
+            |  Protocol.ServerMsg.Leave chanIdStr ->
+                match Uuid.TryParse chanIdStr with
+                | Some channelId ->
+                    state |> ServerApi.leave user channelId
+                    |> mapReply (fun _ -> Protocol.ClientMsg.LeftChannel chanIdStr)
+                    |> replyAndUpdate1 requestId
+                | _ -> passError1 requestId "bad channel id"
+            | _ -> passError1 requestId "unsupported command"
+            
         | List ->
             ctx.Sender() <!| (state |> ServerApi.listChannels |> Async.map ChannelList)
             ignored state
@@ -325,18 +370,6 @@ let startServer (system: ActorSystem) =
         | Unregister userId ->          update (state |> ServerApi.unregister userId)
         | Connect (userId, mat) ->      update (state |> ServerApi.connect userId mat)
         | Disconnect userId ->          update (state |> ServerApi.disconnect userId)
-
-        | JoinOrCreate (userNick, channelName) ->
-            state |> ServerApi.joinOrCreate userNick channelName (createChannel system)
-            |> mapReply (getChannelInfo0 >> ChannelInfo)
-            |> replyAndUpdate
-
-        | Join (userNick, channelId) ->
-            state |> ServerApi.join userNick channelId
-            |> mapReply (getChannelInfo0 >> ChannelInfo)
-            |> replyAndUpdate
-
-        | Leave (userNick, chanId) ->     update (state |> ServerApi.leave userNick chanId)
 
         | GetUser userNick ->
             state |> ServerApi.getUserInfo userNick

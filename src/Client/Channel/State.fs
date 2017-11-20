@@ -22,6 +22,8 @@ let update (msg: Msg) state: (ChannelData * Msg Cmd) =
             {state with PostText = ""}, Cmd.ofMsg (Forward userMessage)
         | _ ->
             state, Cmd.none
+
+    | Leave
     | Forward _ ->
-        Browser.console.error "Forward message is not expected in channel update."
+        Browser.console.error <| sprintf "%A message is not expected in channel update." msg
         state, Cmd.none
