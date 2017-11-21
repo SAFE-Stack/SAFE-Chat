@@ -9,7 +9,6 @@ open Akka.Streams.Dsl
 open Suave
 open Suave.Filters
 open Suave.Logging
-open Suave.Successful
 open Suave.RequestErrors
 open Suave.WebSocket
 open Suave.Operators
@@ -43,79 +42,9 @@ module private Implementation =
         | Left ((id, ts), user, _) ->
             Protocol.UserLeft  ({id = id; ts = ts; user = userInfo user}, channel)
 
-    let mapChannel isMine (chan: ChatServer.ChannelInfo) : Protocol.ChannelInfo =
-        {id = chan.id.ToString(); name = chan.name; topic = chan.topic; userCount = chan.userCount; users = []; joined = isMine chan.id}
-
     let logger = Log.create "chatapi"        
 
-    type ServerActor = IActorRef<ServerControlMessage>
-
-    let getChannelList (server: ServerActor) me =
-        async {
-            let! reply = server <? List
-            match reply with
-            | Error e ->
-                return Result.Error (sprintf "Failed to get channel list: %s" e)
-            | ChannelList channelList ->
-                let! reply2 = server <? GetUser me
-                match reply2 with
-                | Error e ->
-                    return Result.Error (sprintf "Failed to get user by id '%s': %s" (me.ToString()) e)
-                | UserInfo me ->
-                    let imIn chanId = me.channels |> List.exists(fun ch -> ch.id = chanId)
-                    let result = channelList |> List.map (mapChannel imIn)
-                    return Ok result
-                | _ -> return Result.Error "Unknown reply from server, expected user info"
-            | _ -> return Result.Error "Unknown reply from server"
-        }
-
-    /// Gets channel info by channel name
-    let chanInfo (server: ServerActor) me (chanName: string) : WebPart =
-        fun ctx -> async {
-            let! (serverState: ServerState.ServerData) = server <? ReadState
-            let! chan = serverState |> ServerApi.findChannelEx chanName
-            match chan with
-            | Result.Error e ->
-                return! BAD_REQUEST e ctx
-            | Ok channel ->
-                let getNickname (UserNick nick) = nick
-                let userInfo userNick :Protocol.ChanUserInfo list =
-                    serverState.users |> List.tryFind (fun u -> u.nick = userNick)
-                    |> Option.map<_, Protocol.ChanUserInfo>
-                        (fun user -> {nick = getNickname user.nick; name = user.name; email = user.email; online = true; isbot = false; lastSeen = System.DateTime.Now}) // FIXME
-                    |> Option.toList
-
-                let chanInfo: Protocol.ChannelInfo = {
-                    id = channel.id.ToString()
-                    name = channel.name
-                    topic = channel.topic
-                    joined = channel.users |> List.contains me
-                    userCount = channel.userCount
-                    users = channel.users |> List.collect userInfo
-                }
-
-                return! OK (chanInfo |> Json.json) ctx
-        }
-
-    let makeHelloMsg (server: ServerActor) me =
-        async {
-            // TODO run on server side using ReadState
-            let! reply = getChannelList server me
-
-            match reply with
-            | Result.Error e ->
-                logger.error (Message.eventX "Failed to get channel list. Reason: {reason}"
-                    >> Message.setFieldValue "reason" e
-                )
-                let errText = sprintf "Failed to get channel list. Reason: '%s'" e
-                return errText |> Protocol.AuthFail |> Protocol.Error
-
-            | Ok channelList ->
-                let! (UserInfo u) = server <? GetUser me
-                return Protocol.Hello <| {nick = getNickname u.nick; name = u.name; email = u.email; channels = channelList}
-        }
-
-    // extracts message from websocket reply, only handles User input (channel * string)
+        // extracts message from websocket reply, only handles User input (channel * string)
     let extractMessage message =
         try
             match message with
@@ -170,7 +99,7 @@ module private Implementation =
                 |> Flow.viaMat sessionFlow Keep.right
                 |> Flow.map (fun (channel: Uuid, message) -> encodeChannelMessage (channel.ToString()) message)
 
-            let controlFlow =   // FIXME could be simplified
+            let controlFlow =
                 Flow.empty<IncomingMessage, Akka.NotUsed>
                 |> Flow.filter isControlMessage
                 |> Flow.map extractControlMessage
@@ -187,13 +116,10 @@ module private Implementation =
                 |> Flow.viaMat combineFlow Keep.right
                 |> Flow.map (Json.json >> Text)
 
-            let! helloMessage = makeHelloMsg server me  // FIXME retrieve data from server
-
             let materialize materializer (source: Source<WsMessage, Akka.NotUsed>) (sink: Sink<WsMessage, _>) =
                 let listenChannel =
                     source
                     |> Source.viaMat socketFlow Keep.right
-                    |> Source.mergeMat (Source.Single (helloMessage |> Json.json |> Text)) Keep.left
                     |> Source.toMat sink Keep.left
                     |> Graph.run materializer
 
@@ -206,19 +132,9 @@ module private Implementation =
 
 open Implementation
 
-let jsonNoCache =
-    Writers.setHeader "Cache-Control" "no-cache, no-store, must-revalidate"
-    >=> Writers.setHeader "Pragma" "no-cache"
-    >=> Writers.setHeader "Expires" "0"
-    >=> Writers.setMimeType "application/json"
-
 let api (session: Session): WebPart =
-    pathStarts "/api" >=> jsonNoCache >=>
-        match session with
-        | UserLoggedOn (nick, actorSys, server) ->
-            choose [
-                GET  >=> pathScan "/api/channel/%s/info" (chanInfo server nick)
-                path "/api/socket" >=> (connectWebSocket actorSys server nick)
-            ]
-        | NoSession ->
-            BAD_REQUEST "Authorization required"
+    match session with
+    | UserLoggedOn (nick, actorSys, server) ->
+        path "/api/socket" >=> (connectWebSocket actorSys server nick)
+    | NoSession ->
+        BAD_REQUEST "Authorization required"

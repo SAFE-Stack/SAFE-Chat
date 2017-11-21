@@ -13,12 +13,6 @@ open FsChat
 type UserNick = UserNick of string
 type MaterializeFlow = Uuid -> Flow<Message, UserNick ChatClientMessage, Akka.NotUsed> -> UniqueKillSwitch
 
-// TODO user Protocol instead
-type ChannelInfo = {id: Uuid; name: string; topic: string; userCount: int; users: UserNick list}
-type UserInfo = {nick: UserNick; name: string; email: string option; channels: ChannelInfo list}
-
-let getNickname (UserNick nick) = nick
-
 module ServerState =
 
     type UserData = {
@@ -46,19 +40,13 @@ module ServerState =
 type ServerControlMessage =
     | ServerMessage of requestId: string * UserNick * Protocol.ServerMsg
 
-    // TODO remove the rest
-    | List                                              // returns ChannelList
     | NewChannel of name: string * topic: string        // returns ChannelInfo
-    | SetTopic of chan: Uuid * topic: string
-    // RenameChan
-    | FindChannel of name: string                       // return ChannelInfo
-    | DropChannel of chan: Uuid
+
     // user specific commands
     | Register of nick: UserNick * name: string * euid: string option * channels: Uuid list    // return UserInfo
     | Unregister of UserNick
     | Connect of UserNick * mat: MaterializeFlow
     | Disconnect of UserNick
-    | GetUser of UserNick                             // returns UserInfo
 
     | UpdateState of (ServerState.ServerData -> ServerState.ServerData)
     | ReadState
@@ -66,9 +54,6 @@ type ServerControlMessage =
 type ServerReplyMessage =
     | ClientMessage of Protocol.ClientMsg
     | Done
-    | ChannelList of ChannelInfo list
-    | ChannelInfo of ChannelInfo
-    | UserInfo of UserInfo
     | State of ServerState.ServerData
     | Error of string
 
@@ -123,19 +108,8 @@ module internal Helpers =
     let leaveChan chanId (user: UserData) =
         {user with channels = user.channels |> Map.remove chanId}
     
-    let getChannelInfo (data: ChannelData) =
-        async {
-            let! (users: UserNick list) = data.channelActor <? ListUsers
-            return {id = data.id; name = data.name; topic = data.topic; userCount = users |> List.length; users = users}
-        }
-    let getChannelInfo0 (data: ChannelData) =
-        {id = data.id; name = data.name; topic = data.topic; userCount = 0; users = []}
-
-    let getUserInfo (channels: ChannelData list) (data: UserData) =
-        let getChan ids =
-            channels |> List.filter (fun chan -> ids |> Map.containsKey chan.id)
-            |> List.map getChannelInfo0 // FIXME does not return userCount
-        { nick = data.nick; name = data.name; email = data.email; channels = data.channels |> getChan}
+    let mapChanInfo (data: ChannelData) : Protocol.ChannelInfo =
+        {id = data.id.ToString(); name = data.name; topic = data.topic; userCount = 0; users = []; joined = false}
 
     module Async =
         let map f workflow = async {
@@ -151,12 +125,6 @@ module ServerApi =
         (String.length name) > 0
         && Char.IsLetter name.[0]
 
-    let listChannels state =
-        async {
-            let! channels = state.channels |> List.map getChannelInfo |> Async.Parallel
-            return channels |> Array.toList
-        }
-
     /// Creates a new channel or returns existing if channel already exists
     let addChannel createChannel name topic (state: ServerData) =
         match state.channels |> List.tryFind (byChanName name) with
@@ -169,16 +137,6 @@ module ServerApi =
             Ok ({state with channels = newChan::state.channels}, newChan)
         | _ ->
             Result.Error "Invalid channel name"
-
-    let findChannel name (state: ServerData) =
-        match state.channels |> List.tryFind (byChanName name) with
-        | Some chan -> getChannelInfo0 chan |> Ok
-        | _ -> Result.Error "Channel with such name not found"
-
-    let findChannelEx name (state: ServerData) =
-        match state.channels |> List.tryFind (byChanName name) with
-        | Some chan -> getChannelInfo chan |> Async.map Ok
-        | _ -> Result.Error "Channel with such name not found" |> async.Return
 
     let setTopic chanId newTopic state =
         Ok (state |> updateChannel (setChannelTopic newTopic) chanId)
@@ -213,7 +171,7 @@ module ServerApi =
         |> Result.bind(function
             | user when user.mat |> Option.isSome ->
                 Result.Error "User already connected"
-            | user ->
+            | _ ->
                 let connectChannels channels =
                     state.channels
                     |> List.filter(fun chan -> channels |> Map.containsKey chan.id)
@@ -221,7 +179,7 @@ module ServerApi =
                         chan.id, Some (createChannelFlow chan.channelActor userNick |> mat chan.id))
                     |> Map.ofList
                 let connectUser user = { user with mat = Some mat; channels = user.channels |> connectChannels}
-                Result.Ok (state |> updateUser connectUser userNick)
+                Ok (state |> updateUser connectUser userNick)
         )
 
     let register nick name euid channels state =
@@ -236,7 +194,7 @@ module ServerApi =
                     |> List.map (fun chan -> chan.id, None)
                     |> Map.ofList
             }
-            Ok ({state with users = newUser :: state.users}, getUserInfo state.channels newUser)
+            Ok ({state with users = newUser :: state.users}, ServerReplyMessage.Done)
 
     let disconnect userId state =
         userOp userId state
@@ -282,9 +240,49 @@ module ServerApi =
                 kso |> Option.map (fun ks -> ks.Shutdown()) |> ignore
                 Ok (state |> updateUser (leaveChan chanId) userId, chanId))
 
-    let getUserInfo userId state =
-        userOp userId state
-        |> Result.map (getUserInfo state.channels)
+    let replyHello user (state: ServerData) : Protocol.ClientMsg Async =
+        async {
+            let channels = state.channels |> List.map mapChanInfo
+            
+            match state.users |> List.tryFind (byUserNick user) with
+            | Some me ->
+                let imIn chanId = me.channels |> Map.containsKey chanId
+                let channels = channels |> List.map (fun ch -> {ch with joined = imIn (Uuid.TryParse ch.id |> Option.get)})
+                let (UserNick mynick) = me.nick
+
+                return Protocol.ClientMsg.Hello <| {nick = mynick; name = me.name; email = me.email; channels = channels}
+            | _ ->
+                let (UserNick username) = user
+                let errtext = sprintf "Failed to get user by id '%s'" username
+                return (Protocol.CannotProcess ("", errtext) |> Protocol.ClientMsg.Error)
+        }
+
+    let getChannelInfoVerbose criteria (me: UserNick) (server: ServerData) =
+        match server.channels |> List.tryFind criteria with
+        | Some chan ->
+            async {
+                // let! channel = getChannelInfo chan
+                let! (users: UserNick list) = chan.channelActor <? ListUsers
+
+                let getNickname (UserNick nick) = nick
+                let userInfo userNick :Protocol.ChanUserInfo list =
+                    server.users |> List.tryFind (fun u -> u.nick = userNick)
+                    |> Option.map<_, Protocol.ChanUserInfo>
+                        (fun user -> {nick = getNickname user.nick; name = user.name; email = user.email; online = true; isbot = false; lastSeen = System.DateTime.Now}) // FIXME
+                    |> Option.toList
+
+                let chanInfo: Protocol.ChannelInfo = {
+                    mapChanInfo chan with
+                        joined = users |> List.contains me
+                        userCount = users |> List.length
+                        users = users |> List.collect userInfo
+                }
+                return chanInfo |> Ok
+            }
+            
+        | _ ->
+            Result.Error "Channel not found" |> async.Return
+
 
 open ServerState
 open Helpers
@@ -321,25 +319,25 @@ let startServer (system: ActorSystem) =
         let replyAndUpdate = function
             | Ok (newState, reply) -> ctx.Sender() <! reply; become (behavior newState ctx)
             | Result.Error errText -> passError errText
-        let mapReply f = Result.map (fun (ns, r) -> ns, f r)
-
-        let mapChannel isMine (chan: ChannelInfo) : Protocol.ChannelInfo =
-            {id = chan.id.ToString(); name = chan.name; topic = chan.topic; userCount = chan.userCount; users = []; joined = isMine chan.id}
-        let mapChannelMine = mapChannel (fun _ -> true)
+        let mapReply f = Result.map (fun (ns, r) -> ns, f r)        
 
         function
         | ServerMessage (requestId, user, msg) ->
             match msg with
+            | Protocol.ServerMsg.Greets ->
+                let reply = ServerApi.replyHello user state
+                ctx.Sender() <!| reply
+                ignored state
             | Protocol.ServerMsg.Join chanIdStr ->
                 match Uuid.TryParse chanIdStr with
                 | Some channelId ->
                     state |> ServerApi.join user channelId
-                    |> mapReply (getChannelInfo0 >> mapChannelMine >> Protocol.JoinedChannel)
+                    |> mapReply (fun ch -> {mapChanInfo ch with joined = true} |> Protocol.JoinedChannel)
                     |> replyAndUpdate1 requestId
                 | _ -> passError1 requestId "bad channel id"
             | Protocol.ServerMsg.JoinOrCreate channelName ->
                 state |> ServerApi.joinOrCreate user channelName (createChannel system)
-                |> mapReply (getChannelInfo0 >> mapChannelMine >> Protocol.JoinedChannel)
+                |> mapReply (fun ch -> {mapChanInfo ch with joined = true} |> Protocol.JoinedChannel)
                 |> replyAndUpdate1 requestId
             |  Protocol.ServerMsg.Leave chanIdStr ->
                 match Uuid.TryParse chanIdStr with
@@ -350,31 +348,18 @@ let startServer (system: ActorSystem) =
                 | _ -> passError1 requestId "bad channel id"
             | _ -> passError1 requestId "unsupported command"
             
-        | List ->
-            ctx.Sender() <!| (state |> ServerApi.listChannels |> Async.map ChannelList)
-            ignored state
-
         | NewChannel (name, topic) ->
             state |> ServerApi.addChannel (createChannel system) name topic
-            |> mapReply (getChannelInfo0 >> ChannelInfo)
+            |> mapReply mapChanInfo
             |> replyAndUpdate
 
-        | FindChannel name ->
-            state |> ServerApi.findChannel name |> Result.map ChannelInfo |> reply
-
-        | SetTopic (chanId, topic) ->   update (state |> ServerApi.setTopic chanId topic)
-        | DropChannel chanId ->         update (state |> ServerApi.dropChannel chanId)
-
-        | Register (nick, name, euid, channels) ->  state |> ServerApi.register nick name euid channels |> mapReply UserInfo |> replyAndUpdate
+        | Register (nick, name, euid, channels) ->
+             state |> ServerApi.register nick name euid channels |> replyAndUpdate
 
         | Unregister userId ->          update (state |> ServerApi.unregister userId)
         | Connect (userId, mat) ->      update (state |> ServerApi.connect userId mat)
         | Disconnect userId ->          update (state |> ServerApi.disconnect userId)
 
-        | GetUser userNick ->
-            state |> ServerApi.getUserInfo userNick
-            |> Result.map UserInfo
-            |> reply
         | ReadState ->
             ctx.Sender() <! state; ignored state
         | UpdateState updater ->
@@ -393,12 +378,12 @@ let registerNewUser nick name euid channels (server: IActorRef<ServerControlMess
                 None
 
         match existingUser with
-        | Some x -> return ()
+        | Some _ -> return ()
         | _ ->
             let! reply = server <? Register (nick, name, euid, channels)
             return reply
                 |> function
-                | UserInfo _ -> ()
+                | Done -> ()
                 | Error e -> failwith e
     }
 

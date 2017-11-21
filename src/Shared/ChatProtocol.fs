@@ -19,6 +19,7 @@ module Protocol =
     }
 
     type ServerMsg =
+        | Greets
         | UserMessage of ChannelMsg
         | Join of chanId: string    // TODO add req id (pass back in response message)
         | JoinOrCreate of chanName: string

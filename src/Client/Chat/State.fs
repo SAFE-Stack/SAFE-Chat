@@ -123,7 +123,7 @@ let inline update msg prevState =
     | ApplicationMsg amsg ->
         applicationMsgUpdate amsg prevState
     | WebsocketMsg (socket, Opened) ->
-        Connected (UserInfo.Anon, { ChatData.Empty with socket = socket }), Cmd.none
+        Connected (UserInfo.Anon, { ChatData.Empty with socket = socket }), Cmd.ofSocketMessage socket Protocol.ServerMsg.Greets
     | WebsocketMsg (_, Msg socketMsg) ->
         socketMsgUpdate socketMsg prevState
     | _ -> (prevState, Cmd.none)

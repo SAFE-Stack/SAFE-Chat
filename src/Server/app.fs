@@ -83,6 +83,7 @@ let startChatServer () =
     let chatServer = ChatServer.startServer actorSystem
 
     do Diag.createDiagChannel actorSystem chatServer ("Demo", "Channel for testing purposes. Notice the bots are always ready to keep conversation.")
+    // TODO move to server initialization
     chatServer <! ChatServer.ServerControlMessage.NewChannel ("Test", "test channel #1")
     chatServer <! ChatServer.ServerControlMessage.NewChannel ("Weather", "join channel to get updated")
 
@@ -188,19 +189,12 @@ let root: WebPart =
 
         warbler(fun _ ->
             GET >=> path "/logonfast" >=> ( // FIXME remove in prod builds
-                let (Some (actorsystem, server)) = appServerState
                 let externalId, nick, name = "11111112222222333333", "Joe", "Joe Smith"
 
-                let reply = server <? ChatServer.List |> Async.RunSynchronously
-                let demoChannel =
-                    match reply with
-                    | ChatServer.ChannelList channelList -> channelList
-                    | _ -> []
-                    |> List.tryFind (fun c -> c.name = "Demo")
-                    |> Option.map (fun c -> c.id)
-                    |> Option.toList
 
-                do server |> ChatServer.registerNewUser (ChatServer.UserNick nick) name (Some externalId) demoChannel |> Async.RunSynchronously
+                let (Some (actorsystem, server)) = appServerState
+
+                do server |> ChatServer.registerNewUser (ChatServer.UserNick nick) name (Some externalId) [] |> Async.RunSynchronously
 
                 statefulForSession
                 >=> sessionStore (fun store -> store.set "nick" nick)
