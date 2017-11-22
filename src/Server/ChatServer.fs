@@ -40,8 +40,6 @@ module ServerState =
 type ServerControlMessage =
     | ServerMessage of requestId: string * UserNick * Protocol.ServerMsg
 
-    | NewChannel of name: string * topic: string        // returns ChannelInfo
-
     // user specific commands
     | Register of nick: UserNick * name: string * euid: string option * channels: Uuid list    // return UserInfo
     | Unregister of UserNick
@@ -49,12 +47,12 @@ type ServerControlMessage =
     | Disconnect of UserNick
 
     | UpdateState of (ServerState.ServerData -> ServerState.ServerData)
-    | ReadState
+    | GetUsers
 
 type ServerReplyMessage =
     | ClientMessage of Protocol.ClientMsg
     | Done
-    | State of ServerState.ServerData
+    | UserList of ServerState.UserData list // FIXME just drop this API
     | Error of string
 
 module internal Helpers =
@@ -110,6 +108,9 @@ module internal Helpers =
     
     let mapChanInfo (data: ChannelData) : Protocol.ChannelInfo =
         {id = data.id.ToString(); name = data.name; topic = data.topic; userCount = 0; users = []; joined = false}
+
+    let setJoined v (ch: Protocol.ChannelInfo) =
+        {ch with joined = v}
 
     module Async =
         let map f workflow = async {
@@ -240,23 +241,6 @@ module ServerApi =
                 kso |> Option.map (fun ks -> ks.Shutdown()) |> ignore
                 Ok (state |> updateUser (leaveChan chanId) userId, chanId))
 
-    let replyHello user (state: ServerData) : Protocol.ClientMsg Async =
-        async {
-            let channels = state.channels |> List.map mapChanInfo
-            
-            match state.users |> List.tryFind (byUserNick user) with
-            | Some me ->
-                let imIn chanId = me.channels |> Map.containsKey chanId
-                let channels = channels |> List.map (fun ch -> {ch with joined = imIn (Uuid.TryParse ch.id |> Option.get)})
-                let (UserNick mynick) = me.nick
-
-                return Protocol.ClientMsg.Hello <| {nick = mynick; name = me.name; email = me.email; channels = channels}
-            | _ ->
-                let (UserNick username) = user
-                let errtext = sprintf "Failed to get user by id '%s'" username
-                return (Protocol.CannotProcess ("", errtext) |> Protocol.ClientMsg.Error)
-        }
-
     let getChannelInfoVerbose criteria (me: UserNick) (server: ServerData) =
         match server.channels |> List.tryFind criteria with
         | Some chan ->
@@ -283,76 +267,77 @@ module ServerApi =
         | _ ->
             Result.Error "Channel not found" |> async.Return
 
-
 open ServerState
 open Helpers
+
+module ServerImpl =
+
+    let replyHello requestId user (state: ServerData) : Protocol.ClientMsg Async =
+        async {
+            let channels = state.channels |> List.map mapChanInfo
+            
+            match state.users |> List.tryFind (byUserNick user) with
+            | Some me ->
+                let imIn chanId = me.channels |> Map.containsKey chanId
+                let channels = channels |> List.map (fun ch -> {ch with joined = imIn (Uuid.TryParse ch.id |> Option.get)})
+                let (UserNick mynick) = me.nick
+
+                return Protocol.ClientMsg.Hello <| {nick = mynick; name = me.name; email = me.email; channels = channels}
+            | _ ->
+                let (UserNick username) = user
+                let errtext = sprintf "Failed to get user by id '%s'" username
+                return (Protocol.CannotProcess (requestId, errtext) |> Protocol.ClientMsg.Error)
+        }
 
 /// Starts IRC server actor.
 let startServer (system: ActorSystem) =
 
     let rec behavior (state: ServerData) (ctx: Actor<ServerControlMessage>) =
-        let passError errtext =
-            ctx.Sender() <! Error errtext
-            ignored state
-        let passError1 reqId errtext =
-            ctx.Sender() <! (Protocol.CannotProcess (reqId, errtext) |> Protocol.ClientMsg.Error)
+        let replyErrorProtocol requestId errtext =
+            ctx.Sender() <! (Protocol.CannotProcess (requestId, errtext) |> Protocol.ClientMsg.Error)
             ignored state
 
-        let replyAndUpdate1 reqId = function
-            | Ok (newState, reply) -> ctx.Sender() <! reply; become (behavior newState ctx)
-            | Result.Error errText -> passError1 reqId errText
-
-        let reply1 reqId = function
-            | Ok result -> ctx.Sender() <! result; ignored state
-            | Result.Error errtext -> passError1 reqId errtext
-
-        let update1 reqId = function
-            | Ok newState -> ctx.Sender() <! Done; become (behavior newState ctx)
-            | Result.Error errText -> passError1 reqId errText
-
-        let reply = function
-            | Ok result -> ctx.Sender() <! result; ignored state
-            | Result.Error errtext -> passError errtext
         let update = function
             | Ok newState -> ctx.Sender() <! Done; become (behavior newState ctx)
-            | Result.Error errText -> passError errText
+            | Result.Error errtext -> ctx.Sender() <! Error errtext; ignored state
         let replyAndUpdate = function
             | Ok (newState, reply) -> ctx.Sender() <! reply; become (behavior newState ctx)
-            | Result.Error errText -> passError errText
-        let mapReply f = Result.map (fun (ns, r) -> ns, f r)        
+            | Result.Error errtext -> ctx.Sender() <! Error errtext; ignored state
+        let constr r _ = r
+        let mapReplyAndUpdate requestId f = function
+            | Ok (newState, reply) -> ctx.Sender() <! f reply; become (behavior newState ctx)
+            | Result.Error errtext -> replyErrorProtocol requestId errtext
 
         function
         | ServerMessage (requestId, user, msg) ->
             match msg with
             | Protocol.ServerMsg.Greets ->
-                let reply = ServerApi.replyHello user state
-                ctx.Sender() <!| reply
+                do ctx.Sender() <!| (ServerImpl.replyHello requestId user state)
                 ignored state
+
             | Protocol.ServerMsg.Join chanIdStr ->
                 match Uuid.TryParse chanIdStr with
                 | Some channelId ->
-                    state |> ServerApi.join user channelId
-                    |> mapReply (fun ch -> {mapChanInfo ch with joined = true} |> Protocol.JoinedChannel)
-                    |> replyAndUpdate1 requestId
-                | _ -> passError1 requestId "bad channel id"
+                    state
+                    |> ServerApi.join user channelId
+                    |> mapReplyAndUpdate requestId (mapChanInfo >> (setJoined true) >> Protocol.JoinedChannel)
+                | _ -> replyErrorProtocol requestId "bad channel id"
+
             | Protocol.ServerMsg.JoinOrCreate channelName ->
-                state |> ServerApi.joinOrCreate user channelName (createChannel system)
-                |> mapReply (fun ch -> {mapChanInfo ch with joined = true} |> Protocol.JoinedChannel)
-                |> replyAndUpdate1 requestId
+                state
+                |> ServerApi.joinOrCreate user channelName (createChannel system)
+                |> mapReplyAndUpdate requestId (mapChanInfo >> (setJoined true) >> Protocol.JoinedChannel)
+
             |  Protocol.ServerMsg.Leave chanIdStr ->
                 match Uuid.TryParse chanIdStr with
                 | Some channelId ->
-                    state |> ServerApi.leave user channelId
-                    |> mapReply (fun _ -> Protocol.ClientMsg.LeftChannel chanIdStr)
-                    |> replyAndUpdate1 requestId
-                | _ -> passError1 requestId "bad channel id"
-            | _ -> passError1 requestId "unsupported command"
-            
-        | NewChannel (name, topic) ->
-            state |> ServerApi.addChannel (createChannel system) name topic
-            |> mapReply mapChanInfo
-            |> replyAndUpdate
+                    state
+                    |> ServerApi.leave user channelId
+                    |> mapReplyAndUpdate requestId (constr chanIdStr >> Protocol.ClientMsg.LeftChannel)
+                | _ -> replyErrorProtocol requestId "bad channel id"
 
+            | _ -> replyErrorProtocol requestId "unsupported command"
+            
         | Register (nick, name, euid, channels) ->
              state |> ServerApi.register nick name euid channels |> replyAndUpdate
 
@@ -360,8 +345,8 @@ let startServer (system: ActorSystem) =
         | Connect (userId, mat) ->      update (state |> ServerApi.connect userId mat)
         | Disconnect userId ->          update (state |> ServerApi.disconnect userId)
 
-        | ReadState ->
-            ctx.Sender() <! state; ignored state
+        | GetUsers ->
+            ctx.Sender() <! UserList state.users; ignored state
         | UpdateState updater ->
             become (behavior (updater state) ctx)
 
@@ -370,10 +355,10 @@ let startServer (system: ActorSystem) =
 
 let registerNewUser nick name euid channels (server: IActorRef<ServerControlMessage>) =
     async {
-        let! (serverState: ServerState.ServerData) = server <? ReadState
+        let! (UserList users) = server <? GetUsers
         let existingUser =
             if euid |> Option.isSome then
-                serverState.users |> List.tryFind (fun u -> u.euid = euid)
+                users |> List.tryFind (fun u -> u.euid = euid)
             else
                 None
 
@@ -387,9 +372,15 @@ let registerNewUser nick name euid channels (server: IActorRef<ServerControlMess
                 | Error e -> failwith e
     }
 
-let locateUser predicate (server: IActorRef<ServerControlMessage>) =
-    async {
-        let! (serverState: ServerState.ServerData) = server <? ReadState
-        return serverState.users |> List.tryFind predicate
-    }
+let createTestChannels system (server: IActorRef<ServerControlMessage>) =
+    let addChannel name topic state =
+        match state |> ServerApi.addChannel (createChannel system) name topic with
+        | Ok (newstate, _) -> newstate
+        | _ -> state
 
+    let addChannels =
+        addChannel "Test" "test channel #1"
+        >> addChannel "Weather" "join channel to get updated"
+
+
+    do server <? UpdateState addChannels |> ignore
