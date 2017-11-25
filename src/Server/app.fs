@@ -24,12 +24,10 @@ module Secrets =
     open System.IO
     open Suave.Utils
     open Microsoft.Extensions.Configuration
-
-    [<Literal>]
-    let CookieSecretFile = "CHAT_DATA\\COOKIE_SECRET"
-
-    [<Literal>]
-    let OAuthConfigFile = "CHAT_DATA\\suave.oauth.config"
+    
+    let (</>) a b = Path.Combine(a, b)
+    let CookieSecretFile = "CHAT_DATA" </> "COOKIE_SECRET"
+    let OAuthConfigFile = "CHAT_DATA" </> "suave.oauth.config"
 
     let readCookieSecret () =
         printfn "Reading configuration data from %s" System.Environment.CurrentDirectory
