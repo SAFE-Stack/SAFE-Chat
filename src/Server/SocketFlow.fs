@@ -65,15 +65,13 @@ let handleWebsocketMessages (system: ActorSystem)
     let sinkActor =
         props <| actorOf2 (sinkBehavior ()) |> (spawn system null) |> retype
 
-    let sink: Sink<WsMessage,_> = Sink.ActorRef(untyped sinkActor, Text "asdfsdf") // TODO PoisonPill.Instance
+    let sink: Sink<WsMessage,_> = Sink.ActorRef(untyped sinkActor, PoisonPill.Instance)
     do materialize materializer inputSource sink
 
     logger.debug (Message.eventX "materialized socket sink")
 
     fun _ -> 
         socket {
-            do! ws.send Opcode.Text (Encoding.UTF8.GetBytes("test test test") |> ByteSegment) true
-            
             let loop = ref true
             while !loop do
                 let! msg = ws.read()

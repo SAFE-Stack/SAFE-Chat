@@ -15,6 +15,7 @@ open Akka.Configuration
 open Akka.Actor
 open Akkling
 
+open UserSession
 // ---------------------------------
 // Web app
 // ---------------------------------
@@ -88,59 +89,6 @@ let startChatServer () =
     appServerState <- Some (actorSystem, chatServer)
     ()
 
-module View =
-
-    open Suave.Html
-
-    let partUser (session : RestApi.Session) = 
-        div ["id", "part-user"] [
-            match session with
-            | RestApi.UserLoggedOn (ChatServer.UserNick nick,_,_) ->
-                yield Text (sprintf "Logged on as %s" nick)
-                yield a "/logoff" [] [Text "Log off"]
-            | _ ->
-                yield p [] [
-                    Text "Log on via: "
-                    a "/oaquery?provider=Google" [] [Text "Google"] ]
-                yield p [] [
-                    Text "... or continue "
-                    a "/logon_anon" [] [Text "Anonymously"] ]
-        ]
-
-    let page content =
-        html [] [
-            head [] [
-                title [] "F# Chat server"
-            ]
-
-            body [] [
-                div ["id", "header"] [
-                    tag "h1" [] [
-                        a "/" [] [Text "F# Chat server"]
-                    ]
-                ]
-                content
-
-                div ["id", "footer"] [
-                    Text "built with (in alphabetical order) "
-                    a "http://getakka.net" [] [Text "Akka.NET"]
-                    Text ", "
-                    a "https://github.com/Horusiath/Akkling" [] [Text "Akkling"]
-                    Text ", "
-                    a "http://fable.io" [] [Text "Fable"]
-                    Text " and "
-                    a "http://suave.io" [] [Text "Suave.IO"]
-                ]
-            ]
-        ]
-
-    let index session = page (partUser session)
-
-    let loggedoff =
-        page <| div [] [
-            Text " You are now logged off."
-        ]
-
 let logger = Log.create "fschat"
 
 let returnPathOrHome = 
@@ -157,16 +105,16 @@ let sessionStore setF = context (fun x ->
 
 let (|ParseUuid|_|) = Uuid.TryParse
 
-let session (f: RestApi.Session -> WebPart) = 
+let session (f: ClientSession -> WebPart) = 
     statefulForSession
     >=> context (HttpContext.state >>
         function
-        | None -> f RestApi.NoSession
+        | None -> f NoSession
         | Some state ->
             match state.get "nick", appServerState with
             | Some nick, Some (actorSystem, server) ->
-                f (RestApi.UserLoggedOn (ChatServer.UserNick nick, actorSystem, server))
-            | _ -> f RestApi.NoSession)
+                f (UserLoggedOn (ChatServer.UserNick nick, actorSystem, server))
+            | _ -> f NoSession)
 
 let root: WebPart =
     choose [
@@ -202,24 +150,24 @@ let root: WebPart =
             choose [
                 GET >=> path "/" >=> (
                     match session with
-                    | RestApi.NoSession -> found "/logon"
+                    | NoSession -> found "/logon"
                     | _ -> Files.browseFileHome "index.html"
                     )
                 GET >=> path "/logon" >=>
-                    (OK <| (View.index session |> Html.htmlToString))  // FIXME rename index to login
+                    (OK <| (Views.index session |> Html.htmlToString))  // FIXME rename index to login
                 GET >=> path "/logoff" >=>
                     deauthenticate
-                    >=> (OK <| Html.htmlToString View.loggedoff)
+                    >=> (OK <| Html.htmlToString Views.loggedoff)
 
-                RestApi.api session
+                (match session with
+                | UserLoggedOn (nick, actorSys, server) ->
+                    path "/api/socket" >=> (RestApi.connectWebSocket actorSys server nick)
+                | NoSession ->
+                    BAD_REQUEST "Authorization required")
 
-                Files.browseHome                            
+                Files.browseHome
                 ]
         )
 
         NOT_FOUND "Not Found"
     ]
-
-let errorHandler (ex: System.Exception) =
-    // FIXME clear response
-    ServerErrors.INTERNAL_ERROR ex.Message

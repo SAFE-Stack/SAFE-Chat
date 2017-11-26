@@ -33,7 +33,7 @@ let navButtons chat =
             [
                 p [ ClassName "control" ]
                   [ p [ClassName "userinfo"] [str <| userInfoText chat]]
-                navButton "twitter" "https://twitter.com/OlegZee" "fa-twitter" "Twitter"
+                navButton "twitter" "https://twitter.com/OlegZeee" "fa-twitter" "Twitter"
                 navButton "" "/logoff" "fa-hand-o-right" "Log off"
                 ] ]
 

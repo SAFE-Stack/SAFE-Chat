@@ -1,17 +1,20 @@
 module UserSession
 
 open Akkling
+open Akka.Actor
 open Akka.Streams
 
 open ChannelFlow
 open ChatServer
+open Akka.Actor
 
-type SessionData =
-    {
-        server: IActorRef<ServerControlMessage>
-        me: UserNick    
-        channels: Map<Uuid, UniqueKillSwitch>
-    }
+type ClientSession = NoSession | UserLoggedOn of ChatServer.UserNick * ActorSystem * IActorRef<ServerControlMessage>
+
+type SessionData = {
+    server: IActorRef<ServerControlMessage>
+    me: UserNick    
+    channels: Map<Uuid, UniqueKillSwitch>
+}
 
 // creates a new session
 let make server me : SessionData =

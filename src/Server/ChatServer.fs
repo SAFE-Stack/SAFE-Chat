@@ -6,7 +6,6 @@ open Akka.Actor
 open Akkling
 
 open ChannelFlow
-open FsChat
 
 type UserNick = UserNick of string
 
@@ -36,8 +35,9 @@ type ServerReplyMessage =
     | FoundChannel of ServerState.ChannelData
     | FoundChannels of ServerState.ChannelData list
 
+open ServerState
+
 module internal Helpers =
-    open ServerState
 
     let updateChannel f chanId serverState: ServerData =
         let f chan = if chan.id = chanId then f chan else chan
@@ -46,15 +46,11 @@ module internal Helpers =
 
     let byChanName name c = (c:ChannelData).name = name
 
-    let setChannelTopic topic (chan: ChannelData) =
-        {chan with topic = topic}
-
     // verifies the name is correct
     let isValidName (name: string) =
         (String.length name) > 0 && Char.IsLetter name.[0]
 
 module ServerApi =
-    open ServerState
     open Helpers
 
     /// Creates a new channel or returns existing if channel already exists
@@ -71,9 +67,7 @@ module ServerApi =
             Error "Invalid channel name"
 
     let setTopic chanId newTopic state =
-        Ok (state |> updateChannel (setChannelTopic newTopic) chanId)
-
-open ServerState
+        Ok (state |> updateChannel (fun chan -> {chan with topic = newTopic}) chanId)
 
 /// Starts IRC server actor.
 let startServer (system: ActorSystem) =
@@ -88,11 +82,9 @@ let startServer (system: ActorSystem) =
             become (behavior (updater state) ctx)
         | FindChannel criteria ->
             let found = state.channels |> List.tryFind criteria
-            match found with
-            | Some chan -> ctx.Sender() <! FoundChannel chan
-            | _ -> ctx.Sender() <! RequestError "Not found"
-            
+            ctx.Sender() <! (found |> function |Some chan -> FoundChannel chan |_ -> RequestError "Not found")
             ignored state
+
         | GetOrCreateChannel name ->
             state |> ServerApi.addChannel (createChannel system) name ""
             |> replyAndUpdate FoundChannel
@@ -139,4 +131,4 @@ let createTestChannels system (server: IActorRef<ServerControlMessage>) =
         addChannel "Test" "test channel #1"
         >> addChannel "Weather" "join channel to get updated"
 
-    do server <? UpdateState addChannels |> ignore
+    ignore (server <? UpdateState addChannels)

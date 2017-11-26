@@ -72,6 +72,7 @@ let postMessage model dispatch =
             Value model.PostText
             AutoFocus true
             OnChange (fun ev -> !!ev.target?value |> (SetPostText >> dispatch))
+            OnKeyPress (fun ev -> if !!ev.which = 13 || !!ev.keyCode = 13 then dispatch PostText)
             ]
       divCtl <|
         button

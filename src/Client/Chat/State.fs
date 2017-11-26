@@ -68,7 +68,6 @@ let applicationMsgUpdate (msg: AppMsg) state: (ChatState * MsgType Cmd) =
 
         // TODO filter whatever is left below
 
-
         | Left chanId ->
             Connected (me, chat |> updateChannel chanId (setJoined false)), Cmd.none
 
@@ -110,7 +109,18 @@ let socketMsgUpdate (msg: Protocol.ClientMsg) prevState : ChatState * Cmd<MsgTyp
             Connected (me,
                 {prevChatState with
                     Channels = prevChatState.Channels |> Map.add chanInfo.id (Conversions.mapChannel chanInfo)}),
-                Navigation.newUrl  <| toHash (Channel chanInfo.id)
+                Channel chanInfo.id |> toHash |> Navigation.newUrl
+        | Protocol.ClientMsg.LeftChannel channelId ->
+            let chan = prevChatState.Channels |> Map.tryFind channelId
+            match chan with
+            | Some chanInfo ->
+                Connected (me,
+                    {prevChatState with
+                        Channels = prevChatState.Channels |> Map.add channelId {chanInfo with Joined = false}}),
+                    About |> toHash |> Navigation.newUrl
+            | _ ->
+                printfn "Channel not found %s" channelId
+                prevState, Cmd.none
         | protocolMsg ->
             let chatData, cmds = chatUpdate protocolMsg prevChatState
             Connected (me, chatData), cmds
@@ -127,8 +137,3 @@ let inline update msg prevState =
     | WebsocketMsg (_, Msg socketMsg) ->
         socketMsgUpdate socketMsg prevState
     | _ -> (prevState, Cmd.none)
-
-(*
-    | Reset ->        NotLoggedIn, []
-    | FetchError x -> Error x, []
-*)

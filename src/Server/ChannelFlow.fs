@@ -7,6 +7,8 @@ open Akka.Streams.Dsl
 open Akkling
 open Akkling.Streams
 
+open Suave.Logging
+
 type Message = Message of string with static member Empty = Message null
 
 // message timestamp
@@ -33,6 +35,8 @@ module internal Internals =
         LastEventId: int
     }
 
+    let logger = Log.create "chanflow"
+
 open Internals
 /// Creates channel actor
 let createChannel<'User when 'User: comparison> (system: ActorSystem) name =
@@ -48,20 +52,25 @@ let createChannel<'User when 'User: comparison> (system: ActorSystem) name =
         | Terminated (t,_,_) ->
             match state.Parties |> Map.tryFindKey (fun _ (_, ref) -> ref = t) with
             | Some key ->
+                logger.debug (Message.eventX "Terminated {user}" >> Message.setFieldValue "user" key)
                 {state with Parties = state.Parties |> Map.remove key} |> updateState
-            | _ -> ignored state
+            | _ ->
+                logger.debug (Message.eventX "Terminated unknown")
+                ignored state
 
         | :? ChannelMessage<'User> as channelEvent ->
             let ts = state.LastEventId, System.DateTime.Now
 
             match channelEvent with
             | NewParticipant (user, subscriber) ->
+                logger.debug (Message.eventX "NewParticipant {user}" >> Message.setFieldValue "user" user)
                 do monitor ctx subscriber |> ignore
                 let parties = state.Parties |> Map.add user (user, subscriber)
                 do dispatch state.Parties <| Joined (ts, user, parties |> allMembers)
                 incId { state with Parties = parties} |> updateState
 
             | ParticipantLeft user ->
+                logger.debug (Message.eventX "Participant left {user}" >> Message.setFieldValue "user" user)
                 let parties = state.Parties |> Map.remove user
                 do dispatch state.Parties <| Left (ts, user, parties |> allMembers)
                 incId { state with Parties = parties} |> updateState

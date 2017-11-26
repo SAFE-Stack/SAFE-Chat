@@ -21,19 +21,14 @@ let urlUpdate (result: Option<Route>) model =
         { model with currentPage = route }, []
 
 let init result =
-    let (home, homeCmd) = Home.State.init()
     let (chinfo, chinfoCmd) = Chat.State.init()
-    let (model, cmd) = urlUpdate result { currentPage = Home; home = home; chat = chinfo }
+    let (model, cmd) = urlUpdate result { currentPage = About; chat = chinfo }
     model, Cmd.batch [ cmd
-                       Cmd.map HomeMsg homeCmd 
                        Cmd.map (ChatDataMsg) chinfoCmd
                        ]
 
 let update msg model =
     match msg with
-    | HomeMsg msg ->
-        let (home, homeCmd) = Home.State.update msg model.home
-        { model with home = home }, Cmd.map HomeMsg homeCmd
     | ChatDataMsg msg ->
         let (chinfo, chinfoCmd) = Chat.State.update msg model.chat
         { model with chat = chinfo }, Cmd.map ChatDataMsg chinfoCmd
