@@ -202,7 +202,7 @@ let root: WebPart =
             choose [
                 GET >=> path "/" >=> (
                     match session with
-                    | RestApi.NoSession -> found "/logon_anon"
+                    | RestApi.NoSession -> found "/logon"
                     | _ -> Files.browseFileHome "index.html"
                     )
                 GET >=> path "/logon" >=>
