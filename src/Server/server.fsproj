@@ -10,6 +10,8 @@
     <Compile Include="FlowImpl.fs" />
     <Compile Include="ChannelFlow.fs" />
     <Compile Include="ChatServer.fs" />
+    <Compile Include="UserSession.fs" />
+
     <Compile Include="Diag.fs" />
     <Compile Include="Json.fs" />
     <Compile Include="SocketFlow.fs" />

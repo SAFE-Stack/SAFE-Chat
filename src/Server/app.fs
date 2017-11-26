@@ -99,8 +99,12 @@ module View =
                 yield Text (sprintf "Logged on as %s" nick)
                 yield a "/logoff" [] [Text "Log off"]
             | _ ->
-                yield Text "Log on via: "
-                yield a "/oaquery?provider=Google" [] [Text "Google"]
+                yield p [] [
+                    Text "Log on via: "
+                    a "/oaquery?provider=Google" [] [Text "Google"] ]
+                yield p [] [
+                    Text "... or continue "
+                    a "/logon_anon" [] [Text "Anonymously"] ]
         ]
 
     let page content =
@@ -171,9 +175,8 @@ let root: WebPart =
             authorize authorizeRedirectUri Secrets.oauthConfigs
                 (fun loginData ->
                     // register user, obtain userid and store in session
-                    let (Some (actorsystem, server)) = appServerState
                     let nick, name = loginData.Name, loginData.Name // TODO lookup for user nickname in db
-                    do server |> ChatServer.registerNewUser (ChatServer.UserNick nick) name (Some loginData.Id) [] |> Async.RunSynchronously // FIXME async
+
                     logger.info (Message.eventX "User registered by nickname {nick}"
                         >> Message.setFieldValue "nick" nick)
 
@@ -186,13 +189,8 @@ let root: WebPart =
             )
 
         warbler(fun _ ->
-            GET >=> path "/logonfast" >=> ( // FIXME remove in prod builds
-                let externalId, nick, name = "11111112222222333333", "Joe", "Joe Smith"
-
-
-                let (Some (actorsystem, server)) = appServerState
-
-                do server |> ChatServer.registerNewUser (ChatServer.UserNick nick) name (Some externalId) [] |> Async.RunSynchronously
+            GET >=> path "/logon_anon" >=> ( // FIXME remove in prod builds
+                let nick = "Anonymous"
 
                 statefulForSession
                 >=> sessionStore (fun store -> store.set "nick" nick)
@@ -204,7 +202,7 @@ let root: WebPart =
             choose [
                 GET >=> path "/" >=> (
                     match session with
-                    | RestApi.NoSession -> found "/logonfast"
+                    | RestApi.NoSession -> found "/logon_anon"
                     | _ -> Files.browseFileHome "index.html"
                     )
                 GET >=> path "/logon" >=>

@@ -4,6 +4,7 @@ module RestApi
 open Akka.Actor
 open Akkling
 open Akkling.Streams
+open Akka.Streams
 open Akka.Streams.Dsl
 
 open Suave
@@ -18,6 +19,7 @@ open ChatServer
 open SocketFlow
 
 open FsChat
+open ChatServer.Helpers
 
 type private ServerActor = IActorRef<ChatServer.ServerControlMessage>
 type Session = NoSession | UserLoggedOn of UserNick * ActorSystem * ServerActor
@@ -67,30 +69,102 @@ module private Implementation =
         | ControlMessage _ -> true | _ -> false
     let extractControlMessage (ControlMessage message) = message
 
+    open ServerState
+
+    let mapChanInfo (data: ChannelData) : Protocol.ChannelInfo =
+        {id = data.id.ToString(); name = data.name; topic = data.topic; userCount = 0; users = []; joined = false}
+
+    let setJoined v (ch: Protocol.ChannelInfo) =
+        {ch with joined = v}
+
+    let replyErrorProtocol requestId errtext =
+        Protocol.CannotProcess (requestId, errtext) |> Protocol.ClientMsg.Error
+
+
     let connectWebSocket (system: ActorSystem) (server: ServerActor) me : WebPart =
 
+        let materializer = system.Materializer()
+
+        // session data
+        let mutable session = UserSession.make server me
+        let mutable listenChannel = None
+
+        let updateSession requestId f =
+            function
+            | Ok (newSession, response) ->
+                session <- newSession
+                f response
+            | Result.Error e ->
+                replyErrorProtocol requestId e
+
+        let reply requestId = function
+            | Ok response ->    response
+            | Result.Error e -> replyErrorProtocol requestId e
+
         let processControlMessage : Flow<Protocol.ServerMsg, Protocol.ClientMsg, _> =
-            let processMsg (message: Protocol.ServerMsg) : Protocol.ClientMsg list Async =
+            let processMsg (message: Protocol.ServerMsg) : Protocol.ClientMsg Async =
                 async {
-                    let! reply = server <? ServerMessage ("", me, message)
-                    return [reply]
+                    let requestId = "" // TODO take from server message
+                    match message with
+
+                    | Protocol.ServerMsg.Greets ->
+                        let! channels = server |> (listChannels (fun _ -> true))
+
+                        let makeChanInfo chanData =
+                            { mapChanInfo chanData with joined = session.channels |> Map.containsKey chanData.id}
+                        let (UserNick mynick) = session.me
+
+                        let makeHello channels =
+                            Protocol.ClientMsg.Hello {nick = mynick; name = ""; email = None; channels = channels}
+
+                        return channels |> Result.map (List.map makeChanInfo >> makeHello) |> reply ""
+
+                    | Protocol.ServerMsg.Join chanIdStr ->
+                        match Uuid.TryParse chanIdStr with
+                        | Some channelId ->
+                            let! result = session |> UserSession.join listenChannel channelId
+                            return result |> updateSession requestId (mapChanInfo >> (setJoined true) >> Protocol.JoinedChannel)
+                        | _ -> return replyErrorProtocol requestId "bad channel id"
+
+                    | Protocol.ServerMsg.JoinOrCreate channelName ->
+                        let! channelResult = server |> getOrCreateChannel channelName
+                        match channelResult with
+                        | Ok channelData ->
+                            let! result = session |> UserSession.join listenChannel channelData.id
+                            return result |> updateSession requestId (mapChanInfo >> (setJoined true) >> Protocol.JoinedChannel)
+                        | Result.Error err ->
+                            return replyErrorProtocol requestId err
+
+                    | Protocol.ServerMsg.Leave chanIdStr ->
+                        return
+                            Uuid.TryParse chanIdStr |> function
+                            | Some channelId ->
+                                let result = session |> UserSession.leave channelId
+                                result |> updateSession requestId (fun _ -> Protocol.LeftChannel chanIdStr)
+                            | _ ->
+                                replyErrorProtocol requestId "bad channel id"
+
+                    | _ ->
+                        return replyErrorProtocol requestId "event was not processed"
+
+
+                    // let! reply = server <? ServerMessage ("", me, message)
+                    // return [reply]
                 }
-            Flow.empty<_, Akka.NotUsed> |> Flow.asyncMap 10 processMsg |> Flow.collect id
+            Flow.empty<_, Akka.NotUsed> |> Flow.asyncMap 10 processMsg // |> Flow.collect id
 
         fun ctx -> async {
-            let materializer = system.Materializer()
-
             // let server know websocket has gone (see onCompleteMessage)
             // FIXME not sure if it works at all
             let monitor t = async {
                 logger.debug (Message.eventX "Monitor triggered for user {me}" >> Message.setFieldValue "me" me)
                 let! _ = t
-                let! reply = server <? Disconnect (me)
-                return ()
+                match session |> UserSession.leaveAll with
+                | Ok (newSession, _) -> session <- newSession
+                | _ -> ()
             }
 
             let sessionFlow = createUserSessionFlow<UserNick,Uuid> materializer
-
             let userMessageFlow =
                 Flow.empty<IncomingMessage, Akka.NotUsed>
                 |> Flow.filter isChannelMessage
@@ -117,13 +191,13 @@ module private Implementation =
                 |> Flow.map (Json.json >> Text)
 
             let materialize materializer (source: Source<WsMessage, Akka.NotUsed>) (sink: Sink<WsMessage, _>) =
-                let listenChannel =
+                listenChannel <-
                     source
                     |> Source.viaMat socketFlow Keep.right
                     |> Source.toMat sink Keep.left
-                    |> Graph.run materializer
+                    |> Graph.run materializer |> Some
 
-                server <? Connect (me, listenChannel) |> Async.RunSynchronously |> ignore
+                ()
 
             let handler socket =
                 handleWebsocketMessages system materialize socket
