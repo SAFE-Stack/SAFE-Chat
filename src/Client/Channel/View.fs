@@ -85,9 +85,23 @@ let root (model: ChannelData) dispatch =
     let users = model.Users |> function | UserCount _ -> Map.empty | UserList list -> list
     div
       [ ClassName "content" ]
-        [   h1 [] [ str model.Name ]
-            simpleButton "Leave" Leave dispatch
-            p [] [str model.Topic]
-            postMessage model dispatch
-            chanMessages users model.Messages
-        ]
+      [ h1 [] [ str model.Name ]
+        simpleButton "Leave" Leave dispatch
+        p [] [str model.Topic]
+        postMessage model dispatch
+        div
+          [ ClassName "columns"]
+          [ div
+              [ ClassName "column is-four-fifths"]
+              [ chanMessages users model.Messages ]
+            div
+              [ ClassName "column"]
+              [ str "Users:"
+                ul
+                  []
+                  [ for u in users ->
+                      li [] [str u.Key]
+                  ]
+               ]
+          ]          
+      ]

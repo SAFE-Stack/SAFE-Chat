@@ -9,9 +9,7 @@ open Akka.Streams.Dsl
 
 open Suave
 open Suave.Logging
-open Suave.RequestErrors
 open Suave.WebSocket
-open Suave.Operators
 
 open ChannelFlow
 open ChatServer
@@ -19,14 +17,18 @@ open SocketFlow
 
 open FsChat
 
+let private logger = Log.create "chatapi"        
+
 module private Implementation =
+
+    open ServerState
 
     type ServerActor = IActorRef<ChatServer.ServerControlMessage>
 
     type IncomingMessage =
         | ChannelMessage of Uuid * Message
         | ControlMessage of Protocol.ServerMsg
-        | Trash
+        | Trash of reason: string
 
     let encodeChannelMessage channel : UserNick ChatClientMessage -> Protocol.ClientMsg =
         // FIXME fill user info
@@ -41,32 +43,33 @@ module private Implementation =
         | Left ((id, ts), user, _) ->
             Protocol.UserLeft  ({id = id; ts = ts; user = userInfo user}, channel)
 
-    let logger = Log.create "chatapi"        
+    let (|ParseUuid|_|) = Uuid.TryParse
 
-        // extracts message from websocket reply, only handles User input (channel * string)
+    // extracts message from websocket reply, only handles User input (channel * string)
     let extractMessage message =
         try
             match message with
             | Text t ->
                 match t |> Json.unjson<Protocol.ServerMsg> with
                 | Protocol.UserMessage msg ->
-                    match Uuid.TryParse msg.chan with
-                    | Some chanId -> ChannelMessage (chanId, Message msg.text)
-                    | _ -> Trash
+                    match msg.chan with
+                    | ParseUuid chanId -> ChannelMessage (chanId, Message msg.text)
+                    | _ -> Trash "Bad channel id"
                 | message -> ControlMessage message                
-            |_ -> Trash
+            | x -> Trash <| sprintf "Not a Text message '%A'" x
         with e ->
             do logger.error (Message.eventX "Failed to parse message '{msg}': {e}" >> Message.setFieldValue "msg" message  >> Message.setFieldValue "e" e)
-            Trash
+            Trash "exception"
     let isChannelMessage = function
-        | ChannelMessage (_,_) -> true | _ -> false
-    let extractChannelMessage (ChannelMessage (chan, message)) = chan, message
+        | ChannelMessage _ -> true | _ -> false
+
+    let inline (|OtherwiseFail|) _ = failwith "no choice"
+
+    let extractChannelMessage (ChannelMessage (chan, message) | OtherwiseFail (chan, message)) = chan, message
 
     let isControlMessage = function
         | ControlMessage _ -> true | _ -> false
-    let extractControlMessage (ControlMessage message) = message
-
-    open ServerState
+    let extractControlMessage (ControlMessage message | OtherwiseFail message) = message
 
     let mapChanInfo (data: ChannelData) : Protocol.ChannelInfo =
         {id = data.id.ToString(); name = data.name; topic = data.topic; userCount = 0; users = []; joined = false}
@@ -113,8 +116,8 @@ let connectWebSocket (system: ActorSystem) (server: ServerActor) me : WebPart =
                 return serverChannels |> Result.map (List.map makeChanInfo >> makeHello) |> reply ""
 
             | Protocol.ServerMsg.Join chanIdStr ->
-                match Uuid.TryParse chanIdStr with
-                | Some channelId ->
+                match chanIdStr with
+                | ParseUuid channelId ->
                     let! result = session |> UserSession.join listenChannel channelId
                     return result |> updateSession requestId (mapChanInfo >> (setJoined true) >> Protocol.JoinedChannel)
                 | _ -> return replyErrorProtocol requestId "bad channel id"
@@ -129,9 +132,8 @@ let connectWebSocket (system: ActorSystem) (server: ServerActor) me : WebPart =
                     return replyErrorProtocol requestId err
 
             | Protocol.ServerMsg.Leave chanIdStr ->
-                return
-                    Uuid.TryParse chanIdStr |> function
-                    | Some channelId ->
+                return chanIdStr |> function
+                    | ParseUuid channelId ->
                         let result = session |> UserSession.leave channelId
                         result |> updateSession requestId (fun _ -> Protocol.LeftChannel chanIdStr)
                     | _ ->

@@ -46,8 +46,3 @@ let page content =
     ]
 
 let index session = page (partUser session)
-
-let loggedoff =
-    page <| div [] [
-        Text " You are now logged off."
-    ]

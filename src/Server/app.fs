@@ -103,8 +103,6 @@ let sessionStore setF = context (fun x ->
     | Some state -> setF state
     | None -> never)
 
-let (|ParseUuid|_|) = Uuid.TryParse
-
 let session (f: ClientSession -> WebPart) = 
     statefulForSession
     >=> context (HttpContext.state >>
@@ -116,10 +114,18 @@ let session (f: ClientSession -> WebPart) =
                 f (UserLoggedOn (ChatServer.UserNick nick, actorSystem, server))
             | _ -> f NoSession)
 
+let noCache =
+    Writers.setHeader "Cache-Control" "no-cache, no-store, must-revalidate"
+    >=> Writers.setHeader "Pragma" "no-cache"
+    >=> Writers.setHeader "Expires" "0"
+
 let root: WebPart =
     choose [
-        warbler(fun _ ->
-            let authorizeRedirectUri ="http://localhost:8083/oalogin" in   // FIXME hardcoded path
+        warbler(fun ctx ->
+            // problem is that redirection leads to localhost and authorization does not go well
+            let authorizeRedirectUri =
+                (ctx.runtime.matchedBinding.uri "oalogin" "").ToString().Replace("127.0.0.1", "localhost")
+
             authorize authorizeRedirectUri Secrets.oauthConfigs
                 (fun loginData ->
                     // register user, obtain userid and store in session
@@ -132,7 +138,7 @@ let root: WebPart =
                     >=> sessionStore (fun store -> store.set "nick" loginData.Name)
                     >=> FOUND "/"
                 )
-                (fun () -> FOUND "/loggedoff")
+                (fun () -> FOUND "/logon")
                 (fun error -> OK <| sprintf "Authorization failed because of `%s`" error.Message)
             )
 
@@ -148,22 +154,23 @@ let root: WebPart =
 
         session (fun session ->
             choose [
-                GET >=> path "/" >=> (
+                GET >=> path "/" >=> noCache >=> (
                     match session with
                     | NoSession -> found "/logon"
                     | _ -> Files.browseFileHome "index.html"
                     )
-                GET >=> path "/logon" >=>
+                GET >=> path "/logon" >=> noCache >=>
                     (OK <| (Views.index session |> Html.htmlToString))  // FIXME rename index to login
-                GET >=> path "/logoff" >=>
-                    deauthenticate
-                    >=> (OK <| Html.htmlToString Views.loggedoff)
+                GET >=> path "/logoff" >=> noCache >=>
+                    deauthenticate >=> FOUND "/logon"
 
-                (match session with
-                | UserLoggedOn (nick, actorSys, server) ->
-                    path "/api/socket" >=> (RestApi.connectWebSocket actorSys server nick)
-                | NoSession ->
-                    BAD_REQUEST "Authorization required")
+                
+                path "/api/socket" >=>
+                    (match session with
+                    | UserLoggedOn (nick, actorSys, server) ->
+                        (RestApi.connectWebSocket actorSys server nick)
+                    | NoSession ->
+                        BAD_REQUEST "Authorization required")
 
                 Files.browseHome
                 ]

@@ -62,9 +62,7 @@ let main argv =
             cookieSerialiser = TweakingSuave.JsonNetCookieSerialiser()
 
             homeFolder = Some clientPath
-
-            // FIXME I intentionally want new session on server restart so that user registers on ChatServer every time
-            // serverKey = App.Secrets.readCookieSecret()
+            serverKey = App.Secrets.readCookieSecret()
         }
 
     let cts = new System.Threading.CancellationTokenSource()
