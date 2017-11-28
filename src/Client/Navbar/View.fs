@@ -27,24 +27,28 @@ let private userInfoText =
 
 let navButtons chat =
     span
-        [ ClassName "nav-item" ]
+        [ ClassName "navbar-item" ]
         [ div
             [ ClassName "field is-grouped" ]
             [
                 p [ ClassName "control" ]
                   [ p [ClassName "userinfo"] [str <| userInfoText chat]]
-                navButton "twitter" "https://twitter.com/OlegZeee" "fa-twitter" "Twitter"
                 navButton "" "/logoff" "fa-hand-o-right" "Log off"
                 ] ]
 
 let root (chat: ChatState) =
     nav
-        [ ClassName "nav" ]
+        [ ClassName "navbar" ]
         [ div
-            [ ClassName "nav-left" ]
+            [ ClassName "navbar-brand" ]
             [ h1
-                [ ClassName "nav-item is-brand title is-4" ]
+                [ ClassName "nav-item title" ]
                 [ str "F# Chat" ] ]
           div
-            [ ClassName "nav-right" ]
-            [ navButtons chat ] ]
+            [ ClassName "navbar-menu"
+              Id "navbarMenu" ]
+            [ 
+              div
+                [ ClassName "navbar-end" ]
+                [ navButtons chat ] ]
+            ]

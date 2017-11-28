@@ -8,6 +8,8 @@ open Router
 open Channel.Types
 open Chat.Types
 
+let private divCtl ctl = div [ClassName "control"] [ctl]
+
 let private menuItem label page currentPage =
     li [] [a
             [ classList [ "is-active", page = currentPage ]
@@ -15,20 +17,13 @@ let private menuItem label page currentPage =
             [ str label ] ]
 
 let private menuJoinChannelItem (ch: ChannelData) dispatch =
-    li [] [ div
-              [ ClassName "button has-icons-right"
-                OnClick (fun _ -> dispatch (Join ch.Id))
-              ]
-              [ i [ClassName "fa fa-plus"] []
-                str " "; str ch.Name
-                span [ ClassName "icon tag is-info is-right" ] [str <| string ch.UserCount] ]
-              ]
+    li [] [ a
+              [ Href "#"
+                OnClick (fun _ -> dispatch (Join ch.Id)) ]
+              [ str <| sprintf "%s  (%i)" ch.Name ch.UserCount ] ]
 
 // left-side menu view
 let menu (chatData: ChatState) currentPage dispatch =
-
-    let divCtl ctl = div [ClassName "control"] [ctl]
-    
     match chatData with
     | NotConnected ->
       aside
@@ -64,7 +59,7 @@ let menu (chatData: ChatState) currentPage dispatch =
                         if not ch.Joined then
                             yield menuJoinChannelItem ch dispatch
                   ]
-              p [ClassName "menu-label"] [str "... or create you own"]
+              p [ClassName "menu-label"] [str "... or create your own"]
               div
                 [ ClassName "field has-addons" ]            
                 [ divCtl <|

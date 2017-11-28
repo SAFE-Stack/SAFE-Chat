@@ -119,6 +119,7 @@ let connectWebSocket (system: ActorSystem) (server: ServerActor) me : WebPart =
                 match chanIdStr with
                 | ParseUuid channelId ->
                     let! result = session |> UserSession.join listenChannel channelId
+                    // TODO get users right from channel
                     return result |> updateSession requestId (mapChanInfo >> (setJoined true) >> Protocol.JoinedChannel)
                 | _ -> return replyErrorProtocol requestId "bad channel id"
 
