@@ -990,6 +990,13 @@ NUGET
       System.Threading (>= 4.3) - restriction: || (&& (< monotouch) (< net45) (>= netstandard1.3) (< win8) (< wpa81) (< xamarinios) (< xamarinmac) (< xamarintvos) (< xamarinwatchos)) (< portable-net45+win8+wp8+wpa81)
       System.Xml.ReaderWriter (>= 4.3) - restriction: || (&& (< monoandroid) (< net45) (>= netstandard1.0) (< netstandard1.3) (< win8) (< wp8) (< wpa81)) (&& (< monotouch) (< net45) (>= netstandard1.3) (< win8) (< wpa81) (< xamarinios) (< xamarinmac) (< xamarintvos) (< xamarinwatchos)) (< portable-net45+win8+wp8+wpa81)
       System.Xml.XmlDocument (>= 4.3) - restriction: || (&& (< monotouch) (< net45) (>= netstandard1.3) (< win8) (< wpa81) (< xamarinios) (< xamarinmac) (< xamarintvos) (< xamarinwatchos)) (< portable-net45+win8+wp8+wpa81)
+    Suave.OAuth (0.11.0)
+      FSharp.Core (>= 4.2.3) - restriction: || (>= net461) (>= netstandard1.6)
+      NETStandard.Library (>= 1.6.1) - restriction: && (< net461) (>= netstandard1.6)
+      Newtonsoft.Json (>= 10.0.3) - restriction: || (>= net461) (>= netstandard1.6)
+      Suave (>= 2.2.1) - restriction: || (>= net461) (>= netstandard1.6)
+      System.Net.Http (>= 4.3) - restriction: || (>= net461) (>= netstandard1.6)
+      System.ValueTuple (>= 4.4) - restriction: || (>= net461) (>= netstandard1.6)
   remote: .nuget-packages
     Akkling (0.7.1)
       Akka (>= 1.3.1) - restriction: >= netstandard1.6
@@ -1002,10 +1009,3 @@ NUGET
       Akkling (>= 0.7.1) - restriction: >= netstandard1.6
       FSharp.Core (>= 4.2.3) - restriction: >= netstandard1.6
       Reactive.Streams (>= 1.0.2) - restriction: >= netstandard1.6
-    Suave.OAuth (0.11.0)
-      FSharp.Core (>= 4.2.3) - restriction: || (>= net461) (>= netstandard1.6)
-      NETStandard.Library (>= 1.6.1) - restriction: && (< net461) (>= netstandard1.6)
-      Newtonsoft.Json (>= 10.0.3) - restriction: || (>= net461) (>= netstandard1.6)
-      Suave (>= 2.2.1) - restriction: || (>= net461) (>= netstandard1.6)
-      System.Net.Http (>= 4.3) - restriction: || (>= net461) (>= netstandard1.6)
-      System.ValueTuple (>= 4.4) - restriction: || (>= net461) (>= netstandard1.6)
