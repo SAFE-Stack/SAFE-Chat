@@ -6,14 +6,13 @@ open Akka.Streams
 
 open ChannelFlow
 open ChatServer
-open Akka.Actor
 
-type ClientSession = NoSession | UserLoggedOn of ChatServer.UserNick * ActorSystem * IActorRef<ServerControlMessage>
+type ClientSession = NoSession | UserLoggedOn of ChatServer.Party * ActorSystem * IActorRef<ServerControlMessage>
 
 type SessionData = {
     server: IActorRef<ServerControlMessage>
-    me: UserNick    
-    channels: Map<Uuid, UniqueKillSwitch>
+    me: Party
+    channels: Map<int, UniqueKillSwitch>
 }
 
 // creates a new session

@@ -1,6 +1,7 @@
 module RestApi
 // implements chat API endpoints for Suave
 
+open System
 open Akka.Actor
 open Akkling
 open Akkling.Streams
@@ -26,24 +27,26 @@ module private Implementation =
     type ServerActor = IActorRef<ChatServer.ServerControlMessage>
 
     type IncomingMessage =
-        | ChannelMessage of Uuid * Message
+        | ChannelMessage of int * Message
         | ControlMessage of Protocol.ServerMsg
         | Trash of reason: string
 
-    let encodeChannelMessage channel : UserNick ChatClientMessage -> Protocol.ClientMsg =
+    let encodeChannelMessage channel : Party ChatClientMessage -> Protocol.ClientMsg =
         // FIXME fill user info
-        let userInfo (UserNick nickname) : Protocol.ChanUserInfo =
-            {nick = nickname; name = "TBD"; email = None; online = true; isbot = false; lastSeen = System.DateTime.Now}
+        let userInfo user : Protocol.ChanUserInfo =
+            {nick = user.nick; name = "TBD"; email = None; online = true; isbot = false; lastSeen = System.DateTime.Now}
 
         function
-        | ChatMessage ((id, ts),  UserNick author, Message message) ->
-            Protocol.ChanMsg {id = id; ts = ts; text = message; chan = channel; author = author}
+        | ChatMessage ((id, ts),  author: Party, Message message) ->
+            Protocol.ChanMsg {id = id; ts = ts; text = message; chan = channel; author = author.nick}
         | Joined ((id, ts), user, _) ->
             Protocol.UserJoined  ({id = id; ts = ts; user = userInfo user}, channel)
         | Left ((id, ts), user, _) ->
             Protocol.UserLeft  ({id = id; ts = ts; user = userInfo user}, channel)
 
-    let (|ParseUuid|_|) = Uuid.TryParse
+    let (|ParseChannelId|_|) s = 
+        let (result, value) = Int32.TryParse s
+        if result then Some value else None
 
     // extracts message from websocket reply, only handles User input (channel * string)
     let extractMessage message =
@@ -53,7 +56,7 @@ module private Implementation =
                 match t |> Json.unjson<Protocol.ServerMsg> with
                 | Protocol.UserMessage msg ->
                     match msg.chan with
-                    | ParseUuid chanId -> ChannelMessage (chanId, Message msg.text)
+                    | ParseChannelId chanId -> ChannelMessage (chanId, Message msg.text)
                     | _ -> Trash "Bad channel id"
                 | message -> ControlMessage message                
             | x -> Trash <| sprintf "Not a Text message '%A'" x
@@ -108,16 +111,15 @@ let connectWebSocket (system: ActorSystem) (server: ServerActor) me : WebPart =
 
                 let makeChanInfo chanData =
                     { mapChanInfo chanData with joined = session.channels |> Map.containsKey chanData.id}
-                let (UserNick mynick) = session.me
 
                 let makeHello channels =
-                    Protocol.ClientMsg.Hello {nick = mynick; name = ""; email = None; channels = channels}
+                    Protocol.ClientMsg.Hello {nick = me.nick; name = ""; email = None; channels = channels}
 
                 return serverChannels |> Result.map (List.map makeChanInfo >> makeHello) |> reply ""
 
             | Protocol.ServerMsg.Join chanIdStr ->
                 match chanIdStr with
-                | ParseUuid channelId ->
+                | ParseChannelId channelId ->
                     let! result = session |> UserSession.join listenChannel channelId
                     // TODO get users right from channel
                     return result |> updateSession requestId (mapChanInfo >> (setJoined true) >> Protocol.JoinedChannel)
@@ -134,7 +136,7 @@ let connectWebSocket (system: ActorSystem) (server: ServerActor) me : WebPart =
 
             | Protocol.ServerMsg.Leave chanIdStr ->
                 return chanIdStr |> function
-                    | ParseUuid channelId ->
+                    | ParseChannelId channelId ->
                         let result = session |> UserSession.leave channelId
                         result |> updateSession requestId (fun _ -> Protocol.LeftChannel chanIdStr)
                     | _ ->
@@ -154,7 +156,7 @@ let connectWebSocket (system: ActorSystem) (server: ServerActor) me : WebPart =
         | _ -> ()
     }
 
-    let sessionFlow = createUserSessionFlow<UserNick,Uuid> materializer
+    let sessionFlow = createUserSessionFlow<Party,int> materializer
     let controlMessageFlow = Flow.empty<_, Akka.NotUsed> |> Flow.asyncMap 10 processControlMessage
 
     let userMessageFlow =
@@ -163,7 +165,7 @@ let connectWebSocket (system: ActorSystem) (server: ServerActor) me : WebPart =
         |> Flow.map extractChannelMessage
         |> Flow.log "User flow"
         |> Flow.viaMat sessionFlow Keep.right
-        |> Flow.map (fun (channel: Uuid, message) -> encodeChannelMessage (channel.ToString()) message)
+        |> Flow.map (fun (channel: int, message) -> encodeChannelMessage (channel.ToString()) message)
 
     let controlFlow =
         Flow.empty<IncomingMessage, Akka.NotUsed>

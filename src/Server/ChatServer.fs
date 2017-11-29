@@ -7,16 +7,17 @@ open Akkling
 
 open ChannelFlow
 
-type UserNick = UserNick of string
+type Party = {nick: string}
+with static member Make(nick) = {nick = nick}
 
 module ServerState =
 
     /// Channel is a primary store for channel info and data
     type ChannelData = {
-        id: Uuid
+        id: int
         name: string
         topic: string
-        channelActor: IActorRef<UserNick ChannelMessage>
+        channelActor: IActorRef<Party ChannelMessage>
     }
 
     type ServerData = {
@@ -52,6 +53,8 @@ module internal Helpers =
 
 module ServerApi =
     open Helpers
+    let __lastid = ref 100
+    let newId () = System.Threading.Interlocked.Increment __lastid
 
     /// Creates a new channel or returns existing if channel already exists
     let addChannel createChannel name topic (state: ServerData) =
@@ -61,7 +64,7 @@ module ServerApi =
         | _ when isValidName name ->
             let channelActor = createChannel name
             let newChan = {
-                id = Uuid.New(); name = name; topic = topic; channelActor = channelActor }
+                id = newId (); name = name; topic = topic; channelActor = channelActor }
             Ok ({state with channels = newChan::state.channels}, newChan)
         | _ ->
             Error "Invalid channel name"

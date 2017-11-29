@@ -7,22 +7,21 @@ open ChannelFlow
 open ChatServer
 
 /// Creates an actor for echo bot.
-let createEchoActor (system: ActorSystem) botNick =
-    let isBot (userNick: UserNick) = userNick = botNick // FIXME
+let createEchoActor (system: ActorSystem) botUser =
+    let isBot (userNick: Party) = userNick = botUser // FIXME
 
     let botHandler _ (ctx: Actor<_>) =
         function
-        | ChatMessage (_, (userNick: UserNick), Message message) when not (isBot userNick) ->
+        | ChatMessage (_, user, Message message) when not (isBot user) ->
             do ctx.Sender() <!| async {
-                let (UserNick nickname) = userNick
-                let reply = sprintf "@%s said: %s" nickname message
-                return NewMessage (botNick, Message reply)
+                let reply = sprintf "@%s said: %s" user.nick message
+                return NewMessage (botUser, Message reply)
             }
             ()
-        | Joined (_, UserNick nickname, _) ->
+        | Joined (_, user, _) ->
             do ctx.Sender() <!| async {
-                let reply = sprintf "Welcome aboard, \"@%s\"!" nickname
-                return NewMessage (botNick, Message reply)
+                let reply = sprintf "Welcome aboard, \"@%s\"!" user.nick
+                return NewMessage (botUser, Message reply)
             }
         | _ -> ()
         >> ignored
@@ -30,19 +29,18 @@ let createEchoActor (system: ActorSystem) botNick =
     props <| (actorOf2 <| botHandler ()) |> spawn system "echobot"
 
 let createDiagChannel (system: ActorSystem) (server: IActorRef<_>) (channelName, topic) =
-    let echoNick = UserNick "echo"
-    let bot = createEchoActor system echoNick
+    let echoUser = Party.Make "echo"
+    let bot = createEchoActor system echoUser
 
     server <! UpdateState (fun state ->
         state
         |> ServerApi.addChannel (createChannel system) channelName topic
         |> Result.map (
             fun (state, chan) ->
-                chan.channelActor <! (NewParticipant (echoNick, bot))
+                chan.channelActor <! (NewParticipant (echoUser, bot))
                 state
         )
         |> function
         | Ok state -> state
-        | Result.Error e -> state // FIXME log error
+        | Error _ -> state // FIXME log error
     )
-

@@ -16,6 +16,7 @@ open Akka.Actor
 open Akkling
 
 open UserSession
+open Suave.Html
 // ---------------------------------
 // Web app
 // ---------------------------------
@@ -109,13 +110,15 @@ let session (f: ClientSession -> WebPart) =
         | Some state ->
             match state.get "nick", appServerState with
             | Some nick, Some (actorSystem, server) ->
-                f (UserLoggedOn (ChatServer.UserNick nick, actorSystem, server))
+                f (UserLoggedOn (ChatServer.Party.Make nick, actorSystem, server))
             | _ -> f NoSession)
 
 let noCache =
     Writers.setHeader "Cache-Control" "no-cache, no-store, must-revalidate"
     >=> Writers.setHeader "Pragma" "no-cache"
     >=> Writers.setHeader "Expires" "0"
+
+let getPayloadString req = System.Text.Encoding.UTF8.GetString(req.rawForm)
 
 let root: WebPart =
     choose [
@@ -140,16 +143,6 @@ let root: WebPart =
                 (fun error -> OK <| sprintf "Authorization failed because of `%s`" error.Message)
             )
 
-        warbler(fun _ ->
-            GET >=> path "/logon_anon" >=> ( // FIXME remove in prod builds
-                let nick = "Anonymous"
-
-                statefulForSession
-                >=> sessionStore (fun store -> store.set "nick" nick)
-                >=> FOUND "/"
-                )
-        )
-
         session (fun session ->
             choose [
                 GET >=> path "/" >=> noCache >=> (
@@ -157,8 +150,17 @@ let root: WebPart =
                     | NoSession -> found "/logon"
                     | _ -> Files.browseFileHome "index.html"
                     )
-                GET >=> path "/logon" >=> noCache >=>
-                    (OK <| (Views.index session |> Html.htmlToString))  // FIXME rename index to login
+                path "/logon" >=> choose [
+                    GET >=> noCache >=>
+                        (OK <| (Logon.Views.index session |> htmlToString))
+                    POST >=> (
+                        fun ctx ->
+                            let nick = "~" + (getPayloadString ctx.request).Substring 5
+                            (statefulForSession
+                                >=> sessionStore (fun store -> store.set "nick" nick)
+                                >=> FOUND "/") ctx
+                    )
+                ]
                 GET >=> path "/logoff" >=> noCache >=>
                     deauthenticate >=> FOUND "/logon"
 
