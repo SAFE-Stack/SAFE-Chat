@@ -7,8 +7,9 @@ open Akkling
 
 open ChannelFlow
 
-type Party = {nick: string}
-with static member Make(nick) = {nick = nick}
+type Party = {nick: string; isbot: bool}
+with
+    static member Make(nick) = {nick = nick; isbot = false}
 
 module ServerState =
 

@@ -89,7 +89,7 @@ let createChannel<'User when 'User: comparison> (system: ActorSystem) name =
 
     // TODO * check monitor does work
     in
-    props <| actorOf2 (behavior { Parties = Map.empty; LastEventId = 1000 }) |> (spawn system name)
+    props <| actorOf2 (behavior { Parties = Map.empty; LastEventId = 1000 }) |> (spawn system null)
 
 // Creates a Flow instance for user in channel.
 // When materialized flow connects user to channel and starts bidirectional communication.

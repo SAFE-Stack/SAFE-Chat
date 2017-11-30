@@ -22,7 +22,7 @@ let chanMessages (users: Map<string, UserInfo>) (messages: Message list) =
     let content (m: Message) =
       let user =
         users |> Map.tryFind m.AuthorId
-        |> function | Some u -> u | _ -> {Nick = m.AuthorId; Name = ""; Email = None; IsBot = false; Online = false}
+        |> function | Some u -> u | _ -> {Nick = m.AuthorId; IsBot = false; Online = false}
 
       [ strong [] [str user.Nick]; str " "; small [] [str "31m"]
         br []
@@ -81,6 +81,17 @@ let postMessage model dispatch =
          [str "Post"]
     ]
 
+let chanUsers (users: Map<string, UserInfo>) =
+  let screenName (u: UserInfo) =
+    match u.IsBot with |true -> sprintf "#%s" u.Nick |_ -> u.Nick
+  div []
+      [ str "Users:"
+        ul
+          []
+          [ for u in users ->
+              li [] [str <| screenName u.Value]
+          ]]
+
 let root (model: ChannelData) dispatch =
     let users = model.Users |> function | UserCount _ -> Map.empty | UserList list -> list
     div
@@ -96,12 +107,6 @@ let root (model: ChannelData) dispatch =
               [ chanMessages users model.Messages ]
             div
               [ ClassName "column"]
-              [ str "Users:"
-                ul
-                  []
-                  [ for u in users ->
-                      li [] [str u.Key]
-                  ]
-               ]
+              [ chanUsers users ]
           ]          
       ]

@@ -5,8 +5,8 @@ storage: none
 nuget Suave
 nuget Suave.OAuth
 nuget Suave.Experimental
-nuget Akkling > 0.7.0
-nuget Akkling.Streams > 0.7.0
+nuget Akkling 0.7.1
+nuget Akkling.Streams 0.7.1
 nuget Newtonsoft.Json
 nuget Fable.JsonConverter
 

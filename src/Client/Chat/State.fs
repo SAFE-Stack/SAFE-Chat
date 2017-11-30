@@ -17,7 +17,7 @@ open FsChat
 module Conversions =
 
     let mapUserInfo (u: Protocol.ChanUserInfo): UserInfo =
-        {Nick = u.nick; Name = u.nick; Email = u.email; IsBot = u.isbot; Online = u.online}
+        {Nick = u.nick; IsBot = u.isbot; Online = true}
 
     let mapChannel (ch: Protocol.ChannelInfo): ChannelData =
         let usersInfo =
@@ -80,6 +80,9 @@ let updateChan chanId (f: ChannelData -> ChannelData) (chat: ChatData) : ChatDat
     let update cid = if cid = chanId then f else id
     { chat with Channels = chat.Channels |> Map.map update }
 
+let updateChanUsers chanId (f: UsersInfo -> UsersInfo) =
+    updateChan chanId (fun ch -> { ch with Users = f ch.Users})
+
 let appendMessage (msg: Protocol.ChannelMsg) (chan: ChannelData) =
     let newMessage: Message =
       { Id = msg.id; AuthorId = msg.author; Ts = msg.ts
@@ -90,7 +93,19 @@ let chatUpdate (msg: Protocol.ClientMsg) (state: ChatData) : ChatData * Cmd<MsgT
     match msg with
     | Protocol.ClientMsg.ChanMsg chanMsg ->
         updateChan chanMsg.chan (appendMessage chanMsg) state, Cmd.none
-    | _ ->
+
+    | Protocol.ClientMsg.UserJoined (ev, chan) ->
+        updateChanUsers chan (function
+            | UserCount c -> UserCount (c + 1)
+            | UserList m -> m |> Map.add ev.user.nick (Conversions.mapUserInfo ev.user) |> UserList) state, Cmd.none
+
+    | Protocol.ClientMsg.UserLeft (ev, chan) ->
+        updateChanUsers chan (function
+            | UserCount c -> UserCount (if c > 0 then c - 1 else 0)
+            | UserList m -> m |> Map.remove ev.user.nick |> UserList) state, Cmd.none
+
+    | notProcessed ->
+        printfn "message was not processed: %A" notProcessed
         state, Cmd.none
 
 let socketMsgUpdate (msg: Protocol.ClientMsg) prevState : ChatState * Cmd<MsgType> =
@@ -103,7 +118,7 @@ let socketMsgUpdate (msg: Protocol.ClientMsg) prevState : ChatState * Cmd<MsgTyp
                     socket = prevChatState.socket
                     Channels = hello.channels |> List.map (fun ch -> ch.id, Conversions.mapChannel ch) |> Map.ofList
                     }
-            let me: UserInfo = { Nick = hello.nick; Name = hello.name; Email = hello.email; Online = true; IsBot = false }
+            let me: UserInfo = { Nick = hello.nick; Online = true; IsBot = false }
             Connected (me, chatData), Cmd.none
         | Protocol.ClientMsg.JoinedChannel chanInfo ->
             Connected (me,

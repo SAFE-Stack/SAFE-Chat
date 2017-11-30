@@ -8,11 +8,9 @@ open ChatServer
 
 /// Creates an actor for echo bot.
 let createEchoActor (system: ActorSystem) botUser =
-    let isBot (userNick: Party) = userNick = botUser // FIXME
-
     let botHandler _ (ctx: Actor<_>) =
         function
-        | ChatMessage (_, user, Message message) when not (isBot user) ->
+        | ChatMessage (_, user, Message message) when not user.isbot ->
             do ctx.Sender() <!| async {
                 let reply = sprintf "@%s said: %s" user.nick message
                 return NewMessage (botUser, Message reply)
@@ -20,7 +18,7 @@ let createEchoActor (system: ActorSystem) botUser =
             ()
         | Joined (_, user, _) ->
             do ctx.Sender() <!| async {
-                let reply = sprintf "Welcome aboard, \"@%s\"!" user.nick
+                let reply = sprintf "Welcome aboard, %s!" user.nick
                 return NewMessage (botUser, Message reply)
             }
         | _ -> ()
@@ -29,7 +27,7 @@ let createEchoActor (system: ActorSystem) botUser =
     props <| (actorOf2 <| botHandler ()) |> spawn system "echobot"
 
 let createDiagChannel (system: ActorSystem) (server: IActorRef<_>) (channelName, topic) =
-    let echoUser = Party.Make "echo"
+    let echoUser = { Party.Make "echo" with isbot = true }
     let bot = createEchoActor system echoUser
 
     server <! UpdateState (fun state ->

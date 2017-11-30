@@ -31,11 +31,9 @@ module private Implementation =
         | ControlMessage of Protocol.ServerMsg
         | Trash of reason: string
 
-    let encodeChannelMessage channel : Party ChatClientMessage -> Protocol.ClientMsg =
-        // FIXME fill user info
-        let userInfo user : Protocol.ChanUserInfo =
-            {nick = user.nick; name = "TBD"; email = None; online = true; isbot = false; lastSeen = System.DateTime.Now}
+    let userInfo user : Protocol.ChanUserInfo = {nick = user.nick; isbot = user.isbot}
 
+    let encodeChannelMessage channel : Party ChatClientMessage -> Protocol.ClientMsg =
         function
         | ChatMessage ((id, ts),  author: Party, Message message) ->
             Protocol.ChanMsg {id = id; ts = ts; text = message; chan = channel; author = author.nick}
@@ -101,6 +99,16 @@ let connectWebSocket (system: ActorSystem) (server: ServerActor) me : WebPart =
         | Ok (newSession, response) -> session <- newSession; f response
         | Result.Error e ->            replyErrorProtocol requestId e
 
+    let makeChannelInfoResult v =
+        async {
+            match v with
+            | Ok (arg1, channel: ServerState.ChannelData) ->
+                let! (users: Party list) = channel.channelActor <? ListUsers
+                let chaninfo = { mapChanInfo channel with users = users |> List.map userInfo}
+                return Ok (arg1, chaninfo)
+            | Result.Error e -> return Result.Error e
+        }
+
     let processControlMessage message =
         async {
             let requestId = "" // TODO take from server message
@@ -121,8 +129,8 @@ let connectWebSocket (system: ActorSystem) (server: ServerActor) me : WebPart =
                 match chanIdStr with
                 | ParseChannelId channelId ->
                     let! result = session |> UserSession.join listenChannel channelId
-                    // TODO get users right from channel
-                    return result |> updateSession requestId (mapChanInfo >> (setJoined true) >> Protocol.JoinedChannel)
+                    let! chaninfo = makeChannelInfoResult result
+                    return chaninfo |> updateSession requestId ((setJoined true) >> Protocol.JoinedChannel)
                 | _ -> return replyErrorProtocol requestId "bad channel id"
 
             | Protocol.ServerMsg.JoinOrCreate channelName ->
@@ -130,7 +138,8 @@ let connectWebSocket (system: ActorSystem) (server: ServerActor) me : WebPart =
                 match channelResult with
                 | Ok channelData ->
                     let! result = session |> UserSession.join listenChannel channelData.id
-                    return result |> updateSession requestId (mapChanInfo >> (setJoined true) >> Protocol.JoinedChannel)
+                    let! chaninfo = makeChannelInfoResult result
+                    return chaninfo |> updateSession requestId ((setJoined true) >> Protocol.JoinedChannel)
                 | Result.Error err ->
                     return replyErrorProtocol requestId err
 
