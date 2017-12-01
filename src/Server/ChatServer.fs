@@ -37,6 +37,8 @@ type ServerReplyMessage =
     | FoundChannel of ServerState.ChannelData
     | FoundChannels of ServerState.ChannelData list
 
+type ServerT = IActorRef<ServerControlMessage>
+
 open ServerState
 
 module internal Helpers =
@@ -102,7 +104,7 @@ let startServer (system: ActorSystem) =
     in
     props <| actorOf2 (behavior { channels = [] }) |> (spawn system "ircserver")
 
-let private getChannelImpl message (server: IActorRef<ServerControlMessage>) =
+let private getChannelImpl message (server: ServerT) =
     async {
         let! (reply: ServerReplyMessage) = server <? message
         match reply with
@@ -117,7 +119,7 @@ let getChannel criteria =
 let getOrCreateChannel name =
     getChannelImpl (GetOrCreateChannel name)
 
-let listChannels criteria (server: IActorRef<ServerControlMessage>) =
+let listChannels criteria (server: ServerT) =
     async {
         let! (reply: ServerReplyMessage) = server <? (ListChannels criteria)
         match reply with
@@ -125,7 +127,7 @@ let listChannels criteria (server: IActorRef<ServerControlMessage>) =
         | _ -> return Error "Unknown error"
     }
 
-let createTestChannels system (server: IActorRef<ServerControlMessage>) =
+let createTestChannels system (server: ServerT) =
     let addChannel name topic state =
         match state |> ServerApi.addChannel (createChannel system) name topic with
         | Ok (newstate, _) -> newstate

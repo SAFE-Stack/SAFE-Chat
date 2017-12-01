@@ -17,6 +17,15 @@ let simpleButton txt action dispatch =
               OnClick (fun _ -> action |> dispatch) ]
             [ str txt ] ]
 
+let private formatTs (ts: System.DateTime) =
+  match (System.DateTime.Now - ts) with
+  | diff when diff.TotalMinutes < 1.0 -> "a few seconds ago"
+  | diff when diff.TotalMinutes < 30.0 -> sprintf "%i minutes ago" (int diff.TotalMinutes)
+  | diff when diff.TotalHours <= 12.0 -> ts.ToShortTimeString()
+  | diff when diff.TotalDays <= 5.0 -> sprintf "%i days ago" (int diff.TotalMinutes)
+  | _ -> ts.ToShortDateString()
+    
+
 let chanMessages (users: Map<string, UserInfo>) (messages: Message list) =
 
     let content (m: Message) =
@@ -24,7 +33,7 @@ let chanMessages (users: Map<string, UserInfo>) (messages: Message list) =
         users |> Map.tryFind m.AuthorId
         |> function | Some u -> u | _ -> {Nick = m.AuthorId; IsBot = false; Online = false}
 
-      [ strong [] [str user.Nick]; str " "; small [] [str "31m"]
+      [ strong [] [str user.Nick]; str " "; small [] [str <| formatTs m.Ts]
         br []
         str m.Text ]
 

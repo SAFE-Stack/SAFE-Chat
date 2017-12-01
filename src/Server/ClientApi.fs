@@ -168,6 +168,11 @@ let connectWebSocket (system: ActorSystem) (server: ServerActor) me : WebPart =
     let sessionFlow = createUserSessionFlow<Party,int> materializer
     let controlMessageFlow = Flow.empty<_, Akka.NotUsed> |> Flow.asyncMap 10 processControlMessage
 
+    // TODO implement this flow (notifications from server about added/removed channels)
+    // see createChannelFlow for example
+    let serverEventsSource: Source<Protocol.ClientMsg, Akka.NotUsed> =
+        Source.Single(Protocol.ClientMsg.NewChannel {id = "234"; name = "fff"; userCount = 0; topic = ""; joined = false; users = []})
+
     let userMessageFlow =
         Flow.empty<IncomingMessage, Akka.NotUsed>
         |> Flow.filter isChannelMessage
@@ -183,7 +188,9 @@ let connectWebSocket (system: ActorSystem) (server: ServerActor) me : WebPart =
         |> Flow.log "Control flow"
         |> Flow.via controlMessageFlow
 
-    let combineFlow = FlowImpl.split2 userMessageFlow controlFlow Keep.left
+    let combineFlow : Flow<IncomingMessage,Protocol.ClientMsg,_> =
+        FlowImpl.split2 userMessageFlow controlFlow Keep.left
+        |> Flow.mergeMat serverEventsSource Keep.left
 
     let socketFlow =
         Flow.empty<WsMessage, Akka.NotUsed>
