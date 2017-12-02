@@ -104,6 +104,12 @@ let chatUpdate (msg: Protocol.ClientMsg) (state: ChatData) : ChatData * Cmd<MsgT
             | UserCount c -> UserCount (if c > 0 then c - 1 else 0)
             | UserList m -> m |> Map.remove ev.user.nick |> UserList) state, Cmd.none
 
+    | Protocol.ClientMsg.NewChannel chan ->
+        { state with Channels = state.Channels |> Map.add chan.id (Conversions.mapChannel chan)}, Cmd.none
+
+    | Protocol.ClientMsg.RemoveChannel chan ->
+        { state with Channels = state.Channels |> Map.remove chan.id }, Cmd.none
+
     | notProcessed ->
         printfn "message was not processed: %A" notProcessed
         state, Cmd.none

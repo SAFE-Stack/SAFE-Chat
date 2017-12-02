@@ -11,35 +11,40 @@ type Party = {nick: string; isbot: bool}
 with
     static member Make(nick) = {nick = nick; isbot = false}
 
-module ServerState =
+/// Channel is a primary store for channel info and data
+type ChannelData = {
+    id: int
+    name: string
+    topic: string
+    channelActor: IActorRef<Party ChannelMessage>
+}
 
-    /// Channel is a primary store for channel info and data
-    type ChannelData = {
-        id: int
-        name: string
-        topic: string
-        channelActor: IActorRef<Party ChannelMessage>
-    }
+and ServerData = {
+    channels: ChannelData list
+    subscribers: Map<Party, IActorRef<ServerNotifyMessage>>
+}
 
-    type ServerData = {
-        channels: ChannelData list
-    }
+// notification message sent to a subscribers via notify method
+and ServerNotifyMessage =
+    | AddChannel of ChannelData
+    | DropChannel of ChannelData
 
 type ServerControlMessage =
-    | UpdateState of (ServerState.ServerData -> ServerState.ServerData)
-    | FindChannel of (ServerState.ChannelData -> bool)
+    | UpdateState of (ServerData -> ServerData)
+    | FindChannel of (ChannelData -> bool)
     | GetOrCreateChannel of name: string
-    | ListChannels of (ServerState.ChannelData -> bool)
+    | ListChannels of (ChannelData -> bool)
+
+    | Subscribe of Party * IActorRef<ServerNotifyMessage>
+    | Unsubscribe of Party
 
 type ServerReplyMessage =
     | Done
     | RequestError of string
-    | FoundChannel of ServerState.ChannelData
-    | FoundChannels of ServerState.ChannelData list
+    | FoundChannel of ChannelData
+    | FoundChannels of ChannelData list
 
 type ServerT = IActorRef<ServerControlMessage>
-
-open ServerState
 
 module internal Helpers =
 
@@ -68,9 +73,16 @@ module ServerApi =
             let channelActor = createChannel name
             let newChan = {
                 id = newId (); name = name; topic = topic; channelActor = channelActor }
+
+            do state.subscribers |> Map.iter(fun _ actor -> actor <! AddChannel newChan)
             Ok ({state with channels = newChan::state.channels}, newChan)
         | _ ->
             Error "Invalid channel name"
+
+    let addSub party actor (state: ServerData) =
+        { state with subscribers = state.subscribers |> Map.add party actor }
+    let dropSub party (state: ServerData) =
+        { state with subscribers = state.subscribers |> Map.remove party }
 
     let setTopic chanId newTopic state =
         Ok (state |> updateChannel (fun chan -> {chan with topic = newTopic}) chanId)
@@ -98,11 +110,18 @@ let startServer (system: ActorSystem) =
         | ListChannels criteria ->
             let found = state.channels |> List.filter criteria
             ctx.Sender() <! FoundChannels found
-            
             ignored state
 
+        | Subscribe (party, actor) ->
+            let newState = state |> ServerApi.addSub party actor
+            become (behavior newState ctx)          
+
+        | Unsubscribe party ->
+            let newState = state |> ServerApi.dropSub party
+            become (behavior newState ctx)          
+
     in
-    props <| actorOf2 (behavior { channels = [] }) |> (spawn system "ircserver")
+    props <| actorOf2 (behavior { channels = []; subscribers = Map.empty }) |> (spawn system "ircserver")
 
 let private getChannelImpl message (server: ServerT) =
     async {
@@ -138,3 +157,6 @@ let createTestChannels system (server: ServerT) =
         >> addChannel "Weather" "join channel to get updated"
 
     ignore (server <? UpdateState addChannels)
+
+let subscribeNotify (server: ServerT) party (actor: IActorRef<ServerNotifyMessage>) =
+    server <! Subscribe (party, actor)

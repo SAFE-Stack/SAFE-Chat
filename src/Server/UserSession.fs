@@ -24,7 +24,7 @@ let join listenChannel channelId (session: SessionData) =
     // TODO consider extracting connecting logic such as the following method
     // let connect chanId chanActor =
     //     listen chan.id (createChannelFlow chan.channelActor me)
-    let byChanId id c = (c:ServerState.ChannelData).id = id
+    let byChanId id c = (c:ChannelData).id = id
 
     async {
         if session.channels |> Map.containsKey channelId then

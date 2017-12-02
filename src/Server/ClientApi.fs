@@ -22,8 +22,6 @@ let private logger = Log.create "chatapi"
 
 module private Implementation =
 
-    open ServerState
-
     type ServerActor = IActorRef<ChatServer.ServerControlMessage>
 
     type IncomingMessage =
@@ -102,7 +100,7 @@ let connectWebSocket (system: ActorSystem) (server: ServerActor) me : WebPart =
     let makeChannelInfoResult v =
         async {
             match v with
-            | Ok (arg1, channel: ServerState.ChannelData) ->
+            | Ok (arg1, channel: ChannelData) ->
                 let! (users: Party list) = channel.channelActor <? ListUsers
                 let chaninfo = { mapChanInfo channel with users = users |> List.map userInfo}
                 return Ok (arg1, chaninfo)
@@ -168,10 +166,20 @@ let connectWebSocket (system: ActorSystem) (server: ServerActor) me : WebPart =
     let sessionFlow = createUserSessionFlow<Party,int> materializer
     let controlMessageFlow = Flow.empty<_, Akka.NotUsed> |> Flow.asyncMap 10 processControlMessage
 
-    // TODO implement this flow (notifications from server about added/removed channels)
-    // see createChannelFlow for example
+    // TODO consider merging this with controlMessage flow because they belong to the same domain
+
     let serverEventsSource: Source<Protocol.ClientMsg, Akka.NotUsed> =
-        Source.Single(Protocol.ClientMsg.NewChannel {id = "234"; name = "fff"; userCount = 0; topic = ""; joined = false; users = []})
+        let party = { Party.Make me.nick with isbot = me.isbot }
+        let notifyNew sub = subscribeNotify server party sub; Akka.NotUsed.Instance
+        let source = Source.actorRef OverflowStrategy.Fail 1 |> Source.mapMaterializedValue notifyNew
+
+        source |> Source.map (function
+            | AddChannel ch -> ch |> (mapChanInfo >> Protocol.ClientMsg.NewChannel)
+            | DropChannel ch -> ch |> (mapChanInfo >> Protocol.ClientMsg.RemoveChannel)
+            | m ->
+                logger.error (Message.eventX "Unknown notification message {m}" >> Message.setFieldValue "m" m)
+                Protocol.ClientMsg.Error (Protocol.CannotProcess ("", "Unknown notification message"))
+        )
 
     let userMessageFlow =
         Flow.empty<IncomingMessage, Akka.NotUsed>
