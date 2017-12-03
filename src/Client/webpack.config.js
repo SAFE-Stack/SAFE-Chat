@@ -72,7 +72,13 @@ module.exports = {
             }
         ]
     },
-    plugins: isProduction ? [] : [
+    plugins: isProduction ? [
+        // new webpack.optimize.UglifyJsPlugin({
+        //     compress: {
+        //         warnings: false
+        //     }
+        // })
+    ] : [
         new webpack.HotModuleReplacementPlugin(),
         new webpack.NamedModulesPlugin()
     ]

@@ -17,7 +17,6 @@ open Suave.WebSocket
 type WsMessage =
     | Text of string
     | Data of byte array
-    | Close
     | Ignore
 
 let private logger = Log.create "socketflow"
@@ -34,42 +33,28 @@ let handleWebsocketMessages (system: ActorSystem)
 
     let emptyData = ByteSegment [||]
 
-    let asyncIgnore f = async {
-        let! _ = f
-        return WsMessage.Ignore :> obj
-    }
+    let asyncMap f v = async { let! x = v in return f x }
+    let asyncIgnore = asyncMap (fun _ -> Ignore)
 
     // sink for flow that sends messages to websocket
-    let sinkBehavior _ (ctx: Actor<obj>): obj -> _ =
+    let sinkBehavior _ (ctx: Actor<_>): WsMessage -> _ =
         function
-        | :? WsMessage as wsmsg ->
-            wsmsg |> function
-            | Terminated _ ->
-                ws.send Opcode.Close emptyData true |> Async.Ignore |> Async.Start
-                stop()
-            | Text text ->
-                // using pipeTo operator just to wait for async send operation to complete
-                ws.send Opcode.Text (Encoding.UTF8.GetBytes(text) |> ByteSegment) true
-                    |> asyncIgnore |!> ctx.Self
-                ignored()
-            | Data bytes ->
-                ws.send Binary (ByteSegment bytes) true |> asyncIgnore |!> ctx.Self
-                ignored()
-            | Ignore ->
-                ignored()
-            | Close ->
-                logger.debug (Message.eventX "Close received. Sending Stop.")
-                stop()
-        | _ ->
-            ignored ()
+        | Text text ->
+            // using pipeTo operator just to wait for async send operation to complete
+            ws.send Opcode.Text (Encoding.UTF8.GetBytes(text) |> ByteSegment) true
+                |> asyncIgnore |!> ctx.Self
+            ignored()
+        | Data bytes ->
+            ws.send Binary (ByteSegment bytes) true |> asyncIgnore |!> ctx.Self
+            ignored()
+        | Ignore ->
+            ignored()
 
     let sinkActor =
         props <| actorOf2 (sinkBehavior ()) |> (spawn system null) |> retype
 
     let sink: Sink<WsMessage,_> = Sink.ActorRef(untyped sinkActor, PoisonPill.Instance)
     do materialize materializer inputSource sink
-
-    logger.debug (Message.eventX "materialized socket sink")
 
     socket {
         let mutable loop = true
@@ -82,40 +67,18 @@ let handleWebsocketMessages (system: ActorSystem)
                 sourceActor <! Text str
             | (Ping, _, _) ->
                 do! ws.send Pong emptyData true
-            | (Opcode.Close, _, _) ->
-                logger.debug (Message.eventX "Received Opcode.Close")
+            | (Close, _, _) ->
+                logger.debug (Message.eventX "Received Opcode.Close, terminating actor")
+                (retype sourceActor) <! PoisonPill.Instance
+
+                do! ws.send Close emptyData true
                 // this finalizes the Source
-                sourceActor <! Close
-                do! ws.send Opcode.Close emptyData true
                 loop <- false
             | _ -> ()
-    }
-
-let handleWebsocketMessagesWithError (system: ActorSystem)
-    (materialize: IMaterializer -> Source<WsMessage, Akka.NotUsed> -> Sink<WsMessage, _> -> unit) (ws : WebSocket) ctx = 
-   
-    let exampleDisposableResource = { new IDisposable with member __.Dispose() =
-        logger.debug (Message.eventX "Resource needed by websocket connection disposed")
-        }
-   
-    async {
-        let! successOrError = handleWebsocketMessages system materialize ws ctx
-        logger.error (Message.eventX "Socket closed?")
-        
-        match successOrError with
-        // Success case
-        | Choice1Of2() -> ()
-        // Error case
-        | Choice2Of2(error) ->
-            // Example error handling logic here
-            logger.error (Message.eventX "Error: {error}" >> Message.setFieldValue "error" error)
-            exampleDisposableResource.Dispose()
-            
-        return successOrError
     }
 
 /// Creates Suave socket handshaking handler
 let handleWebsocketMessagesFlow  (system: ActorSystem) (handler: Flow<WsMessage, WsMessage, Akka.NotUsed>) (ws : WebSocket) =
     let materialize materializer inputSource sink =
         inputSource |> Source.via handler |> Source.runWith materializer sink |> ignore
-    handleWebsocketMessagesWithError system materialize ws
+    handleWebsocketMessages system materialize ws

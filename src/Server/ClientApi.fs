@@ -208,12 +208,9 @@ let connectWebSocket (system: ActorSystem) (server: ServerActor) me : WebPart =
         |> Flow.viaMat combineFlow Keep.right
         |> Flow.map (Json.json >> Text)
 
-    let marker = Source.Single(Protocol.ServerMsg.Leave "100" |> ((Json.json >> Text)))
-
     let materialize materializer (source: Source<WsMessage, Akka.NotUsed>) (sink: Sink<WsMessage, _>) =
         listenChannel <-
             source
-            |> Source.concat marker
             |> Source.viaMat socketFlow Keep.right
             |> Source.toMat sink Keep.left
             |> Graph.run materializer |> Some

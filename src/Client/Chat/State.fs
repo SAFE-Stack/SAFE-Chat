@@ -80,8 +80,8 @@ let updateChan chanId (f: ChannelData -> ChannelData) (chat: ChatData) : ChatDat
     let update cid = if cid = chanId then f else id
     { chat with Channels = chat.Channels |> Map.map update }
 
-let updateChanUsers chanId (f: UsersInfo -> UsersInfo) =
-    updateChan chanId (fun ch -> { ch with Users = f ch.Users})
+let updateUsers (f: UsersInfo -> UsersInfo) =
+    (fun ch -> { ch with Users = f ch.Users})
 
 let appendMessage (msg: Protocol.ChannelMsg) (chan: ChannelData) =
     let newMessage: Message =
@@ -89,20 +89,29 @@ let appendMessage (msg: Protocol.ChannelMsg) (chan: ChannelData) =
         Text = msg.text }
     {chan with Messages = chan.Messages @ [newMessage]}
 
+let appendSysMessage verb (ev: Protocol.UserEventRec) =
+    appendMessage
+      { id = ev.id; author = "system"; ts = ev.ts; chan = ""
+        text = sprintf "%s %s the channel" ev.user.nick verb }
+
 let chatUpdate (msg: Protocol.ClientMsg) (state: ChatData) : ChatData * Cmd<MsgType> =
     match msg with
     | Protocol.ClientMsg.ChanMsg chanMsg ->
         updateChan chanMsg.chan (appendMessage chanMsg) state, Cmd.none
 
     | Protocol.ClientMsg.UserJoined (ev, chan) ->
-        updateChanUsers chan (function
+        updateChan chan (updateUsers <| function
             | UserCount c -> UserCount (c + 1)
-            | UserList m -> m |> Map.add ev.user.nick (Conversions.mapUserInfo ev.user) |> UserList) state, Cmd.none
+            | UserList m -> m |> Map.add ev.user.nick (Conversions.mapUserInfo ev.user) |> UserList
+            >> appendSysMessage "joined" ev
+            ) state, Cmd.none
 
     | Protocol.ClientMsg.UserLeft (ev, chan) ->
-        updateChanUsers chan (function
+        updateChan chan (updateUsers <| function
             | UserCount c -> UserCount (if c > 0 then c - 1 else 0)
-            | UserList m -> m |> Map.remove ev.user.nick |> UserList) state, Cmd.none
+            | UserList m -> m |> Map.remove ev.user.nick |> UserList
+            >> appendSysMessage "left" ev
+            ) state, Cmd.none
 
     | Protocol.ClientMsg.NewChannel chan ->
         { state with Channels = state.Channels |> Map.add chan.id (Conversions.mapChannel chan)}, Cmd.none
