@@ -31,8 +31,8 @@ let navButtons chat =
         [ div
             [ ClassName "field is-grouped" ]
             [
-                p [ ClassName "control" ]
-                  [ p [ClassName "userinfo"] [str <| userInfoText chat]]
+                div [ ClassName "control" ]
+                  [ div [ClassName "userinfo"] [str <| userInfoText chat]]
                 navButton "" "/logoff" "fa-hand-o-right" "Log off"
                 ] ]
 

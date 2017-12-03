@@ -17,69 +17,100 @@ let simpleButton txt action dispatch =
               OnClick (fun _ -> action |> dispatch) ]
             [ str txt ] ]
 
+let private formatTs (ts: System.DateTime) =
+  match (System.DateTime.Now - ts) with
+  | diff when diff.TotalMinutes < 1.0 -> "a few seconds ago"
+  | diff when diff.TotalMinutes < 30.0 -> sprintf "%i minutes ago" (int diff.TotalMinutes)
+  | diff when diff.TotalHours <= 12.0 -> ts.ToShortTimeString()
+  | diff when diff.TotalDays <= 5.0 -> sprintf "%i days ago" (int diff.TotalMinutes)
+  | _ -> ts.ToShortDateString()
+
+let userMessage (m: Message) user text =
+
+    let content =
+        [ strong [] [str user.Nick]; str " "; small [] [str <| formatTs m.Ts]
+          br []
+          str text ]
+
+    article
+      [ ClassName "media"]
+      [ div
+          [ ClassName "media-left"]
+          [ figure
+              [ ClassName "image is-48x48"]
+              [ img [Src "https://bulma.io/images/placeholders/128x128.png"; Alt "Image"] ] ]
+        div
+          [ ClassName "media-content"]
+          [ div
+              [ ClassName "content"] [ p [] content ]
+            nav
+              [ ClassName "level is-mobile"]
+              [ div
+                  [ ClassName "level-left"]
+                  [ for cls in [] -> // "fa-reply"; "fa-retweet"; "fa-heart"] ->
+                      a
+                        [ ClassName "level-item"]
+                        [ span
+                            [ ClassName "icon is-small" ]
+                            [ i [ ClassName <| "fa " + cls] [] ] ] ]
+                  ]
+              ]
+        hr []
+      ]
+
 let chanMessages (users: Map<string, UserInfo>) (messages: Message list) =
-
-    let content (m: Message) =
-      let user =
-        users |> Map.tryFind m.AuthorId
-        |> function | Some u -> u | _ -> {Nick = m.AuthorId; Name = ""; Email = None; IsBot = false; Online = false}
-
-      [ strong [] [str user.Nick]; str " "; small [] [str "31m"]
-        br []
-        str m.Text ]
+    let getUser author =
+        let user =
+          users |> Map.tryFind author
+          |> function | Some u -> u | _ -> {Nick = author; IsBot = false; Online = false}
+        user
 
     div
       []
       [ for m in messages ->
-          div
-            [ ClassName ""]
-            [ article
-                [ ClassName "media"]
-                [ div
-                    [ ClassName "media-left"]
-                    [ figure
-                        [ ClassName "image is-48x48"]
-                        [ img [Src "https://bulma.io/images/placeholders/128x128.png"; Alt "Image"] ] ]
-                  div
-                    [ ClassName "media-content"]
-                    [ div
-                        [ ClassName "content"] [ p [] (content m) ]
-                      nav
-                        [ ClassName "level is-mobile"]
-                        [ div
-                            [ ClassName "level-left"]
-                            [ for cls in [] -> // "fa-reply"; "fa-retweet"; "fa-heart"] ->
-                                a
-                                  [ ClassName "level-item"]
-                                  [ span
-                                      [ ClassName "icon is-small" ]
-                                      [ i [ ClassName <| "fa " + cls] [] ] ] ]
-                            ]
-                        ]
-                  hr []
-                ]
-            ]
+          match m.Content with
+          | UserMessage (text, author) ->
+              div
+                [ ClassName ""]
+                [ userMessage m (getUser author) text]
+          | SystemMessage text ->
+              blockquote
+                [ ClassName ""]
+                [ str text; str " "
+                  small [] [str <| formatTs m.Ts] ]
       ]
 
 let postMessage model dispatch =
   div
     [ ClassName "field has-addons postmessage" ]            
     [ divCtl <|
-        input
-          [ ClassName "input"
-            Type "text"
+        textarea
+          [ ClassName "textarea"
+            Rows 2.
             Placeholder "Type the message here"
             Value model.PostText
             AutoFocus true
             OnChange (fun ev -> !!ev.target?value |> (SetPostText >> dispatch))
             OnKeyPress (fun ev -> if !!ev.which = 13 || !!ev.keyCode = 13 then dispatch PostText)
             ]
+          []
       divCtl <|
         button
          [ ClassName "button is-primary" 
            OnClick (fun _ -> PostText |> dispatch)]
          [str "Post"]
     ]
+
+let chanUsers (users: Map<string, UserInfo>) =
+  let screenName (u: UserInfo) =
+    match u.IsBot with |true -> sprintf "#%s" u.Nick |_ -> u.Nick
+  div []
+      [ str "Users:"
+        ul
+          []
+          [ for u in users ->
+              li [] [str <| screenName u.Value]
+          ]]
 
 let root (model: ChannelData) dispatch =
     let users = model.Users |> function | UserCount _ -> Map.empty | UserList list -> list
@@ -96,12 +127,6 @@ let root (model: ChannelData) dispatch =
               [ chanMessages users model.Messages ]
             div
               [ ClassName "column"]
-              [ str "Users:"
-                ul
-                  []
-                  [ for u in users ->
-                      li [] [str u.Key]
-                  ]
-               ]
+              [ chanUsers users ]
           ]          
       ]

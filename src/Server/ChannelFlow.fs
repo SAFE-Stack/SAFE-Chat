@@ -46,50 +46,34 @@ let createChannel<'User when 'User: comparison> (system: ActorSystem) name =
         parties |> Map.iter (fun _ (_, subscriber) -> subscriber <! msg)
     let allMembers = Map.toSeq >> Seq.map (snd >> fst)
 
-    let rec behavior state (ctx: Actor<'User ChannelMessage>): obj -> _ =
+    let rec behavior state (ctx: Actor<_>) =
         let updateState newState = become (behavior newState ctx) in
+        let ts = state.LastEventId, System.DateTime.Now
         function
-        | Terminated (t,_,_) ->
-            match state.Parties |> Map.tryFindKey (fun _ (_, ref) -> ref = t) with
-            | Some key ->
-                logger.debug (Message.eventX "Terminated {user}" >> Message.setFieldValue "user" key)
-                {state with Parties = state.Parties |> Map.remove key} |> updateState
-            | _ ->
-                logger.debug (Message.eventX "Terminated unknown")
-                ignored state
+        | NewParticipant (user, subscriber) ->
+            logger.debug (Message.eventX "NewParticipant {user}" >> Message.setFieldValue "user" user)
+            let parties = state.Parties |> Map.add user (user, subscriber)
+            do dispatch state.Parties <| Joined (ts, user, parties |> allMembers)
+            incId { state with Parties = parties} |> updateState
 
-        | :? ChannelMessage<'User> as channelEvent ->
-            let ts = state.LastEventId, System.DateTime.Now
+        | ParticipantLeft user ->
+            logger.debug (Message.eventX "Participant left {user}" >> Message.setFieldValue "user" user)
+            let parties = state.Parties |> Map.remove user
+            do dispatch state.Parties <| Left (ts, user, parties |> allMembers)
+            incId { state with Parties = parties} |> updateState
 
-            match channelEvent with
-            | NewParticipant (user, subscriber) ->
-                logger.debug (Message.eventX "NewParticipant {user}" >> Message.setFieldValue "user" user)
-                do monitor ctx subscriber |> ignore
-                let parties = state.Parties |> Map.add user (user, subscriber)
-                do dispatch state.Parties <| Joined (ts, user, parties |> allMembers)
-                incId { state with Parties = parties} |> updateState
+        | NewMessage (user, message) ->
+            if state.Parties |> Map.containsKey user then
+                do dispatch state.Parties <| ChatMessage (ts, user, message)
+            incId state |> updateState
 
-            | ParticipantLeft user ->
-                logger.debug (Message.eventX "Participant left {user}" >> Message.setFieldValue "user" user)
-                let parties = state.Parties |> Map.remove user
-                do dispatch state.Parties <| Left (ts, user, parties |> allMembers)
-                incId { state with Parties = parties} |> updateState
+        | ListUsers ->
+            let users = state.Parties |> Map.toList |> List.map fst
+            ctx.Sender() <! users
+            ignored state
 
-            | NewMessage (user, message) ->
-                if state.Parties |> Map.containsKey user then
-                    do dispatch state.Parties <| ChatMessage (ts, user, message)
-                incId state |> updateState
-
-            | ListUsers ->
-                let users = state.Parties |> Map.toList |> List.map fst
-                ctx.Sender() <! users
-                ignored state
-
-        | _ -> unhandled()
-
-    // TODO * check monitor does work
     in
-    props <| actorOf2 (behavior { Parties = Map.empty; LastEventId = 1000 }) |> (spawn system name)
+    props <| actorOf2 (behavior { Parties = Map.empty; LastEventId = 1000 }) |> (spawn system null)
 
 // Creates a Flow instance for user in channel.
 // When materialized flow connects user to channel and starts bidirectional communication.

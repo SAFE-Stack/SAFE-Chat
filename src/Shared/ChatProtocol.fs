@@ -4,7 +4,7 @@ namespace FsChat
 module Protocol =
 
     type ChanUserInfo = {
-        nick: string; name: string; email: string option; online: bool; isbot: bool; lastSeen: System.DateTime
+        nick: string; isbot: bool;
     }
     type ChannelInfo = {
         id: string; name: string; userCount: int; topic: string; joined: bool; users: ChanUserInfo list

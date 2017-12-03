@@ -17,7 +17,6 @@ open Suave.WebSocket
 type WsMessage =
     | Text of string
     | Data of byte array
-    | Close
     | Ignore
 
 let private logger = Log.create "socketflow"
@@ -25,7 +24,7 @@ let private logger = Log.create "socketflow"
 // Provides websocket handshaking. Connects web socket to a pair of Source and Sync.
 // 'materialize'
 let handleWebsocketMessages (system: ActorSystem)
-    (materialize: IMaterializer -> Source<WsMessage, Akka.NotUsed> -> Sink<WsMessage, _> -> unit) (ws : WebSocket)
+    (materialize: IMaterializer -> Source<WsMessage, Akka.NotUsed> -> Sink<WsMessage, _> -> unit) (ws : WebSocket) ctx
     =
     let materializer = system.Materializer()
     let sourceActor, inputSource =
@@ -34,33 +33,22 @@ let handleWebsocketMessages (system: ActorSystem)
 
     let emptyData = ByteSegment [||]
 
-    let asyncIgnore f = async {
-        let! _ = f
-        return WsMessage.Ignore :> obj
-    }
+    let asyncMap f v = async { let! x = v in return f x }
+    let asyncIgnore = asyncMap (fun _ -> Ignore)
 
     // sink for flow that sends messages to websocket
-    let sinkBehavior _ (ctx: Actor<obj>): obj -> _ =
+    let sinkBehavior _ (ctx: Actor<_>): WsMessage -> _ =
         function
-        | :? WsMessage as wsmsg ->
-            wsmsg |> function
-            | Terminated _ ->
-                ws.send Opcode.Close emptyData true |> Async.Ignore |> Async.Start
-                stop()
-            | Text text ->
-                // using pipeTo operator just to wait for async send operation to complete
-                ws.send Opcode.Text (Encoding.UTF8.GetBytes(text) |> ByteSegment) true
-                    |> asyncIgnore |!> ctx.Self
-                ignored()
-            | Data bytes ->
-                ws.send Binary (ByteSegment bytes) true |> asyncIgnore |!> ctx.Self
-                ignored()
-            | Ignore ->
-                ignored()
-            | Close ->
-                stop()
-        | _ ->
-            ignored ()
+        | Text text ->
+            // using pipeTo operator just to wait for async send operation to complete
+            ws.send Opcode.Text (Encoding.UTF8.GetBytes(text) |> ByteSegment) true
+                |> asyncIgnore |!> ctx.Self
+            ignored()
+        | Data bytes ->
+            ws.send Binary (ByteSegment bytes) true |> asyncIgnore |!> ctx.Self
+            ignored()
+        | Ignore ->
+            ignored()
 
     let sinkActor =
         props <| actorOf2 (sinkBehavior ()) |> (spawn system null) |> retype
@@ -68,27 +56,26 @@ let handleWebsocketMessages (system: ActorSystem)
     let sink: Sink<WsMessage,_> = Sink.ActorRef(untyped sinkActor, PoisonPill.Instance)
     do materialize materializer inputSource sink
 
-    logger.debug (Message.eventX "materialized socket sink")
+    socket {
+        let mutable loop = true
+        while loop do
+            let! msg = ws.read()
+            
+            match msg with
+            | (Opcode.Text, data, true) -> 
+                let str = Encoding.UTF8.GetString data
+                sourceActor <! Text str
+            | (Ping, _, _) ->
+                do! ws.send Pong emptyData true
+            | (Close, _, _) ->
+                logger.debug (Message.eventX "Received Opcode.Close, terminating actor")
+                (retype sourceActor) <! PoisonPill.Instance
 
-    fun _ -> 
-        socket {
-            let loop = ref true
-            while !loop do
-                let! msg = ws.read()
-                
-                match msg with
-                | (Opcode.Text, data, true) -> 
-                    let str = Encoding.UTF8.GetString data
-                    sourceActor <! Text str
-                | (Ping, _, _) ->
-                    do! ws.send Pong emptyData true
-                | (Opcode.Close, _, _) ->
-                    // this finalizes the Source
-                    sourceActor <! Close
-                    do! ws.send Opcode.Close emptyData true
-                    loop := false
-                | _ -> ()
-        }
+                do! ws.send Close emptyData true
+                // this finalizes the Source
+                loop <- false
+            | _ -> ()
+    }
 
 /// Creates Suave socket handshaking handler
 let handleWebsocketMessagesFlow  (system: ActorSystem) (handler: Flow<WsMessage, WsMessage, Akka.NotUsed>) (ws : WebSocket) =
