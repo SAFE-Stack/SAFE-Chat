@@ -3,11 +3,14 @@ module Channel.Types
 type UserInfo = {Nick: string; IsBot: bool; Online: bool}
 with static member Anon = {Nick = "anonymous"; IsBot = false; Online = true}
 
+type MessageContent =
+    | UserMessage of text: string * author: string
+    | SystemMessage of text: string
+
 type Message = {
     Id: int
     Ts: System.DateTime
-    Text: string
-    AuthorId: string
+    Content: MessageContent
 }
 
 type UsersInfo = | UserCount of int | UserList of Map<string, UserInfo>

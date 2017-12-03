@@ -84,15 +84,12 @@ let updateUsers (f: UsersInfo -> UsersInfo) =
     (fun ch -> { ch with Users = f ch.Users})
 
 let appendMessage (msg: Protocol.ChannelMsg) (chan: ChannelData) =
-    let newMessage: Message =
-      { Id = msg.id; AuthorId = msg.author; Ts = msg.ts
-        Text = msg.text }
+    let newMessage: Message = { Id = msg.id; Ts = msg.ts; Content = UserMessage (msg.text, msg.author) }
     {chan with Messages = chan.Messages @ [newMessage]}
 
-let appendSysMessage verb (ev: Protocol.UserEventRec) =
-    appendMessage
-      { id = ev.id; author = "system"; ts = ev.ts; chan = ""
-        text = sprintf "%s %s the channel" ev.user.nick verb }
+let appendSysMessage verb (ev: Protocol.UserEventRec) (chan: ChannelData) =
+    let newMessage: Message = { Id = ev.id; Ts = ev.ts; Content = SystemMessage <| sprintf "%s %s the channel" ev.user.nick verb}
+    {chan with Messages = chan.Messages @ [newMessage]}
 
 let chatUpdate (msg: Protocol.ClientMsg) (state: ChatData) : ChatData * Cmd<MsgType> =
     match msg with
