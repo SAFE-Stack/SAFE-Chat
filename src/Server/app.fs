@@ -110,7 +110,7 @@ let session (f: ClientSession -> WebPart) =
         | Some state ->
             match state.get "nick", appServerState with
             | Some nick, Some (actorSystem, server) ->
-                f (UserLoggedOn (ChatServer.Party.Make nick, actorSystem, server))
+                f (UserLoggedOn { me = ChatServer.Party.Make nick; actorSystem = actorSystem; server = server })
             | _ -> f NoSession)
 
 let noCache =
@@ -152,7 +152,7 @@ let root: WebPart =
                     )
                 path "/logon" >=> choose [
                     GET >=> noCache >=>
-                        (OK <| (Logon.Views.index session |> htmlToString))
+                        (Logon.Views.index session |> htmlToString |> OK)
                     POST >=> (
                         fun ctx ->
                             let nick = "~" + (getPayloadString ctx.request).Substring 5
@@ -166,11 +166,11 @@ let root: WebPart =
 
                 
                 path "/api/socket" >=>
-                    (match session with
-                    | UserLoggedOn (nick, actorSys, server) ->
-                        (RestApi.connectWebSocket actorSys server nick)
+                    match session with
+                    | UserLoggedOn sessionInfo ->
+                        (RestApi.connectWebSocket sessionInfo)
                     | NoSession ->
-                        BAD_REQUEST "Authorization required")
+                        BAD_REQUEST "Authorization required"
 
                 Files.browseHome
                 ]

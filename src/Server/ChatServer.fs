@@ -29,6 +29,7 @@ and ServerNotifyMessage =
     | AddChannel of ChannelData
     | DropChannel of ChannelData
 
+/// Server protocol
 type ServerControlMessage =
     | UpdateState of (ServerData -> ServerData)
     | FindChannel of (ChannelData -> bool)
@@ -59,10 +60,11 @@ module internal Helpers =
     let isValidName (name: string) =
         (String.length name) > 0 && Char.IsLetter name.[0]
 
-module ServerApi =
-    open Helpers
     let __lastid = ref 100
     let newId () = System.Threading.Interlocked.Increment __lastid
+
+module ServerApi =
+    open Helpers
 
     /// Creates a new channel or returns existing if channel already exists
     let addChannel createChannel name topic (state: ServerData) =

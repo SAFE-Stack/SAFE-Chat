@@ -7,7 +7,13 @@ open Akka.Streams
 open ChannelFlow
 open ChatServer
 
-type ClientSession = NoSession | UserLoggedOn of ChatServer.Party * ActorSystem * IActorRef<ServerControlMessage>
+type SessionInfo = {
+    me: Party
+    actorSystem: ActorSystem
+    server: IActorRef<ServerControlMessage>
+}
+
+type ClientSession = NoSession | UserLoggedOn of SessionInfo
 
 type SessionData = {
     server: IActorRef<ServerControlMessage>

@@ -21,6 +21,7 @@ open FsChat
 let private logger = Log.create "chatapi"        
 
 module private Implementation =
+    let inline (|OtherwiseFail|) _ = failwith "no choice"
 
     type ServerActor = IActorRef<ChatServer.ServerControlMessage>
 
@@ -59,15 +60,10 @@ module private Implementation =
         with e ->
             do logger.error (Message.eventX "Failed to parse message '{msg}': {e}" >> Message.setFieldValue "msg" message  >> Message.setFieldValue "e" e)
             Trash "exception"
-    let isChannelMessage = function
-        | ChannelMessage _ -> true | _ -> false
-
-    let inline (|OtherwiseFail|) _ = failwith "no choice"
+    let isChannelMessage = function |ChannelMessage _ -> true | _ -> false
+    let isControlMessage = function |ControlMessage _ -> true | _ -> false
 
     let extractChannelMessage (ChannelMessage (chan, message) | OtherwiseFail (chan, message)) = chan, message
-
-    let isControlMessage = function
-        | ControlMessage _ -> true | _ -> false
     let extractControlMessage (ControlMessage message | OtherwiseFail message) = message
 
     let mapChanInfo (data: ChannelData) : Protocol.ChannelInfo =
@@ -84,10 +80,11 @@ module private Implementation =
         | Result.Error e -> replyErrorProtocol requestId e
 
 open Implementation
+open UserSession
 
-let connectWebSocket (system: ActorSystem) (server: ServerActor) me : WebPart =
+let connectWebSocket ({server = server; me = me; actorSystem = actorSystem }) : WebPart =
 
-    let materializer = system.Materializer()
+    let materializer = actorSystem.Materializer()
 
     // session data
     let mutable session = UserSession.make server me
@@ -128,7 +125,7 @@ let connectWebSocket (system: ActorSystem) (server: ServerActor) me : WebPart =
                 | ParseChannelId channelId ->
                     let! result = session |> UserSession.join listenChannel channelId
                     let! chaninfo = makeChannelInfoResult result
-                    return chaninfo |> updateSession requestId ((setJoined true) >> Protocol.JoinedChannel)
+                    return chaninfo |> updateSession requestId (setJoined true >> Protocol.JoinedChannel)
                 | _ -> return replyErrorProtocol requestId "bad channel id"
 
             | Protocol.ServerMsg.JoinOrCreate channelName ->
@@ -137,7 +134,7 @@ let connectWebSocket (system: ActorSystem) (server: ServerActor) me : WebPart =
                 | Ok channelData ->
                     let! result = session |> UserSession.join listenChannel channelData.id
                     let! chaninfo = makeChannelInfoResult result
-                    return chaninfo |> updateSession requestId ((setJoined true) >> Protocol.JoinedChannel)
+                    return chaninfo |> updateSession requestId (setJoined true >> Protocol.JoinedChannel)
                 | Result.Error err ->
                     return replyErrorProtocol requestId err
 
@@ -153,20 +150,8 @@ let connectWebSocket (system: ActorSystem) (server: ServerActor) me : WebPart =
                 return replyErrorProtocol requestId "event was not processed"
         }
 
-    // let server know websocket has gone (see onCompleteMessage)
-    // FIXME not sure if it works at all
-    let monitor t = async {
-        logger.debug (Message.eventX "Monitor triggered for user {me}" >> Message.setFieldValue "me" me)
-        let! _ = t
-        match session |> UserSession.leaveAll with
-        | Ok (newSession, _) -> session <- newSession
-        | _ -> ()
-    }
-
     let sessionFlow = createUserSessionFlow<Party,int> materializer
     let controlMessageFlow = Flow.empty<_, Akka.NotUsed> |> Flow.asyncMap 10 processControlMessage
-
-    // TODO consider merging this with controlMessage flow because they belong to the same domain
 
     let serverEventsSource: Source<Protocol.ClientMsg, Akka.NotUsed> =
         let party = { Party.Make me.nick with isbot = me.isbot }
@@ -195,17 +180,16 @@ let connectWebSocket (system: ActorSystem) (server: ServerActor) me : WebPart =
         |> Flow.map extractControlMessage
         |> Flow.log "Control flow"
         |> Flow.via controlMessageFlow
-
-    let combineFlow : Flow<IncomingMessage,Protocol.ClientMsg,_> =
-        FlowImpl.split2 userMessageFlow controlFlow Keep.left
         |> Flow.mergeMat serverEventsSource Keep.left
+
+    let combinedFlow : Flow<IncomingMessage,Protocol.ClientMsg,_> =
+        FlowImpl.split2 userMessageFlow controlFlow Keep.left
 
     let socketFlow =
         Flow.empty<WsMessage, Akka.NotUsed>
-        |> Flow.watchTermination (fun x t -> (monitor t) |> Async.Start; x)
         |> Flow.map extractMessage
         |> Flow.log "Extracting message"
-        |> Flow.viaMat combineFlow Keep.right
+        |> Flow.viaMat combinedFlow Keep.right
         |> Flow.map (Json.json >> Text)
 
     let materialize materializer (source: Source<WsMessage, Akka.NotUsed>) (sink: Sink<WsMessage, _>) =
@@ -216,4 +200,4 @@ let connectWebSocket (system: ActorSystem) (server: ServerActor) me : WebPart =
             |> Graph.run materializer |> Some
         ()
 
-    handShake (handleWebsocketMessages system materialize)
+    handShake (handleWebsocketMessages actorSystem materialize)
