@@ -32,7 +32,7 @@ let createDiagChannel (system: ActorSystem) (server: IActorRef<_>) (channelName,
 
     server <! UpdateState (fun state ->
         state
-        |> ServerApi.addChannel (createChannel system) channelName topic
+        |> ServerApi.addChannel (fun () -> createChannel system) channelName topic
         |> Result.map (
             fun (state, chan) ->
                 chan.channelActor <! (NewParticipant (echoUser, bot))

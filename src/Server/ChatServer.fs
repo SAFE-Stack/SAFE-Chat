@@ -11,12 +11,14 @@ type Party = {nick: string; isbot: bool}
 with
     static member Make(nick) = {nick = nick; isbot = false}
 
+type Message = Message of string
+
 /// Channel is a primary store for channel info and data
 type ChannelData = {
     id: int
     name: string
     topic: string
-    channelActor: IActorRef<Party ChannelMessage>
+    channelActor: ChannelMessage<Party, Message> IActorRef
 }
 
 and ServerData = {
@@ -72,7 +74,7 @@ module ServerApi =
         | Some chan ->
             Ok (state, chan)
         | _ when isValidName name ->
-            let channelActor = createChannel name
+            let channelActor = createChannel ()
             let newChan = {
                 id = newId (); name = name; topic = topic; channelActor = channelActor }
 
@@ -106,7 +108,7 @@ let startServer (system: ActorSystem) =
             ignored state
 
         | GetOrCreateChannel name ->
-            state |> ServerApi.addChannel (createChannel system) name ""
+            state |> ServerApi.addChannel (fun () -> createChannel system) name ""
             |> replyAndUpdate FoundChannel
 
         | ListChannels criteria ->
@@ -150,7 +152,7 @@ let listChannels criteria (server: ServerT) =
 
 let createTestChannels system (server: ServerT) =
     let addChannel name topic state =
-        match state |> ServerApi.addChannel (createChannel system) name topic with
+        match state |> ServerApi.addChannel (fun () -> createChannel system) name topic with
         | Ok (newstate, _) -> newstate
         | _ -> state
 

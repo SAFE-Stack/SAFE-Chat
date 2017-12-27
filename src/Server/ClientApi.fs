@@ -32,7 +32,7 @@ module private Implementation =
 
     let userInfo user : Protocol.ChanUserInfo = {nick = user.nick; isbot = user.isbot}
 
-    let encodeChannelMessage channel : Party ChatClientMessage -> Protocol.ClientMsg =
+    let encodeChannelMessage channel : ClientMessage<Party, Message> -> Protocol.ClientMsg =
         function
         | ChatMessage ((id, ts),  author: Party, Message message) ->
             Protocol.ChanMsg {id = id; ts = ts; text = message; chan = channel; author = author.nick}
@@ -150,7 +150,7 @@ let connectWebSocket ({server = server; me = me; actorSystem = actorSystem }) : 
                 return replyErrorProtocol requestId "event was not processed"
         }
 
-    let sessionFlow = createUserSessionFlow<Party,int> materializer
+    let sessionFlow = createUserSessionFlow<Party,Message,int> materializer
     let controlMessageFlow = Flow.empty<_, Akka.NotUsed> |> Flow.asyncMap 10 processControlMessage
 
     let serverEventsSource: Source<Protocol.ClientMsg, Akka.NotUsed> =
