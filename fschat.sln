@@ -1,4 +1,4 @@
-
+﻿
 Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio 15
 VisualStudioVersion = 15.0.26730.10
@@ -8,9 +8,6 @@ EndProject
 Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "client", "src\Client\client.fsproj", "{5067CF35-8528-4785-B342-D8244F0CED09}"
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Solution Items", "Solution Items", "{4A530AA9-27D3-49EE-BA40-3ED057BB59FA}"
-	ProjectSection(SolutionItems) = preProject
-		script.fsx = script.fsx
-	EndProjectSection
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
