@@ -5,17 +5,7 @@ open Fable.Helpers.React
 open Props
 
 open Types
-
-let private divCtl ctl = div [ClassName "control"] [ctl]
-
-let simpleButton txt action dispatch =
-    div
-        [ ClassName "column is-narrow" ]
-        [ a
-            [ ClassName "button"
-              Style [Float "right"]
-              OnClick (fun _ -> action |> dispatch) ]
-            [ str txt ] ]
+open UserAvatar.Types
 
 let private formatTs (ts: System.DateTime) =
   match (System.DateTime.Now - ts) with
@@ -25,86 +15,26 @@ let private formatTs (ts: System.DateTime) =
   | diff when diff.TotalDays <= 5.0 -> sprintf "%i days ago" (int diff.TotalMinutes)
   | _ -> ts.ToShortDateString()
 
-let userMessage (m: Message) user text =
-
-    let content =
-        [ strong [] [str user.Nick]; str " "; small [] [str <| formatTs m.Ts]
-          br []
-          str text ]
-
-    article
-      [ ClassName "media"]
-      [ div
-          [ ClassName "media-left"]
-          [ figure
-              [ ClassName "image is-48x48"]
-              [ img [Src "https://bulma.io/images/placeholders/128x128.png"; Alt "Image"] ] ]
-        div
-          [ ClassName "media-content"]
-          [ div
-              [ ClassName "content"] [ p [] content ]
-            nav
-              [ ClassName "level is-mobile"]
-              [ div
-                  [ ClassName "level-left"]
-                  [ for cls in [] -> // "fa-reply"; "fa-retweet"; "fa-heart"] ->
-                      a
-                        [ ClassName "level-item"]
-                        [ span
-                            [ ClassName "icon is-small" ]
-                            [ i [ ClassName <| "fa " + cls] [] ] ] ]
-                  ]
-              ]
-        hr []
-      ]
-
-let chanMessages (users: Map<string, UserInfo>) (messages: Message list) =
-    let getUser author =
-        let user =
-          users |> Map.tryFind author
-          |> function | Some u -> u | _ -> {Nick = author; IsBot = false; Online = false}
-        user
-
-    div
-      []
-      [ for m in messages ->
-          match m.Content with
-          | UserMessage (text, author) ->
-              div
-                [ ClassName ""]
-                [ userMessage m (getUser author) text]
-          | SystemMessage text ->
-              blockquote
-                [ ClassName ""]
-                [ str text; str " "
-                  small [] [str <| formatTs m.Ts] ]
-      ]
-
-let postMessage model dispatch =
+let messageInput dispatch model =
   div
-    [ ClassName "field has-addons postmessage" ]            
-    [ divCtl <|
-        textarea
-          [ ClassName "textarea"
-            Rows 2.
-            Placeholder "Type the message here"
-            Value model.PostText
-            AutoFocus true
-            OnChange (fun ev -> !!ev.target?value |> (SetPostText >> dispatch))
-            OnKeyPress (fun ev -> if !!ev.which = 13 || !!ev.keyCode = 13 then dispatch PostText)
-            ]
-          []
-      divCtl <|
-        button
-         [ ClassName "button is-primary" 
-           OnClick (fun _ -> PostText |> dispatch)]
-         [str "Post"]
+    [ ClassName "fs-message-input" ]
+    [ input
+        [ Type "text"
+          Placeholder "Type the message here..."
+          Value model.PostText
+          OnChange (fun ev -> !!ev.target?value |> (SetPostText >> dispatch))
+          OnKeyPress (fun ev -> if !!ev.which = 13 || !!ev.keyCode = 13 then dispatch PostText)
+        ]
+      button
+        [ ClassName "btn" ]
+        [ i [ ClassName "mdi mdi-send mdi-24px"
+              OnClick (fun _ -> dispatch PostText) ] [] ]
     ]
 
 let chanUsers (users: Map<string, UserInfo>) =
   let screenName (u: UserInfo) =
     match u.IsBot with |true -> sprintf "#%s" u.Nick |_ -> u.Nick
-  div []
+  div [ ClassName "userlist" ]
       [ str "Users:"
         ul
           []
@@ -112,21 +42,54 @@ let chanUsers (users: Map<string, UserInfo>) =
               li [] [str <| screenName u.Value]
           ]]
 
-let root (model: ChannelData) dispatch =
-    let users = model.Users |> function | UserCount _ -> Map.empty | UserList list -> list
+let chatInfo dispatch (model: ChannelData) =
+  div
+    [ ClassName "fs-chat-info" ]
+    [ h1
+        [] [ str model.Name ]
+      span
+        [] [ str model.Topic ]
+      button
+        [ ClassName "btn"
+          Title "Leave"
+          OnClick (fun _ -> dispatch Leave) ]
+        [ i [ ClassName "mdi mdi-door-closed mdi-18px" ] []]
+    ]
+
+let messageList isMe (messages: Message list) =
     div
-      [ ClassName "content" ]
-      [ h1 [] [ str model.Name ]
-        simpleButton "Leave" Leave dispatch
-        p [] [str model.Topic]
-        postMessage model dispatch
-        div
-          [ ClassName "columns"]
-          [ div
-              [ ClassName "column is-four-fifths"]
-              [ chanMessages users model.Messages ]
-            div
-              [ ClassName "column"]
-              [ chanUsers users ]
-          ]          
+      [ ClassName "fs-messages" ]
+      [ for m in messages ->
+          match m.Content with
+          | UserMessage (text, author) ->
+              div
+                [ classList ["fs-message", true; "user", isMe author ] ]
+                [ div
+                    []
+                    [ p [] [ str text ]
+                      h5  []
+                          [ span [ClassName "user"] [str author]
+                            span [ClassName "time"] [str <| formatTs m.Ts ]] ]
+                  UserAvatar.View.root (PhotoUrl "https://pbs.twimg.com/profile_images/2191150324/Avatar_Shepard_400x400.jpg")
+                ]
+
+          | SystemMessage text ->
+              blockquote
+                [ ClassName ""]
+                [ str text; str " "
+                  small [] [str <| formatTs m.Ts] ]
       ]
+
+
+let root isMe (model: ChannelData) dispatch =
+    // let users = model.Users |> function | UserCount _ -> Map.empty | UserList list -> list
+    // let getUser author =
+    //     users |> Map.tryFind author
+    //     |> function | Some u -> u | _ -> {Nick = author; IsBot = false; Online = false}
+
+    [ chatInfo dispatch model
+      div [ ClassName "fs-splitter" ] []
+      messageList isMe  model.Messages
+      div [ ClassName "fs-splitter" ] []
+      messageInput dispatch model
+     ]
