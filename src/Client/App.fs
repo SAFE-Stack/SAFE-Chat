@@ -14,38 +14,33 @@ open Chat.Types
 open Fable.Helpers.React
 open Props
 
-importAll "./sass/main.sass"
+importAll "./sass/app.scss"
 
 let root model dispatch =
 
-    let pageHtml = function
-        | Route.About -> Info.View.root
+    let mainAreaView = function
+        | Route.About -> [Info.View.root]
         | Channel chan ->
+            let toChannelMessage m = ChannelMsg (chan, m)
+
             match model.chat with
-            | Connected (_,chatdata) when chatdata.Channels |> Map.containsKey chan
-              -> Channel.View.root chatdata.Channels.[chan]
-                  ((fun m -> ChannelMsg (chan, m)) >> ApplicationMsg >> ChatDataMsg >> dispatch)
-            | _ -> div [] [str "bad channel route" ]
+            | Connected ( { Nick = myname },chatdata) when chatdata.Channels |> Map.containsKey chan ->
+
+                let isMe userNick = userNick = myname
+                Channel.View.root isMe chatdata.Channels.[chan]
+                  (toChannelMessage >> ApplicationMsg >> ChatDataMsg >> dispatch)
+
+            | _ ->
+                [div [] [str "bad channel route" ]]
 
     div
-      []
+      [ ClassName "container" ]
       [ div
-          [ ClassName "navbar-bg" ]
-          [ div
-              [ ClassName "container" ]
-              [ Navbar.View.root model.chat ] ]
+          [ ClassName "col-md-4 fs-menu" ]
+          (NavMenu.View.menu model.chat model.currentPage (ApplicationMsg >> ChatDataMsg >> dispatch))
         div
-          [ ClassName "section" ]
-          [ div
-              [ ClassName "container" ]
-              [ div
-                  [ ClassName "columns" ]
-                  [ div
-                      [ ClassName "column is-3" ]
-                      [ NavMenu.View.menu model.chat model.currentPage (ApplicationMsg >> ChatDataMsg >> dispatch)]
-                    div
-                      [ ClassName "column" ]
-                      [ pageHtml model.currentPage ] ] ] ] ]
+          [ ClassName "col-xs-12 col-md-8 fs-chat" ]
+          (mainAreaView model.currentPage) ]
 
 open Elmish.React
 open Elmish.Debug

@@ -7,74 +7,73 @@ open Props
 open Router
 open Channel.Types
 open Chat.Types
+open Fable.Import
+open Fable.Import.Browser
 
-let private divCtl ctl = div [ClassName "control"] [ctl]
+module private Components =
 
-let private menuItem label page currentPage =
-    li [] [a
-            [ classList [ "is-active", page = currentPage ]
-              Href (toHash page) ]
-            [ str label ] ]
+  let menuItem htmlProp name topic isCurrent =
+    button
+      [ classList [ "btn", true; "fs-channel", true; "selected", isCurrent ]
+        htmlProp ]
+      [ str name
+        span [] [str topic]]
 
-let private menuJoinChannelItem (ch: ChannelData) dispatch =
-    li [] [ a
-              [ Href "#"
-                OnClick (fun _ -> dispatch (Join ch.Id)) ]
-              [ str <| sprintf "%s  (%i)" ch.Name ch.UserCount ] ]
+  let menuItemChannel (ch: ChannelData) currentPage = 
+    let targetRoute = Channel ch.Id
+    let jump _ = Browser.location.hash <- toHash targetRoute
+    menuItem (OnClick jump) ch.Name ch.Topic (targetRoute = currentPage)
 
-// left-side menu view
+  let menuItemChannelJoin dispatch (ch: ChannelData) = 
+    let join _ = dispatch (Join ch.Id)
+    menuItem (OnClick join) ch.Name ch.Topic false
+
+open Components
+open UserAvatar.Types
+
 let menu (chatData: ChatState) currentPage dispatch =
     match chatData with
     | NotConnected ->
-      aside
-        [ ClassName "menu" ]
-        [ p
-            [ ClassName "menu-label" ]
-            [ str "General" ]
-          ul
-            [ ClassName "menu-list" ]
-            [ menuItem "About" Route.About currentPage
-              hr []
-              p [] [str "Not connected"] ]
-        ]
-    | Connected (_,chat) ->
-        aside
-            [ ClassName "menu" ]
-            [ p
-                [ ClassName "menu-label" ]
-                [ str "General" ]
-              ul
-                [ ClassName "menu-list" ]
-                [ yield menuItem "About" Route.About currentPage
-                  yield hr []
-                  if chat.Channels |> Map.exists(fun _ v -> v.Joined) then
-                    yield p [ClassName "menu-label"] [str "My Channels"]
-                    for (_, ch) in chat.Channels |> Map.toSeq do
-                        if ch.Joined then
-                            yield menuItem ch.Name (Channel ch.Id) currentPage
-
-                  if chat.Channels |> Map.exists(fun _ v -> not v.Joined) then
-                    yield p [ClassName "menu-label"] [str "Join channels"]
-                    for (_, ch) in chat.Channels |> Map.toSeq do
-                        if not ch.Joined then
-                            yield menuJoinChannelItem ch dispatch
-                  ]
-              p [ClassName "menu-label"] [str "... or create your own"]
-              div
-                [ ClassName "field has-addons" ]            
-                [ divCtl <|
-                    input
-                      [ ClassName "input"
-                        Type "text"
-                        Placeholder "Type the channel name"
-                        Value chat.NewChanName
-                        AutoFocus true
-                        OnChange (fun ev -> !!ev.target?value |> SetNewChanName |> dispatch )
-                        ]
-                  divCtl <|
-                    button
-                     [ ClassName "button is-primary" 
-                       OnClick (fun _ -> CreateJoin |> dispatch)]
-                     [str "Join"]
-                ]
+      [ div [] [str "not connected"] ]
+    | Connected (me, chat) ->
+      let opened, newChanName = chat.NewChanName |> function |Some text -> (true, text) |None -> (false, "")
+      [ yield div
+          [ ClassName "fs-user" ]
+          [ UserAvatar.View.root (PhotoUrl "https://pbs.twimg.com/profile_images/2191150324/Avatar_Shepard_400x400.jpg")
+            h3 [] [str me.Nick]
+            span [] [ str "The first human Spectre"]
+            button
+              [ ClassName "btn"; Title "Logout" ]
+              [ i [ ClassName "mdi mdi-logout-variant"] [] ]
+           ]
+        yield h2 []
+           [ str "My Channels"
+             button
+               [ ClassName "btn"; Title "Create New"
+                 OnClick (fun _ -> (if opened then None else Some "") |> (SetNewChanName >> dispatch)) ]
+               [ i [ classList [ "mdi", true; "mdi-close", opened; "mdi-plus", not opened ] ] []]
+           ]
+        yield input
+          [ Type "text"
+            classList ["fs-new-channel", true; "open", opened]
+            Placeholder "Type the channel name here..."
+            Value newChanName
+            AutoFocus true
+            OnChange (fun ev -> !!ev.target?value |> (Some >> SetNewChanName >> dispatch) )
+            OnKeyPress (fun ev -> if !!ev.which = 13 || !!ev.keyCode = 13 then dispatch CreateJoin)
             ]
+
+        for (_, ch) in chat.Channels |> Map.toSeq do
+            if ch.Joined then
+                yield menuItemChannel ch currentPage
+
+        yield h2 []
+           [ str "All Channels"
+             button
+               [ ClassName "btn"; Title "Search" ]
+               [ i [ ClassName "mdi mdi-magnify" ] []]
+           ]
+        for (_, ch) in chat.Channels |> Map.toSeq do
+            if not ch.Joined then
+                yield menuItemChannelJoin dispatch ch
+      ]

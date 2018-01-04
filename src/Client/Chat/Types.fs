@@ -9,9 +9,9 @@ open Channel.Types
 type ChatData = {
     socket: SocketHandle<Protocol.ServerMsg, Protocol.ClientMsg>
     Channels: Map<string, ChannelData>
-    NewChanName: string     // name for new channel (part of SetCreateChanName)
+    NewChanName: string option   // name for new channel (part of SetCreateChanName), None - panel is hidden
     }
-    with static member Empty = {socket = SocketHandle.Blackhole(); Channels = Map.empty; NewChanName = ""}
+    with static member Empty = {socket = SocketHandle.Blackhole(); Channels = Map.empty; NewChanName = None}
 
 type ChatState =
     | NotConnected
@@ -21,7 +21,7 @@ type ChatState =
 type AppMsg =
     | Nop
     | ChannelMsg of chanId: string * Channel.Types.Msg
-    | SetNewChanName of string
+    | SetNewChanName of string option
     | CreateJoin
     | Join of chanId: string
 

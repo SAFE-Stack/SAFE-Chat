@@ -58,9 +58,12 @@ let applicationMsgUpdate (msg: AppMsg) state: (ChatState * MsgType Cmd) =
             Connected (me, {chat with NewChanName = name }), Cmd.none
             
         | CreateJoin ->
-            state, Cmd.batch
-                    [ Cmd.ofSocketMessage chat.socket (Protocol.JoinOrCreate chat.NewChanName)
-                      Cmd.ofMsg <| SetNewChanName "" |> Cmd.map ApplicationMsg]
+            match chat.NewChanName with
+            | Some channelName ->
+                state, Cmd.batch
+                        [ Cmd.ofSocketMessage chat.socket (Protocol.JoinOrCreate channelName)
+                          Cmd.ofMsg <| SetNewChanName None |> Cmd.map ApplicationMsg]
+            | None -> state, Cmd.none
         | Join chanId ->
             state, Cmd.ofSocketMessage chat.socket (Protocol.Join chanId)
         | Leave chanId ->
