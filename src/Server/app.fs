@@ -40,11 +40,16 @@ module Secrets =
 
         File.ReadAllBytes(CookieSecretFile)
 
-    // Here I'm reading my personal API keys from file stored in my %HOME% folder. You will likely define you keys in code (see below).
+    // Here I'm reading my API keys from file stored in my CHAT_DATA/suave.oauth.config folder
     let private oauthConfigData =
         if not (File.Exists OAuthConfigFile) then
             do (Path.GetDirectoryName OAuthConfigFile) |> Directory.CreateDirectory |> ignore
-            File.WriteAllText (OAuthConfigFile, "{}")
+            File.WriteAllText (OAuthConfigFile, """{
+      "google": {
+      	"client_id": "<type in client id string>",
+      	"client_secret": "<type in client secret>"
+      	},
+}"""    )
 
         ConfigurationBuilder().SetBasePath(System.Environment.CurrentDirectory) .AddJsonFile(OAuthConfigFile).Build()
 

@@ -8,7 +8,11 @@ let root =
     [ ClassName "content" ]
     [ h1
         [ ]
-        [ str "About page" ]
+        [ str "Welcome to F# Chat" ]
+      h4
+        [ Style [ MarginBottom "5em"] ]
+        [ str "F# Chat application built with Fable, Elmish, React, Suave, Akka.Streams, Akkling" ] 
       p
         [ ]
-        [ str "F# Chat application built with Fable + Elmish + React" ] ]
+        [ str "Click on the channel name to join or click '+' and type in the name of the new channel." ] 
+        ]

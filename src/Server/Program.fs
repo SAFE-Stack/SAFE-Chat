@@ -1,9 +1,7 @@
-﻿open System
-open System.IO
+﻿open System.IO
 
 open Suave
 open Suave.Filters
-open Suave.Web
 open Suave.Operators
 open Suave.Logging
 

@@ -8,27 +8,23 @@ open Router
 open Channel.Types
 open Chat.Types
 open Fable.Import
-open Fable.Import.Browser
 
-module private Components =
-
-  let menuItem htmlProp name topic isCurrent =
+let menuItem htmlProp name topic isCurrent =
     button
       [ classList [ "btn", true; "fs-channel", true; "selected", isCurrent ]
         htmlProp ]
       [ str name
         span [] [str topic]]
 
-  let menuItemChannel (ch: ChannelData) currentPage = 
+let menuItemChannel (ch: ChannelData) currentPage = 
     let targetRoute = Channel ch.Id
     let jump _ = Browser.location.hash <- toHash targetRoute
     menuItem (OnClick jump) ch.Name ch.Topic (targetRoute = currentPage)
 
-  let menuItemChannelJoin dispatch (ch: ChannelData) = 
+let menuItemChannelJoin dispatch (ch: ChannelData) = 
     let join _ = dispatch (Join ch.Id)
     menuItem (OnClick join) ch.Name ch.Topic false
 
-open Components
 open UserAvatar.Types
 
 let menu (chatData: ChatState) currentPage dispatch =
@@ -43,7 +39,8 @@ let menu (chatData: ChatState) currentPage dispatch =
             h3 [] [str me.Nick]
             span [] [ str "The first human Spectre"]
             button
-              [ ClassName "btn"; Title "Logout" ]
+              [ ClassName "btn"; Title "Logout"
+                OnClick (fun _ -> Browser.location.href <- "/logoff") ]
               [ i [ ClassName "mdi mdi-logout-variant"] [] ]
            ]
         yield h2 []
