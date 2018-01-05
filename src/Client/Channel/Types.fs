@@ -30,5 +30,5 @@ type ChannelData = {
 type Msg =
     | SetPostText of string
     | PostText
-    | Forward of FsChat.Protocol.ChannelMsg
+    | Forward of FsChat.Protocol.UserMessageInfo
     | Leave

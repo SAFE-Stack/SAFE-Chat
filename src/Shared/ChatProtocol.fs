@@ -14,13 +14,13 @@ module Protocol =
         id: int; ts: System.DateTime; user: ChanUserInfo
     }
 
-    type ChannelMsg = {
-        id: int; ts: System.DateTime; text: string; chan: string; author: string    // FIXME id, author and ts are not needed for UserMessage
+    type UserMessageInfo = {
+        text: string; chan: string
     }
 
     type ServerMsg =
         | Greets
-        | UserMessage of ChannelMsg
+        | UserMessage of UserMessageInfo
         | Join of chanId: string    // TODO add req id (pass back in response message)
         | JoinOrCreate of chanName: string
         | Leave of chanId: string
@@ -36,11 +36,15 @@ module Protocol =
         | AuthFail of string
         | CannotProcess of reqId: string * message: string
 
+    type ChannelMsgInfo = {
+        id: int; ts: System.DateTime; text: string; chan: string; author: string
+    }
+
     /// The messages from server to client
     type ClientMsg =
         | Error of ClientErrMsg
         | Hello of HelloInfo
-        | ChanMsg of ChannelMsg
+        | ChanMsg of ChannelMsgInfo
         | JoinedChannel of ChannelInfo  // client joined a channel
         | LeftChannel of chanId: string
 

@@ -170,7 +170,7 @@ let connectWebSocket ({server = server; me = me; actorSystem = actorSystem }) : 
         Flow.empty<IncomingMessage, Akka.NotUsed>
         |> Flow.filter isChannelMessage
         |> Flow.map extractChannelMessage
-        |> Flow.log "User flow"
+        // |> Flow.log "User flow"
         |> Flow.viaMat sessionFlow Keep.right
         |> Flow.map (fun (channel: int, message) -> encodeChannelMessage (channel.ToString()) message)
 
@@ -178,7 +178,7 @@ let connectWebSocket ({server = server; me = me; actorSystem = actorSystem }) : 
         Flow.empty<IncomingMessage, Akka.NotUsed>
         |> Flow.filter isControlMessage
         |> Flow.map extractControlMessage
-        |> Flow.log "Control flow"
+        // |> Flow.log "Control flow"
         |> Flow.via controlMessageFlow
         |> Flow.mergeMat serverEventsSource Keep.left
 
@@ -188,7 +188,7 @@ let connectWebSocket ({server = server; me = me; actorSystem = actorSystem }) : 
     let socketFlow =
         Flow.empty<WsMessage, Akka.NotUsed>
         |> Flow.map extractMessage
-        |> Flow.log "Extracting message"
+        // |> Flow.log "Extracting message"
         |> Flow.viaMat combinedFlow Keep.right
         |> Flow.map (Json.json >> Text)
 

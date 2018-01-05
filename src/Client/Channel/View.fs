@@ -12,7 +12,7 @@ let private formatTs (ts: System.DateTime) =
   | diff when diff.TotalMinutes < 1.0 -> "a few seconds ago"
   | diff when diff.TotalMinutes < 30.0 -> sprintf "%i minutes ago" (int diff.TotalMinutes)
   | diff when diff.TotalHours <= 12.0 -> ts.ToShortTimeString()
-  | diff when diff.TotalDays <= 5.0 -> sprintf "%i days ago" (int diff.TotalMinutes)
+  | diff when diff.TotalDays <= 5.0 -> sprintf "%i days ago" (int diff.TotalDays)
   | _ -> ts.ToShortDateString()
 
 let messageInput dispatch model =

@@ -2,7 +2,6 @@ module Channel.State
 open Elmish
 
 open Types
-open FsChat
 open Fable.Import
 
 let init () : ChannelData * Cmd<Msg> =
@@ -16,10 +15,8 @@ let update (msg: Msg) state: (ChannelData * Msg Cmd) =
 
     | PostText ->
         match state.PostText with
-        | text when String.length text > 0 ->
-            let userMessage: Protocol.ChannelMsg = {
-                id = 1; ts = System.DateTime.Now; text = text; chan = state.Id; author = "xxx"}
-            {state with PostText = ""}, Cmd.ofMsg (Forward userMessage)
+        | text when text.Trim() <> "" ->
+            {state with PostText = ""}, Cmd.ofMsg (Forward {text = text; chan = state.Id})
         | _ ->
             state, Cmd.none
 

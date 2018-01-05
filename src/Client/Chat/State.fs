@@ -86,7 +86,7 @@ let updateChan chanId (f: ChannelData -> ChannelData) (chat: ChatData) : ChatDat
 let updateUsers (f: UsersInfo -> UsersInfo) =
     (fun ch -> { ch with Users = f ch.Users})
 
-let appendMessage (msg: Protocol.ChannelMsg) (chan: ChannelData) =
+let appendMessage (msg: Protocol.ChannelMsgInfo) (chan: ChannelData) =
     let newMessage: Message = { Id = msg.id; Ts = msg.ts; Content = UserMessage (msg.text, msg.author) }
     {chan with Messages = chan.Messages @ [newMessage]}
 
