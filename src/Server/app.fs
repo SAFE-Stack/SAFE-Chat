@@ -16,6 +16,7 @@ open Akka.Actor
 open Akkling
 
 open UserSession
+open ChatServer
 open Suave.Html
 // ---------------------------------
 // Web app
@@ -86,8 +87,9 @@ let startChatServer () =
     """
     let actorSystem = ActorSystem.Create("chatapp", config)
     let chatServer = ChatServer.startServer actorSystem
+    let getUser i = ChatServer.getUser i chatServer
 
-    do Diag.createDiagChannel actorSystem chatServer ("Demo", "Channel for testing purposes. Notice the bots are always ready to keep conversation.")
+    do Diag.createDiagChannel getUser actorSystem chatServer ("Demo", "Channel for testing purposes. Notice the bots are always ready to keep conversation.")
     do ChatServer.createTestChannels actorSystem chatServer
 
     appServerState <- Some (actorSystem, chatServer)
@@ -115,7 +117,8 @@ let session (f: ClientSession -> WebPart) =
         | Some state ->
             match state.get "nick", appServerState with
             | Some nick, Some (actorSystem, server) ->
-                f (UserLoggedOn { me = ChatServer.Party.Make nick; actorSystem = actorSystem; server = server })
+                let (User me) = ChatUser.MakeUser nick
+                f (UserLoggedOn { me = me; actorSystem = actorSystem; server = server })
             | _ -> f NoSession)
 
 let noCache =

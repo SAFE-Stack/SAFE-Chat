@@ -7,9 +7,24 @@ open Akkling
 
 open ChannelFlow
 
-type Party = {nick: string; isbot: bool}
+type UserId = UserId of string
+type UserInfo = {id: UserId; nick: string; status: string; email: string option; imageUrl: string option}
+with static member Empty = {id = UserId ""; nick = ""; status = ""; email = None; imageUrl = None}
+
+type ChatUser =
+    User of UserInfo
+    | Bot of UserInfo
+    | System of UserId
 with
-    static member Make(nick) = {nick = nick; isbot = false}
+    static member MakeUser(nick) = User {UserInfo.Empty with id = UserId nick; nick = nick}
+    static member MakeBot(nick)  =  Bot {UserInfo.Empty with id = UserId nick; nick = nick}
+
+let getUserId = function
+    | User {id = id}
+    | Bot {id = id}
+    | System id -> id
+
+type GetUser = UserId -> ChatUser option Async
 
 type Message = Message of string
 
@@ -18,12 +33,17 @@ type ChannelData = {
     id: int
     name: string
     topic: string
-    channelActor: ChannelMessage<Party, Message> IActorRef
+    channelActor: ChannelMessage<UserId, Message> IActorRef
+}
+
+and UserSessionData = {
+    user: ChatUser
+    notifySink: ServerNotifyMessage IActorRef
 }
 
 and ServerData = {
     channels: ChannelData list
-    subscribers: Map<Party, IActorRef<ServerNotifyMessage>>
+    sessions: Map<UserId, UserSessionData>
 }
 
 // notification message sent to a subscribers via notify method
@@ -38,14 +58,16 @@ type ServerControlMessage =
     | GetOrCreateChannel of name: string
     | ListChannels of (ChannelData -> bool)
 
-    | Subscribe of Party * IActorRef<ServerNotifyMessage>
-    | Unsubscribe of Party
+    | Subscribe of ChatUser * IActorRef<ServerNotifyMessage>
+    | Unsubscribe of UserId
+    | GetUsers of UserId list
 
 type ServerReplyMessage =
     | Done
     | RequestError of string
     | FoundChannel of ChannelData
     | FoundChannels of ChannelData list
+    | FoundUsers of ChatUser list
 
 type ServerT = IActorRef<ServerControlMessage>
 
@@ -78,15 +100,16 @@ module ServerApi =
             let newChan = {
                 id = newId (); name = name; topic = topic; channelActor = channelActor }
 
-            do state.subscribers |> Map.iter(fun _ actor -> actor <! AddChannel newChan)
+            do state.sessions |> Map.iter(fun _ session -> session.notifySink <! AddChannel newChan)
             Ok ({state with channels = newChan::state.channels}, newChan)
         | _ ->
             Error "Invalid channel name"
 
-    let addSub party actor (state: ServerData) =
-        { state with subscribers = state.subscribers |> Map.add party actor }
-    let dropSub party (state: ServerData) =
-        { state with subscribers = state.subscribers |> Map.remove party }
+    let addSub user notifySink (state: ServerData) =
+        let userId = getUserId user
+        { state with sessions = state.sessions |> Map.add userId { user = user; notifySink = notifySink } }
+    let dropSub userId (state: ServerData) =
+        { state with sessions = state.sessions |> Map.remove userId }
 
     let setTopic chanId newTopic state =
         Ok (state |> updateChannel (fun chan -> {chan with topic = newTopic}) chanId)
@@ -116,16 +139,24 @@ let startServer (system: ActorSystem) =
             ctx.Sender() <! FoundChannels found
             ignored state
 
-        | Subscribe (party, actor) ->
-            let newState = state |> ServerApi.addSub party actor
+        | Subscribe (user, nsink) ->
+            let newState = state |> ServerApi.addSub user nsink
             become (behavior newState ctx)          
 
-        | Unsubscribe party ->
-            let newState = state |> ServerApi.dropSub party
+        | Unsubscribe userid ->
+            let newState = state |> ServerApi.dropSub userid
             become (behavior newState ctx)          
+
+        | GetUsers userIdList ->
+            let (><) f a b = f b a
+            let getUsers =
+                List.collect (Map.tryFind >< state.sessions >> Option.toList)
+                >> List.map (fun sessionData -> sessionData.user)
+            ctx.Sender() <! FoundUsers (getUsers userIdList)
+            ignored state
 
     in
-    props <| actorOf2 (behavior { channels = []; subscribers = Map.empty }) |> (spawn system "ircserver")
+    props <| actorOf2 (behavior { channels = []; sessions = Map.empty }) |> (spawn system "ircserver")
 
 let private getChannelImpl message (server: ServerT) =
     async {
@@ -150,6 +181,24 @@ let listChannels criteria (server: ServerT) =
         | _ -> return Error "Unknown error"
     }
 
+let getUsersInfo userIdList (server: ServerT) =
+    async {
+        let! (reply: ServerReplyMessage) = server <? (GetUsers userIdList)
+        return
+            match reply with
+            | FoundUsers list -> list
+            | _ -> [] // Error "Unknown reply"
+    }
+
+let getUser userid (server: ServerT) =
+    async {
+        let! (reply: ServerReplyMessage) = server <? (GetUsers [userid])
+        return
+            match reply with
+            | FoundUsers [user] -> Some user
+            | _ -> None
+    }
+
 let createTestChannels system (server: ServerT) =
     let addChannel name topic state =
         match state |> ServerApi.addChannel (fun () -> createChannel system) name topic with
@@ -162,5 +211,5 @@ let createTestChannels system (server: ServerT) =
 
     ignore (server <? UpdateState addChannels)
 
-let subscribeNotify (server: ServerT) party (actor: IActorRef<ServerNotifyMessage>) =
-    server <! Subscribe (party, actor)
+let subscribeNotify (server: ServerT) user (actor: IActorRef<ServerNotifyMessage>) =
+    server <! Subscribe (user, actor)

@@ -7,35 +7,44 @@ open ChannelFlow
 open ChatServer
 
 /// Creates an actor for echo bot.
-let createEchoActor (system: ActorSystem) botUser =
-    let botHandler _ (ctx: Actor<_>) =
-        function
-        | ChatMessage (_, user, Message message) when not user.isbot ->
-            do ctx.Sender() <!| async {
-                let reply = sprintf "@%s said: %s" user.nick message
-                return NewMessage (botUser, Message reply)
-            }
-            ()
-        | Joined (_, user, _) ->
-            do ctx.Sender() <!| async {
-                let reply = sprintf "Welcome aboard, %s!" user.nick
-                return NewMessage (botUser, Message reply)
-            }
-        | _ -> ()
-        >> ignored
-    in
-    props <| (actorOf2 <| botHandler ()) |> spawn system "echobot"
+let createEchoActor (getUser: GetUser) (system: ActorSystem) botUser =
 
-let createDiagChannel (system: ActorSystem) (server: IActorRef<_>) (channelName, topic) =
-    let echoUser = { Party.Make "echo" with isbot = true }
-    let bot = createEchoActor system echoUser
+    let forUser userid fn = async {
+        let! user = getUser userid
+        return user |> Option.bind(function |User { nick = nickName } -> Some (fn nickName) | _ -> None)
+    }
+
+    let handler (ctx: Actor<_>) =
+        let rec loop () = actor {
+            let! msg = ctx.Receive()
+            let! reply =
+                match msg with
+                | ChatMessage (_, userid, Message message) ->
+                    forUser userid (fun nickName -> sprintf "%s said: %s" nickName message)
+                | Joined (_, userid, _) ->
+                    forUser userid (fun nickName -> sprintf "Welcome aboard, %s!" nickName)
+                | _ -> async.Return None
+
+            match reply with
+            | Some reply -> do ctx.Sender() <! NewMessage (botUser, Message reply)
+            | _ -> ()
+
+            return! loop()
+        }
+        loop()
+    in
+    spawn system "echobot" <| props(handler)
+
+let createDiagChannel (getUser: GetUser) (system: ActorSystem) (server: IActorRef<_>) (channelName, topic) =
+    let echoUser = ChatUser.MakeBot "echo"
+    let bot = createEchoActor getUser system echoUser
 
     server <! UpdateState (fun state ->
         state
         |> ServerApi.addChannel (fun () -> createChannel system) channelName topic
         |> Result.map (
             fun (state, chan) ->
-                chan.channelActor <! (NewParticipant (echoUser, bot))
+                chan.channelActor <! (NewParticipant (getUserId echoUser, bot))
                 state
         )
         |> function

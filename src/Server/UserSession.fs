@@ -8,7 +8,7 @@ open ChannelFlow
 open ChatServer
 
 type SessionInfo = {
-    me: Party
+    me: UserInfo
     actorSystem: ActorSystem
     server: IActorRef<ServerControlMessage>
 }
@@ -17,13 +17,13 @@ type ClientSession = NoSession | UserLoggedOn of SessionInfo
 
 type SessionData = {
     server: IActorRef<ServerControlMessage>
-    me: Party
+    myinfo: UserInfo
     channels: Map<int, UniqueKillSwitch>
 }
 
 // creates a new session
 let make server me : SessionData =
-    { server = server; me = me; channels = Map.empty }
+    { server = server; myinfo = me; channels = Map.empty }
 
 // joins channel
 let join listenChannel channelId (session: SessionData) =
@@ -39,7 +39,7 @@ let join listenChannel channelId (session: SessionData) =
             let! channel = session.server |> getChannel (byChanId channelId)
             match channel, listenChannel with
             | Ok chan, Some listen ->
-                let ks = listen chan.id (createChannelFlow chan.channelActor session.me)
+                let ks = listen chan.id (createChannelFlow chan.channelActor session.myinfo.id)
                 let newState = {session with channels = session.channels |> Map.add chan.id ks}
                 return Ok (newState, chan)
             | Error err, _ ->
