@@ -4,33 +4,19 @@ open System
 
 open Akka.Actor
 open Akkling
+open Suave.Logging
 
+open ChatUser
 open ChannelFlow
 
-type UserId = UserId of string
-type UserInfo = {id: UserId; nick: string; status: string; email: string option; imageUrl: string option}
-with static member Empty = {id = UserId ""; nick = ""; status = ""; email = None; imageUrl = None}
-
-type ChatUser =
-    User of UserInfo
-    | Bot of UserInfo
-    | System of UserId
-with
-    static member MakeUser(nick) = User {UserInfo.Empty with id = UserId nick; nick = nick}
-    static member MakeBot(nick)  =  Bot {UserInfo.Empty with id = UserId nick; nick = nick}
-
-let getUserId = function
-    | User {id = id}
-    | Bot {id = id}
-    | System id -> id
-
-type GetUser = UserId -> ChatUser option Async
+let private logger = Log.create "chatserver"
 
 type Message = Message of string
+type ChannelId = ChannelId of int
 
 /// Channel is a primary store for channel info and data
 type ChannelData = {
-    id: int
+    id: ChannelId
     name: string
     topic: string
     channelActor: ChannelMessage<UserId, Message> IActorRef
@@ -58,8 +44,8 @@ type ServerControlMessage =
     | GetOrCreateChannel of name: string
     | ListChannels of (ChannelData -> bool)
 
-    | Subscribe of ChatUser * IActorRef<ServerNotifyMessage>
-    | Unsubscribe of UserId
+    | StartSession of ChatUser * IActorRef<ServerNotifyMessage>
+    | CloseSession of UserId
     | GetUsers of UserId list
 
 type ServerReplyMessage =
@@ -98,15 +84,15 @@ module ServerApi =
         | _ when isValidName name ->
             let channelActor = createChannel ()
             let newChan = {
-                id = newId (); name = name; topic = topic; channelActor = channelActor }
+                id = ChannelId (newId()); name = name; topic = topic; channelActor = channelActor }
 
             do state.sessions |> Map.iter(fun _ session -> session.notifySink <! AddChannel newChan)
             Ok ({state with channels = newChan::state.channels}, newChan)
         | _ ->
-            Error "Invalid channel name"
+            Result.Error "Invalid channel name"
 
     let addSub user notifySink (state: ServerData) =
-        let userId = getUserId user
+        let userId = ChatUser.getUserId user
         { state with sessions = state.sessions |> Map.add userId { user = user; notifySink = notifySink } }
     let dropSub userId (state: ServerData) =
         { state with sessions = state.sessions |> Map.remove userId }
@@ -120,7 +106,7 @@ let startServer (system: ActorSystem) =
     let rec behavior (state: ServerData) (ctx: Actor<ServerControlMessage>) =
         let replyAndUpdate f = function
             | Ok (newState, reply) -> ctx.Sender() <! f reply; become (behavior newState ctx)
-            | Error errtext -> ctx.Sender() <! RequestError errtext; ignored state
+            | Result.Error errtext -> ctx.Sender() <! RequestError errtext; ignored state
 
         function
         | UpdateState updater ->
@@ -139,11 +125,11 @@ let startServer (system: ActorSystem) =
             ctx.Sender() <! FoundChannels found
             ignored state
 
-        | Subscribe (user, nsink) ->
+        | StartSession (user, nsink) ->
             let newState = state |> ServerApi.addSub user nsink
             become (behavior newState ctx)          
 
-        | Unsubscribe userid ->
+        | CloseSession userid ->
             let newState = state |> ServerApi.dropSub userid
             become (behavior newState ctx)          
 
@@ -163,8 +149,8 @@ let private getChannelImpl message (server: ServerT) =
         let! (reply: ServerReplyMessage) = server <? message
         match reply with
         | FoundChannel channel -> return Ok channel
-        | RequestError error -> return Error error
-        | _ -> return Error "Unknown reason"
+        | RequestError error -> return Result.Error error
+        | _ -> return Result.Error "Unknown reason"
     }
 
 let getChannel criteria =
@@ -178,7 +164,7 @@ let listChannels criteria (server: ServerT) =
         let! (reply: ServerReplyMessage) = server <? (ListChannels criteria)
         match reply with
         | FoundChannels channels -> return Ok channels
-        | _ -> return Error "Unknown error"
+        | _ -> return Result.Error "Unknown error"
     }
 
 let getUsersInfo userIdList (server: ServerT) =
@@ -202,14 +188,18 @@ let getUser userid (server: ServerT) =
 let createTestChannels system (server: ServerT) =
     let addChannel name topic state =
         match state |> ServerApi.addChannel (fun () -> createChannel system) name topic with
-        | Ok (newstate, _) -> newstate
-        | _ -> state
+        | Ok (newstate, _) ->
+            do logger.info (Message.eventX "Added test channel '{name}'" >> Message.setFieldValue "name" name)
+            newstate
+        | Result.Error e ->
+            do logger.error (Message.eventX "Failed to addChannel '{name}': {e}" >> Message.setFieldValue "name" name  >> Message.setFieldValue "e" e)
+            state
 
     let addChannels =
         addChannel "Test" "test channel #1"
         >> addChannel "Weather" "join channel to get updated"
 
-    ignore (server <? UpdateState addChannels)
+    ignore (server <! UpdateState addChannels)
 
-let subscribeNotify (server: ServerT) user (actor: IActorRef<ServerNotifyMessage>) =
-    server <! Subscribe (user, actor)
+let startSession (server: ServerT) user (actor: IActorRef<ServerNotifyMessage>) =
+    server <! StartSession (user, actor)

@@ -12,13 +12,14 @@ open Suave
 open Suave.Logging
 open Suave.WebSocket
 
+open ChatUser
 open ChannelFlow
 open ChatServer
 open SocketFlow
 
 open FsChat
 
-let private logger = Log.create "chatapi"        
+let private logger = Log.create "chatapi"
 
 module private Implementation =
     let inline (|OtherwiseFail|) _ = failwith "no choice"
@@ -26,7 +27,7 @@ module private Implementation =
     type ServerActor = IActorRef<ChatServer.ServerControlMessage>
 
     type IncomingMessage =
-        | ChannelMessage of int * Message
+        | ChannelMessage of ChannelId * Message
         | ControlMessage of Protocol.ServerMsg
         | Trash of reason: string
 
@@ -58,7 +59,7 @@ module private Implementation =
 
     let (|ParseChannelId|_|) s = 
         let (result, value) = Int32.TryParse s
-        if result then Some value else None
+        if result then Some (ChannelId value) else None
 
     // extracts message from websocket reply, only handles User input (channel * string)
     let extractMessage message =
@@ -81,8 +82,8 @@ module private Implementation =
     let extractChannelMessage (ChannelMessage (chan, message) | OtherwiseFail (chan, message)) = chan, message
     let extractControlMessage (ControlMessage message | OtherwiseFail message) = message
 
-    let mapChanInfo (data: ChannelData) : Protocol.ChannelInfo =
-        {id = data.id.ToString(); name = data.name; topic = data.topic; userCount = 0; users = []; joined = false}
+    let mapChanInfo ({name = name; topic = topic; id = (ChannelId id)}: ChannelData) : Protocol.ChannelInfo =
+        {id = id.ToString(); name = name; topic = topic; userCount = 0; users = []; joined = false}
 
     let setJoined v (ch: Protocol.ChannelInfo) =
         {ch with joined = v}
@@ -95,12 +96,9 @@ module private Implementation =
         | Result.Error e -> replyErrorProtocol requestId e
 
 open Implementation
-open UserSession
 
-let connectWebSocket ({server = server; me = me; actorSystem = actorSystem }) : WebPart =
+let connectWebSocket (actorSystem: ActorSystem) server me : WebPart =
     fun ctx -> async {
-        let materializer = actorSystem.Materializer()
-
         // session data
         let mutable session = UserSession.make server me
         let mutable listenChannel = None
@@ -166,11 +164,12 @@ let connectWebSocket ({server = server; me = me; actorSystem = actorSystem }) : 
                     return replyErrorProtocol requestId "event was not processed"
             }
 
-        let sessionFlow = createUserSessionFlow<UserId,Message,int> materializer
+        let materializer = actorSystem.Materializer()
+        let sessionFlow = createUserSessionFlow<UserId,Message,ChannelId> materializer
         let controlMessageFlow = Flow.empty<_, Akka.NotUsed> |> Flow.asyncMap 1 processControlMessage
 
         let serverEventsSource: Source<Protocol.ClientMsg, Akka.NotUsed> =
-            let notifyNew sub = subscribeNotify server (User me) sub; Akka.NotUsed.Instance
+            let notifyNew sub = startSession server (User me) sub; Akka.NotUsed.Instance
             let source = Source.actorRef OverflowStrategy.Fail 1 |> Source.mapMaterializedValue notifyNew
 
             source |> Source.map (function
@@ -185,7 +184,7 @@ let connectWebSocket ({server = server; me = me; actorSystem = actorSystem }) : 
             |> Flow.map extractChannelMessage
             // |> Flow.log "User flow"
             |> Flow.viaMat sessionFlow Keep.right
-            |> Flow.asyncMap 1 (fun (channel: int, message) -> encodeChannelMessage getUser (channel.ToString()) message)
+            |> Flow.asyncMap 1 (fun (ChannelId channelId, message) -> encodeChannelMessage getUser (channelId.ToString()) message)
 
         let controlFlow =
             Flow.empty<IncomingMessage, Akka.NotUsed>

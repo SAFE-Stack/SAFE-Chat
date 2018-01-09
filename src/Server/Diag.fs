@@ -3,6 +3,7 @@ module Diag
 open Akka.Actor
 open Akkling
 
+open ChatUser
 open ChannelFlow
 open ChatServer
 
@@ -36,7 +37,7 @@ let createEchoActor (getUser: GetUser) (system: ActorSystem) botUser =
     spawn system "echobot" <| props(handler)
 
 let createDiagChannel (getUser: GetUser) (system: ActorSystem) (server: IActorRef<_>) (channelName, topic) =
-    let echoUser = ChatUser.MakeBot "echo"
+    let echoUser = ChatUser.makeBot "echo"
     let bot = createEchoActor getUser system echoUser
 
     server <! UpdateState (fun state ->
@@ -44,7 +45,7 @@ let createDiagChannel (getUser: GetUser) (system: ActorSystem) (server: IActorRe
         |> ServerApi.addChannel (fun () -> createChannel system) channelName topic
         |> Result.map (
             fun (state, chan) ->
-                chan.channelActor <! (NewParticipant (getUserId echoUser, bot))
+                chan.channelActor <! (NewParticipant (ChatUser.getUserId echoUser, bot))
                 state
         )
         |> function

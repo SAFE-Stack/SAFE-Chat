@@ -15,8 +15,8 @@ open Akka.Configuration
 open Akka.Actor
 open Akkling
 
+open ChatUser
 open UserSession
-open ChatServer
 open Suave.Html
 // ---------------------------------
 // Web app
@@ -115,10 +115,10 @@ let session (f: ClientSession -> WebPart) =
         function
         | None -> f NoSession
         | Some state ->
-            match state.get "nick", appServerState with
-            | Some nick, Some (actorSystem, server) ->
-                let (User me) = ChatUser.MakeUser nick
-                f (UserLoggedOn { me = me; actorSystem = actorSystem; server = server })
+            match state.get "nick" with
+            | Some nick ->
+                let (User me) = ChatUser.makeUser nick
+                f (UserLoggedOn me)
             | _ -> f NoSession)
 
 let noCache =
@@ -129,60 +129,65 @@ let noCache =
 let getPayloadString req = System.Text.Encoding.UTF8.GetString(req.rawForm)
 
 let root: WebPart =
-    choose [
-        warbler(fun ctx ->
-            // problem is that redirection leads to localhost and authorization does not go well
-            let authorizeRedirectUri =
-                (ctx.runtime.matchedBinding.uri "oalogin" "").ToString().Replace("127.0.0.1", "localhost")
+  warbler(fun _ ->
+    match appServerState with
+    | Some (actorSystem, server) ->
+        choose [
+            warbler(fun ctx ->
+                // problem is that redirection leads to localhost and authorization does not go well
+                let authorizeRedirectUri =
+                    (ctx.runtime.matchedBinding.uri "oalogin" "").ToString().Replace("127.0.0.1", "localhost")
 
-            authorize authorizeRedirectUri Secrets.oauthConfigs
-                (fun loginData ->
-                    // register user, obtain userid and store in session
-                    let nick, name = loginData.Name, loginData.Name // TODO lookup for user nickname in db
+                authorize authorizeRedirectUri Secrets.oauthConfigs
+                    (fun loginData ->
+                        // register user, obtain userid and store in session
+                        let nick, name = loginData.Name, loginData.Name // TODO lookup for user nickname in db
 
-                    logger.info (Message.eventX "User registered by nickname {nick}"
-                        >> Message.setFieldValue "nick" nick)
+                        logger.info (Message.eventX "User registered by nickname {nick}"
+                            >> Message.setFieldValue "nick" nick)
 
-                    statefulForSession
-                    >=> sessionStore (fun store -> store.set "nick" loginData.Name)
-                    >=> FOUND "/"
+                        statefulForSession
+                        >=> sessionStore (fun store -> store.set "nick" loginData.Name)
+                        >=> FOUND "/"
+                    )
+                    (fun () -> FOUND "/logon")
+                    (fun error -> OK <| sprintf "Authorization failed because of `%s`" error.Message)
                 )
-                (fun () -> FOUND "/logon")
-                (fun error -> OK <| sprintf "Authorization failed because of `%s`" error.Message)
+
+            session (fun session ->
+                choose [
+                    GET >=> path "/" >=> noCache >=> (
+                        match session with
+                        | NoSession -> found "/logon"
+                        | _ -> Files.browseFileHome "index.html"
+                        )
+                    path "/logon" >=> choose [
+                        GET >=> noCache >=>
+                            (Logon.Views.index session |> htmlToString |> OK)
+                        POST >=> (
+                            fun ctx ->
+                                let nick = "~" + (getPayloadString ctx.request).Substring 5
+                                (statefulForSession
+                                    >=> sessionStore (fun store -> store.set "nick" nick)
+                                    >=> FOUND "/") ctx
+                        )
+                    ]
+                    GET >=> path "/logoff" >=> noCache >=>
+                        deauthenticate >=> FOUND "/logon"
+
+                    
+                    path "/api/socket" >=>
+                        match session with
+                        | UserLoggedOn user ->
+                            (RestApi.connectWebSocket actorSystem server user)
+                        | NoSession ->
+                            BAD_REQUEST "Authorization required"
+
+                    Files.browseHome
+                    ]
             )
 
-        session (fun session ->
-            choose [
-                GET >=> path "/" >=> noCache >=> (
-                    match session with
-                    | NoSession -> found "/logon"
-                    | _ -> Files.browseFileHome "index.html"
-                    )
-                path "/logon" >=> choose [
-                    GET >=> noCache >=>
-                        (Logon.Views.index session |> htmlToString |> OK)
-                    POST >=> (
-                        fun ctx ->
-                            let nick = "~" + (getPayloadString ctx.request).Substring 5
-                            (statefulForSession
-                                >=> sessionStore (fun store -> store.set "nick" nick)
-                                >=> FOUND "/") ctx
-                    )
-                ]
-                GET >=> path "/logoff" >=> noCache >=>
-                    deauthenticate >=> FOUND "/logon"
-
-                
-                path "/api/socket" >=>
-                    match session with
-                    | UserLoggedOn sessionInfo ->
-                        (RestApi.connectWebSocket sessionInfo)
-                    | NoSession ->
-                        BAD_REQUEST "Authorization required"
-
-                Files.browseHome
-                ]
-        )
-
-        NOT_FOUND "Not Found"
-    ]
+            NOT_FOUND "Not Found"
+        ]
+    | None -> ServerErrors.SERVICE_UNAVAILABLE "Server is not started"
+  )

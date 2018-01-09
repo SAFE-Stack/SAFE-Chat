@@ -1,24 +1,18 @@
 module UserSession
 
 open Akkling
-open Akka.Actor
 open Akka.Streams
 
+open ChatUser
 open ChannelFlow
 open ChatServer
 
-type SessionInfo = {
-    me: UserInfo
-    actorSystem: ActorSystem
-    server: IActorRef<ServerControlMessage>
-}
-
-type ClientSession = NoSession | UserLoggedOn of SessionInfo
+type ClientSession = NoSession | UserLoggedOn of UserInfo
 
 type SessionData = {
     server: IActorRef<ServerControlMessage>
     myinfo: UserInfo
-    channels: Map<int, UniqueKillSwitch>
+    channels: Map<ChannelId, UniqueKillSwitch>
 }
 
 // creates a new session
@@ -26,11 +20,11 @@ let make server me : SessionData =
     { server = server; myinfo = me; channels = Map.empty }
 
 // joins channel
-let join listenChannel channelId (session: SessionData) =
+let join listenChannel (channelId: ChannelId) (session: SessionData) =
     // TODO consider extracting connecting logic such as the following method
     // let connect chanId chanActor =
     //     listen chan.id (createChannelFlow chan.channelActor me)
-    let byChanId id c = (c:ChannelData).id = id
+    let byChanId cid c = (c:ChannelData).id = cid
 
     async {
         if session.channels |> Map.containsKey channelId then
