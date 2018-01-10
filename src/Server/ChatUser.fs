@@ -1,19 +1,23 @@
 module ChatUser
 
 type UserId = UserId of string
-type UserInfo = {id: UserId; nick: string; status: string; email: string option; imageUrl: string option}
-with static member Empty = {id = UserId ""; nick = ""; status = ""; email = None; imageUrl = None}
 
-type ChatUser =
-    User of UserInfo
-    | Bot of UserInfo
-    | System of UserId
+type PersonalInfo = {nick: string; status: string; email: string option; imageUrl: string option}
+type AnonymousUserInfo = {nick: string; status: string}
 
-let getUserId = function
-    | User {id = id}
-    | Bot {id = id}
-    | System id -> id
-let makeUser nick = User {UserInfo.Empty with id = UserId nick; nick = nick}
-let makeBot nick  =  Bot {UserInfo.Empty with id = UserId nick; nick = nick}
+type UserKind =
+| Person of PersonalInfo
+| Bot of PersonalInfo
+| Anonymous of AnonymousUserInfo
+| System
 
-type GetUser = UserId -> ChatUser option Async
+type RegisteredUser = RegisteredUser of UserId * UserKind
+
+let getUserId (RegisteredUser (userid,_)) = userid
+
+let private empty = {nick = ""; status = ""; email = None; imageUrl = None}
+
+let makeUser nick = Person {empty with nick = nick}
+let makeBot nick  =  Bot {empty with nick = nick}
+
+type GetUser = UserId -> RegisteredUser option Async

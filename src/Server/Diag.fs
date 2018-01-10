@@ -8,11 +8,16 @@ open ChannelFlow
 open ChatServer
 
 /// Creates an actor for echo bot.
-let createEchoActor (getUser: GetUser) (system: ActorSystem) botUser =
+let createEchoActor (getUser: GetUser) (system: ActorSystem) (botUserId: UserId) =
+
+    let getPersonNick (RegisteredUser (_, user)) =
+        match user with
+        |Person { nick = nickName } -> Some nickName
+        | _ -> None        
 
     let forUser userid fn = async {
         let! user = getUser userid
-        return user |> Option.bind(function |User { nick = nickName } -> Some (fn nickName) | _ -> None)
+        return user |> Option.bind getPersonNick |> Option.map fn
     }
 
     let handler (ctx: Actor<_>) =
@@ -27,7 +32,7 @@ let createEchoActor (getUser: GetUser) (system: ActorSystem) botUser =
                 | _ -> async.Return None
 
             match reply with
-            | Some reply -> do ctx.Sender() <! NewMessage (botUser, Message reply)
+            | Some reply -> do ctx.Sender() <! NewMessage (botUserId, Message reply)
             | _ -> ()
 
             return! loop()
@@ -37,15 +42,19 @@ let createEchoActor (getUser: GetUser) (system: ActorSystem) botUser =
     spawn system "echobot" <| props(handler)
 
 let createDiagChannel (getUser: GetUser) (system: ActorSystem) (server: IActorRef<_>) (channelName, topic) =
+    
+    // TODO register user
+    let echoUserId = UserId "z100"
     let echoUser = ChatUser.makeBot "echo"
-    let bot = createEchoActor getUser system echoUser
+
+    let bot = createEchoActor getUser system echoUserId
 
     server <! UpdateState (fun state ->
         state
         |> ServerApi.addChannel (fun () -> createChannel system) channelName topic
         |> Result.map (
             fun (state, chan) ->
-                chan.channelActor <! (NewParticipant (ChatUser.getUserId echoUser, bot))
+                chan.channelActor <! (NewParticipant (echoUserId, bot))
                 state
         )
         |> function

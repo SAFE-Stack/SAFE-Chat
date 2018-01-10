@@ -23,7 +23,7 @@ type ChannelData = {
 }
 
 and UserSessionData = {
-    user: ChatUser
+    user: RegisteredUser
     notifySink: ServerNotifyMessage IActorRef
 }
 
@@ -44,7 +44,7 @@ type ServerControlMessage =
     | GetOrCreateChannel of name: string
     | ListChannels of (ChannelData -> bool)
 
-    | StartSession of ChatUser * IActorRef<ServerNotifyMessage>
+    | StartSession of RegisteredUser * IActorRef<ServerNotifyMessage>
     | CloseSession of UserId
     | GetUsers of UserId list
 
@@ -53,7 +53,7 @@ type ServerReplyMessage =
     | RequestError of string
     | FoundChannel of ChannelData
     | FoundChannels of ChannelData list
-    | FoundUsers of ChatUser list
+    | FoundUsers of RegisteredUser list
 
 type ServerT = IActorRef<ServerControlMessage>
 
@@ -134,7 +134,6 @@ let startServer (system: ActorSystem) =
             become (behavior newState ctx)          
 
         | GetUsers userIdList ->
-            let (><) f a b = f b a
             let getUsers =
                 List.collect (Map.tryFind >< state.sessions >> Option.toList)
                 >> List.map (fun sessionData -> sessionData.user)

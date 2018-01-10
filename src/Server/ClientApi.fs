@@ -22,8 +22,6 @@ open FsChat
 let private logger = Log.create "chatapi"
 
 module private Implementation =
-    let inline (|OtherwiseFail|) _ = failwith "no choice"
-
     type ServerActor = IActorRef<ChatServer.ServerControlMessage>
 
     type IncomingMessage =
@@ -31,23 +29,28 @@ module private Implementation =
         | ControlMessage of Protocol.ServerMsg
         | Trash of reason: string
 
-    let mapUserInfoToProtocol (u: UserInfo) isbot: Protocol.ChanUserInfo =
-        let (UserId uid) = u.id in
-        {id = uid; nick = u.nick; isbot = isbot; status = u.status; email = u.email |> Option.defaultValue null; imageUrl = u.imageUrl |> Option.defaultValue null}
+    let makeBlank userid nick :Protocol.ChanUserInfo =
+        {id = userid; nick = nick; isbot = false; status = ""; email = null; imageUrl = null}
+    let mapUserToProtocol (RegisteredUser (UserId userid, user)) :Protocol.ChanUserInfo =
+        let tonull = Option.defaultValue null
 
-    let mapUserToProtocol :(ChatUser -> Protocol.ChanUserInfo) =
-        function
-        | User u -> mapUserInfoToProtocol u false
-        | Bot b ->  mapUserInfoToProtocol b true
-        | System uid -> mapUserInfoToProtocol {UserInfo.Empty with id = uid; nick = "system"} true
+        match user with
+        | Person u ->
+            {id = userid; nick = u.nick; isbot = false; status = u.status; email = tonull u.email; imageUrl = tonull u.imageUrl}
+        | Bot u ->
+            {id = userid; nick = u.nick; isbot = true; status = u.status; email = tonull u.email; imageUrl = tonull u.imageUrl}
+        | Anonymous info ->
+            {makeBlank userid info.nick with isbot = false; status = info.status}
+        | System ->
+            makeBlank userid "system"
        
-    let encodeChannelMessage (getUser: UserId -> ChatUser option Async) channelId : ClientMessage<UserId, Message> -> Protocol.ClientMsg Async =
+    let encodeChannelMessage (getUser: GetUser) channelId : ClientMessage<UserId, Message> -> Protocol.ClientMsg Async =
         let returnUserEvent f userid = async {
             let! userResult = getUser userid
             return f <|
                 match userResult with
                 | Some user -> mapUserToProtocol user
-                | _ -> mapUserInfoToProtocol {UserInfo.Empty with id = UserId "-1"; nick = "unknown"} true
+                | _ -> makeBlank "zz" "unknown"
         }
         function
         | ChatMessage ((id, ts), UserId authorId, Message message) ->
@@ -130,7 +133,8 @@ let connectWebSocket (actorSystem: ActorSystem) server me : WebPart =
                         { mapChanInfo chanData with joined = session.channels |> Map.containsKey chanData.id}
 
                     let makeHello channels =
-                        Protocol.ClientMsg.Hello {nick = me.nick; name = ""; email = None; channels = channels}
+                        let meUserInfo = mapUserToProtocol me
+                        Protocol.ClientMsg.Hello {nick = meUserInfo.nick; name = ""; email = None; channels = channels}
 
                     return serverChannels |> Result.map (List.map makeChanInfo >> makeHello) |> reply ""
 
@@ -169,7 +173,7 @@ let connectWebSocket (actorSystem: ActorSystem) server me : WebPart =
         let controlMessageFlow = Flow.empty<_, Akka.NotUsed> |> Flow.asyncMap 1 processControlMessage
 
         let serverEventsSource: Source<Protocol.ClientMsg, Akka.NotUsed> =
-            let notifyNew sub = startSession server (User me) sub; Akka.NotUsed.Instance
+            let notifyNew sub = startSession server me sub; Akka.NotUsed.Instance
             let source = Source.actorRef OverflowStrategy.Fail 1 |> Source.mapMaterializedValue notifyNew
 
             source |> Source.map (function
