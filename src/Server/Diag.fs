@@ -41,12 +41,7 @@ let createEchoActor (getUser: GetUser) (system: ActorSystem) (botUserId: UserId)
     in
     spawn system "echobot" <| props(handler)
 
-let createDiagChannel (getUser: GetUser) (system: ActorSystem) (server: IActorRef<_>) (channelName, topic) =
-    
-    // TODO register user
-    let echoUserId = UserId "z100"
-    let echoUser = ChatUser.makeBot "echo"
-
+let createDiagChannel (getUser: GetUser) (system: ActorSystem) (server: IActorRef<_>) (echoUserId, channelName, topic) =
     let bot = createEchoActor getUser system echoUserId
 
     server <! UpdateState (fun state ->

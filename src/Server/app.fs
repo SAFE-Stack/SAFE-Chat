@@ -18,6 +18,8 @@ open Akkling
 open ChatUser
 open UserSession
 open Suave.Html
+open ChatServer
+open Suave.Logging
 // ---------------------------------
 // Web app
 // ---------------------------------
@@ -87,9 +89,7 @@ let startChatServer () =
     """
     let actorSystem = ActorSystem.Create("chatapp", config)
     let chatServer = ChatServer.startServer actorSystem
-    let getUser i = ChatServer.getUser i chatServer
-
-    do Diag.createDiagChannel getUser actorSystem chatServer ("Demo", "Channel for testing purposes. Notice the bots are always ready to keep conversation.")
+    do Diag.createDiagChannel UserStore.getUser actorSystem chatServer (UserStore.UserIds.echo, "Demo", "Channel for testing purposes. Notice the bots are always ready to keep conversation.")
     do ChatServer.createTestChannels actorSystem chatServer
 
     appServerState <- Some (actorSystem, chatServer)
@@ -115,10 +115,18 @@ let session (f: ClientSession -> WebPart) =
         function
         | None -> f NoSession
         | Some state ->
-            match state.get "nick" with
+            match state.get "nick" with // FIXME store userid
             | Some nick ->
-                let (User me) = ChatUser.makeUser nick
-                f (UserLoggedOn me)
+                fun ctx -> async {
+                    let! result = UserStore.getUser (UserId nick)
+                    match result with
+                    | Some me ->
+                        return! f (UserLoggedOn me) ctx
+                    | None ->
+                        logger.error (Message.eventX "Failed to get user from user store {id}" >> Message.setField "id" nick)
+                        return! f NoSession ctx
+                }
+                
             | _ -> f NoSession)
 
 let noCache =
@@ -161,6 +169,7 @@ let root: WebPart =
                         | NoSession -> found "/logon"
                         | _ -> Files.browseFileHome "index.html"
                         )
+                    // handlers for login form
                     path "/logon" >=> choose [
                         GET >=> noCache >=>
                             (Logon.Views.index session |> htmlToString |> OK)

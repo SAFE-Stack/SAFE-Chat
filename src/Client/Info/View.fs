@@ -6,8 +6,7 @@ open Fable.Helpers.React.Props
 let root =
   div
     [ ClassName "content" ]
-    [ h1
-        [ ]
+    [ h1 []
         [ str "Welcome to F# Chat" ]
       h4
         [ Style [ MarginBottom "5em"] ]

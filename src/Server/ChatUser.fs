@@ -20,4 +20,10 @@ let private empty = {nick = ""; status = ""; email = None; imageUrl = None}
 let makeUser nick = Person {empty with nick = nick}
 let makeBot nick  =  Bot {empty with nick = nick}
 
+let getUserNick = function
+    | Anonymous {nick = nick}
+    | Bot {nick = nick}
+    | Person {nick = nick} -> nick
+    | System -> "system"
+
 type GetUser = UserId -> RegisteredUser option Async
