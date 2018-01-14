@@ -99,6 +99,7 @@ module private Implementation =
         | Result.Error e -> replyErrorProtocol requestId e
 
 open Implementation
+open UserStore
 
 let connectWebSocket (actorSystem: ActorSystem) server me : WebPart =
     fun ctx -> async {
@@ -115,7 +116,7 @@ let connectWebSocket (actorSystem: ActorSystem) server me : WebPart =
                 match v with
                 | Ok (arg1, channel: ChannelData) ->
                     let! (userIds: UserId list) = channel.channelActor <? ListUsers
-                    let! users = server |> getUsersInfo userIds
+                    let! users = UserStore.getUsers userIds
                     let chaninfo = { mapChanInfo channel with users = users |> List.map mapUserToProtocol}
                     return Ok (arg1, chaninfo)
                 | Result.Error e -> return Result.Error e
@@ -173,14 +174,13 @@ let connectWebSocket (actorSystem: ActorSystem) server me : WebPart =
         let controlMessageFlow = Flow.empty<_, Akka.NotUsed> |> Flow.asyncMap 1 processControlMessage
 
         let serverEventsSource: Source<Protocol.ClientMsg, Akka.NotUsed> =
-            let notifyNew sub = startSession server me sub; Akka.NotUsed.Instance
+            let notifyNew sub = startSession server (ChatUser.getUserId me) sub; Akka.NotUsed.Instance
             let source = Source.actorRef OverflowStrategy.Fail 1 |> Source.mapMaterializedValue notifyNew
 
             source |> Source.map (function
                 | AddChannel ch -> ch |> (mapChanInfo >> Protocol.ClientMsg.NewChannel)
                 | DropChannel ch -> ch |> (mapChanInfo >> Protocol.ClientMsg.RemoveChannel)
             )
-        let getUser i = ChatServer.getUser i server
 
         let userMessageFlow =
             Flow.empty<IncomingMessage, Akka.NotUsed>

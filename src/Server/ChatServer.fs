@@ -23,7 +23,6 @@ type ChannelData = {
 }
 
 and UserSessionData = {
-    user: RegisteredUser
     notifySink: ServerNotifyMessage IActorRef
 }
 
@@ -44,16 +43,14 @@ type ServerControlMessage =
     | GetOrCreateChannel of name: string
     | ListChannels of (ChannelData -> bool)
 
-    | StartSession of RegisteredUser * IActorRef<ServerNotifyMessage>
+    | StartSession of UserId * IActorRef<ServerNotifyMessage>
     | CloseSession of UserId
-    | GetUsers of UserId list
 
 type ServerReplyMessage =
     | Done
     | RequestError of string
     | FoundChannel of ChannelData
     | FoundChannels of ChannelData list
-    | FoundUsers of RegisteredUser list
 
 type ServerT = IActorRef<ServerControlMessage>
 
@@ -91,9 +88,8 @@ module ServerApi =
         | _ ->
             Result.Error "Invalid channel name"
 
-    let addSub user notifySink (state: ServerData) =
-        let userId = ChatUser.getUserId user
-        { state with sessions = state.sessions |> Map.add userId { user = user; notifySink = notifySink } }
+    let addSub userId notifySink (state: ServerData) =
+        { state with sessions = state.sessions |> Map.add userId { notifySink = notifySink } }
     let dropSub userId (state: ServerData) =
         { state with sessions = state.sessions |> Map.remove userId }
 
@@ -132,14 +128,6 @@ let startServer (system: ActorSystem) =
         | CloseSession userid ->
             let newState = state |> ServerApi.dropSub userid
             become (behavior newState ctx)          
-
-        | GetUsers userIdList ->
-            let getUsers =
-                List.collect (Map.tryFind >< state.sessions >> Option.toList)
-                >> List.map (fun sessionData -> sessionData.user)
-            ctx.Sender() <! FoundUsers (getUsers userIdList)
-            ignored state
-
     in
     props <| actorOf2 (behavior { channels = []; sessions = Map.empty }) |> (spawn system "ircserver")
 
@@ -166,24 +154,6 @@ let listChannels criteria (server: ServerT) =
         | _ -> return Result.Error "Unknown error"
     }
 
-let getUsersInfo userIdList (server: ServerT) =
-    async {
-        let! (reply: ServerReplyMessage) = server <? (GetUsers userIdList)
-        return
-            match reply with
-            | FoundUsers list -> list
-            | _ -> [] // Error "Unknown reply"
-    }
-
-let getUser userid (server: ServerT) =
-    async {
-        let! (reply: ServerReplyMessage) = server <? (GetUsers [userid])
-        return
-            match reply with
-            | FoundUsers [user] -> Some user
-            | _ -> None
-    }
-
 let createTestChannels system (server: ServerT) =
     let addChannel name topic state =
         match state |> ServerApi.addChannel (fun () -> createChannel system) name topic with
@@ -200,5 +170,5 @@ let createTestChannels system (server: ServerT) =
 
     ignore (server <! UpdateState addChannels)
 
-let startSession (server: ServerT) user (actor: IActorRef<ServerNotifyMessage>) =
-    server <! StartSession (user, actor)
+let startSession (server: ServerT) userId (actor: IActorRef<ServerNotifyMessage>) =
+    server <! StartSession (userId, actor)

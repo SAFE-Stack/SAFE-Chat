@@ -61,14 +61,14 @@ let messageList isMe (messages: Message list) =
       [ ClassName "fs-messages" ]
       [ for m in messages ->
           match m.Content with
-          | UserMessage (text, author) ->
+          | UserMessage (text, user) ->
               div
-                [ classList ["fs-message", true; "user", isMe author ] ]
+                [ classList ["fs-message", true; "user", isMe user.Nick ] ]
                 [ div
                     []
                     [ p [] [ str text ]
                       h5  []
-                          [ span [ClassName "user"] [str author]
+                          [ span [ClassName "user"] [str user.Nick]
                             span [ClassName "time"] [str <| formatTs m.Ts ]] ]
                   UserAvatar.View.root (PhotoUrl "https://pbs.twimg.com/profile_images/2191150324/Avatar_Shepard_400x400.jpg")
                 ]

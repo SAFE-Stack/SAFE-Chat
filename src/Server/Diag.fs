@@ -12,7 +12,9 @@ let createEchoActor (getUser: GetUser) (system: ActorSystem) (botUserId: UserId)
 
     let getPersonNick (RegisteredUser (_, user)) =
         match user with
-        |Person { nick = nickName } -> Some nickName
+        |Person { nick = nickName }
+        |Anonymous { nick = nickName }
+            -> Some nickName
         | _ -> None        
 
     let forUser userid fn = async {

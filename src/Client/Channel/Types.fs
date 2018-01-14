@@ -4,7 +4,7 @@ type UserInfo = {Nick: string; IsBot: bool; Online: bool}
 with static member Anon = {Nick = "anonymous"; IsBot = false; Online = true}
 
 type MessageContent =
-    | UserMessage of text: string * author: string
+    | UserMessage of text: string * author: UserInfo
     | SystemMessage of text: string
 
 type Message = {

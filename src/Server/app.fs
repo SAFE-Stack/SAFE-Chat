@@ -115,15 +115,15 @@ let session (f: ClientSession -> WebPart) =
         function
         | None -> f NoSession
         | Some state ->
-            match state.get "nick" with // FIXME store userid
-            | Some nick ->
+            match state.get "userid" with
+            | Some userid ->
                 fun ctx -> async {
-                    let! result = UserStore.getUser (UserId nick)
+                    let! result = UserStore.getUser (UserId userid)
                     match result with
                     | Some me ->
                         return! f (UserLoggedOn me) ctx
                     | None ->
-                        logger.error (Message.eventX "Failed to get user from user store {id}" >> Message.setField "id" nick)
+                        logger.error (Message.eventX "Failed to get user from user store {id}" >> Message.setField "id" userid)
                         return! f NoSession ctx
                 }
                 
@@ -147,16 +147,21 @@ let root: WebPart =
                     (ctx.runtime.matchedBinding.uri "oalogin" "").ToString().Replace("127.0.0.1", "localhost")
 
                 authorize authorizeRedirectUri Secrets.oauthConfigs
-                    (fun loginData ->
-                        // register user, obtain userid and store in session
-                        let nick, name = loginData.Name, loginData.Name // TODO lookup for user nickname in db
+                    (fun loginData ctx -> async {
+                        let user = Person {nick = loginData.Name; status = ""; email = None; imageUrl = None}
 
-                        logger.info (Message.eventX "User registered by nickname {nick}"
-                            >> Message.setFieldValue "nick" nick)
+                        let! registerResult = UserStore.register user
+                        match registerResult with
+                        | Ok (UserId userid) ->
+                            logger.info (Message.eventX "User registered by name {name}"
+                                >> Message.setFieldValue "name" loginData.Name)
 
-                        statefulForSession
-                        >=> sessionStore (fun store -> store.set "nick" loginData.Name)
-                        >=> FOUND "/"
+                            return! (statefulForSession
+                                >=> sessionStore (fun store -> store.set "userid" userid)
+                                >=> FOUND "/") ctx
+                        | Result.Error message ->
+                            return! (OK <| sprintf "Register failed because of `%s`" message) ctx
+                        }
                     )
                     (fun () -> FOUND "/logon")
                     (fun error -> OK <| sprintf "Authorization failed because of `%s`" error.Message)
@@ -174,11 +179,21 @@ let root: WebPart =
                         GET >=> noCache >=>
                             (Logon.Views.index session |> htmlToString |> OK)
                         POST >=> (
-                            fun ctx ->
-                                let nick = "~" + (getPayloadString ctx.request).Substring 5
-                                (statefulForSession
-                                    >=> sessionStore (fun store -> store.set "nick" nick)
-                                    >=> FOUND "/") ctx
+                            fun ctx -> async {
+                                let nick = (getPayloadString ctx.request).Substring 5
+                                let user = Anonymous {nick = nick; status = ""}
+                                let! registerResult = UserStore.register user
+                                match registerResult with
+                                | Ok (UserId userid) ->
+                                    logger.info (Message.eventX "Anonymous login by nick {nick}"
+                                        >> Message.setFieldValue "nick" nick)
+
+                                    return! (statefulForSession
+                                        >=> sessionStore (fun store -> store.set "userid" userid)
+                                        >=> FOUND "/") ctx
+                                | Result.Error message ->
+                                    return! (OK <| sprintf "Register failed because of `%s`" message) ctx
+                            }
                         )
                     ]
                     GET >=> path "/logoff" >=> noCache >=>

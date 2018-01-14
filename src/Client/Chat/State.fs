@@ -23,7 +23,7 @@ module Conversions =
         let usersInfo =
             match ch.userCount, ch.users with
             | cnt, [] -> UserCount cnt
-            | _, lst -> lst |> List.map (fun ch -> ch.nick, mapUserInfo ch) |> Map.ofList |> UserList
+            | _, lst -> lst |> List.map (fun u -> u.id, mapUserInfo u) |> Map.ofList |> UserList
         {Id = ch.id; Name = ch.name; Topic = ch.topic; Users = usersInfo; Messages = []; Joined = ch.joined; PostText = ""}
 
 open Fable.Import
@@ -86,8 +86,18 @@ let updateChan chanId (f: ChannelData -> ChannelData) (chat: ChatData) : ChatDat
 let updateUsers (f: UsersInfo -> UsersInfo) =
     (fun ch -> { ch with Users = f ch.Users})
 
+let private getUser (userId: string) (users: UsersInfo) : UserInfo =
+    let fallback () = { Nick = "#" + userId; IsBot = false; Online = true}
+
+    match users with
+    | UserCount _ -> fallback()
+    | UserList map ->
+        match map |> Map.tryFind userId with
+        | Some userInfo -> userInfo
+        | None -> fallback()
+
 let appendMessage (msg: Protocol.ChannelMsgInfo) (chan: ChannelData) =
-    let newMessage: Message = { Id = msg.id; Ts = msg.ts; Content = UserMessage (msg.text, msg.author) }
+    let newMessage: Message = { Id = msg.id; Ts = msg.ts; Content = UserMessage (msg.text, getUser msg.author chan.Users ) }
     {chan with Messages = chan.Messages @ [newMessage]}
 
 let appendSysMessage verb (ev: Protocol.UserEventRec) (chan: ChannelData) =
@@ -102,14 +112,14 @@ let chatUpdate (msg: Protocol.ClientMsg) (state: ChatData) : ChatData * Cmd<MsgT
     | Protocol.ClientMsg.UserJoined (ev, chan) ->
         updateChan chan (updateUsers <| function
             | UserCount c -> UserCount (c + 1)
-            | UserList m -> m |> Map.add ev.user.nick (Conversions.mapUserInfo ev.user) |> UserList
+            | UserList m -> m |> Map.add ev.user.id (Conversions.mapUserInfo ev.user) |> UserList
             >> appendSysMessage "joined" ev
             ) state, Cmd.none
 
     | Protocol.ClientMsg.UserLeft (ev, chan) ->
         updateChan chan (updateUsers <| function
             | UserCount c -> UserCount (if c > 0 then c - 1 else 0)
-            | UserList m -> m |> Map.remove ev.user.nick |> UserList
+            | UserList m -> m |> Map.remove ev.user.id |> UserList
             >> appendSysMessage "left" ev
             ) state, Cmd.none
 
