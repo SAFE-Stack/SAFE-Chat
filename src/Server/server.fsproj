@@ -5,6 +5,8 @@
     <TargetFramework>netcoreapp2.0</TargetFramework>
   </PropertyGroup>
   <ItemGroup>
+    <!-- <Compile Include="/projects/Suave.OAuth/src/OAuth.fs" /> -->
+
     <Compile Include="Prelude.fs" />
     <Compile Include="FlowImpl.fs" />
     <Compile Include="ChannelFlow.fs" />

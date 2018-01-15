@@ -20,22 +20,22 @@ module Views =
                 yield a "/logoff" [] [Text "log off now"]
                 yield p [][]
             | _ ->
-                yield p []
-                    [ Text "Log on using your "
-                      a "/oaquery?provider=Google" ["class", "button"] [Text "Google"]
-                      Text " account" ]
                 yield tag "form" ["method", "POST"] (
-                    [ tag "fieldset" [] (
-                        [ div ["class", "label"]
-                            [ Text "Choose a nickname" ]
-                          div ["class", "field"]
-                            [ div ["class", "control"]
-                                [ tag "input" ["class","input"; "name", "nick"; "type", "text"; "required", "true"] [] ]]
-                        ])
-                      tag "input"
-                        [ "class", "button is-primary"
-                          "type", "submit"; "value", "Connect anonymously"] []
-                    ]
+                    [ p ["class", "subtitle"]
+                        [ Text "Log on using your "
+                          a "/oaquery?provider=Google" [] [Text "Google"]
+                          Text " or "
+                          a "/oaquery?provider=Github" [] [Text "Github"]
+                          Text " account, or..." ]
+                      div ["class", "label"]
+                        [ Text "Choose a nickname" ]
+                      div ["class", "field"]
+                        [ div ["class", "control"]
+                            [ tag "input" ["class","input"; "name", "nick"; "type", "text"; "required", "true"] [] ]]
+                      div ["class", "control"]
+                          [ tag "input" [
+                              "class", "button is-primary"
+                              "type", "submit"; "value", "Connect anonymously"] [] ] ]
                 )
         ]
 
