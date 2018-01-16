@@ -1,21 +1,15 @@
 module UserAvatar.View
 
-open Types
 open Fable.Helpers.React
 open Fable.Helpers.React.Props
 
 let root  =
   function
-  | IconCssClass cls ->
-      div
-          [ ClassName "fs-avatar" ]
-          [ i [ ClassName cls ] [] ]
+  | None | Some "" ->
+      div [ ClassName "fs-avatar" ] []
 
-  | PhotoUrl photoUrl ->
+  | Some url ->
       div
           [ ClassName "fs-avatar"
-            Style [BackgroundImage (sprintf "url(%s)" photoUrl) ] ]
+            Style [BackgroundImage (sprintf "url(%s)" url) ] ]
           []
-
-  | _ ->
-      div [ ClassName "fs-avatar" ] []

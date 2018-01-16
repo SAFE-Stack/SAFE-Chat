@@ -5,7 +5,6 @@ open Fable.Helpers.React
 open Props
 
 open Types
-open UserAvatar.Types
 
 let private formatTs (ts: System.DateTime) =
   match (System.DateTime.Now - ts) with
@@ -70,7 +69,7 @@ let messageList isMe (messages: Message list) =
                       h5  []
                           [ span [ClassName "user"] [str user.Nick]
                             span [ClassName "time"] [str <| formatTs m.Ts ]] ]
-                  UserAvatar.View.root (PhotoUrl "https://pbs.twimg.com/profile_images/2191150324/Avatar_Shepard_400x400.jpg")
+                  UserAvatar.View.root user.ImageUrl
                 ]
 
           | SystemMessage text ->

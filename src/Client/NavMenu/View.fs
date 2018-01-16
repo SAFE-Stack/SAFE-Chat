@@ -25,8 +25,6 @@ let menuItemChannelJoin dispatch (ch: ChannelData) =
     let join _ = dispatch (Join ch.Id)
     menuItem (OnClick join) ch.Name ch.Topic false
 
-open UserAvatar.Types
-
 let menu (chatData: ChatState) currentPage dispatch =
     match chatData with
     | NotConnected ->
@@ -35,7 +33,7 @@ let menu (chatData: ChatState) currentPage dispatch =
       let opened, newChanName = chat.NewChanName |> function |Some text -> (true, text) |None -> (false, "")
       [ yield div
           [ ClassName "fs-user" ]
-          [ UserAvatar.View.root (PhotoUrl "https://pbs.twimg.com/profile_images/2191150324/Avatar_Shepard_400x400.jpg")
+          [ UserAvatar.View.root me.ImageUrl
             h3 [] [str me.Nick]
             span [] [ str "The first human Spectre"]
             button

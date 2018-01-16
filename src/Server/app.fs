@@ -136,6 +136,13 @@ let noCache =
 
 let getPayloadString req = System.Text.Encoding.UTF8.GetString(req.rawForm)
 
+let getUserImageUrl (claims: Map<string,obj>) : string option =
+    let getClaim claim () = claims |> Map.tryFind claim |> Option.map string
+
+    None
+    |> Option.orElseWith (getClaim "avatar_url")
+    |> Option.orElseWith (getClaim "picture")
+
 let root: WebPart =
   warbler(fun _ ->
     match appServerState with
@@ -148,13 +155,23 @@ let root: WebPart =
 
                 authorize authorizeRedirectUri Secrets.oauthConfigs
                     (fun loginData ctx -> async {
-                        let user = Person {nick = loginData.Name; status = ""; email = None; imageUrl = None}
+                        let imageUrl =
+                            getUserImageUrl loginData.ProviderData
+                            |> Option.orElseWith (fun () -> makeUserImageUrl "wavatar" loginData.Name)
+
+                        let user = Person {nick = loginData.Name; status = ""; email = None; imageUrl = imageUrl}
 
                         let! registerResult = UserStore.register user
                         match registerResult with
                         | Ok (UserId userid) ->
+                            
                             logger.info (Message.eventX "User registered by name {name}"
                                 >> Message.setFieldValue "name" loginData.Name)
+
+                            loginData.ProviderData |> Map.iter(fun name value ->
+                                logger.info (Message.eventX "Provider data {name}={value}"
+                                    >> Message.setFieldValue "name" name >> Message.setFieldValue "value" value)
+                            )
 
                             return! (statefulForSession
                                 >=> sessionStore (fun store -> store.set "userid" userid)
@@ -181,7 +198,8 @@ let root: WebPart =
                         POST >=> (
                             fun ctx -> async {
                                 let nick = (getPayloadString ctx.request).Substring 5
-                                let user = Anonymous {nick = nick; status = ""}
+                                let imageUrl = makeUserImageUrl "monsterid" nick
+                                let user = Anonymous {nick = nick; status = ""; imageUrl = imageUrl}
                                 let! registerResult = UserStore.register user
                                 match registerResult with
                                 | Ok (UserId userid) ->

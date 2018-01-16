@@ -29,9 +29,7 @@ module Protocol =
         | Leave of ChannelId
 
     type HelloInfo = {
-        nick: string    // TODO user ChanUserInfo for myself
-        name: string
-        email: string option
+        me: ChanUserInfo
         channels: ChannelInfo list
     }
 

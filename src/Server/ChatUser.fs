@@ -3,7 +3,7 @@ module ChatUser
 type UserId = UserId of string
 
 type PersonalInfo = {nick: string; status: string; email: string option; imageUrl: string option}
-type AnonymousUserInfo = {nick: string; status: string}
+type AnonymousUserInfo = {nick: string; status: string; imageUrl: string option}
 
 type UserKind =
 | Person of PersonalInfo
@@ -17,8 +17,17 @@ let getUserId (RegisteredUser (userid,_)) = userid
 
 let private empty = {nick = ""; status = ""; email = None; imageUrl = None}
 
-let makeUser nick = Person {empty with nick = nick}
-let makeBot nick  =  Bot {empty with nick = nick}
+let makeUserImageUrl deflt = // FIXME find the place for the method
+    let computeMd5 (text: string) =
+        use md5 = System.Security.Cryptography.MD5.Create()
+        let hash = md5.ComputeHash(System.Text.Encoding.UTF8.GetBytes(text))
+        System.BitConverter.ToString(hash).Replace("-", "").ToLower()
+
+    function
+    | null | "" -> None
+    | name -> name |> (computeMd5 >> sprintf "https://www.gravatar.com/avatar/%s?d=%s" >< deflt >> Some)
+
+let makeBot nick  =  Bot {empty with nick = nick; imageUrl = makeUserImageUrl "robohash" nick}
 
 let getUserNick = function
     | Anonymous {nick = nick}

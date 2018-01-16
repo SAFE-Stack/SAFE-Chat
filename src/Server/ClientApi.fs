@@ -32,15 +32,15 @@ module private Implementation =
     let makeBlank userid nick :Protocol.ChanUserInfo =
         {id = userid; nick = nick; isbot = false; status = ""; email = null; imageUrl = null}
     let mapUserToProtocol (RegisteredUser (UserId userid, user)) :Protocol.ChanUserInfo =
-        let tonull = Option.defaultValue null
+        let tostr = Option.toObj
 
         match user with
         | Person u ->
-            {id = userid; nick = u.nick; isbot = false; status = u.status; email = tonull u.email; imageUrl = tonull u.imageUrl}
+            {id = userid; nick = u.nick; isbot = false; status = u.status; email = tostr u.email; imageUrl = Option.toObj u.imageUrl}
         | Bot u ->
-            {id = userid; nick = u.nick; isbot = true; status = u.status; email = tonull u.email; imageUrl = tonull u.imageUrl}
+            {id = userid; nick = u.nick; isbot = true; status = u.status; email = tostr u.email; imageUrl = tostr u.imageUrl}
         | Anonymous info ->
-            {makeBlank userid info.nick with isbot = false; status = info.status}
+            {makeBlank userid info.nick with isbot = false; status = info.status; imageUrl = tostr info.imageUrl}
         | System ->
             makeBlank userid "system"
        
@@ -128,16 +128,14 @@ let connectWebSocket (actorSystem: ActorSystem) server me : WebPart =
                 match message with
 
                 | Protocol.ServerMsg.Greets ->
-                    let! serverChannels = server |> (listChannels (fun _ -> true))
-
                     let makeChanInfo chanData =
                         { mapChanInfo chanData with joined = session.channels |> Map.containsKey chanData.id}
 
                     let makeHello channels =
-                        let meUserInfo = mapUserToProtocol me
-                        Protocol.ClientMsg.Hello {nick = meUserInfo.nick; name = ""; email = None; channels = channels}
+                        Protocol.ClientMsg.Hello {me = mapUserToProtocol me; channels = channels |> List.map makeChanInfo}
 
-                    return serverChannels |> Result.map (List.map makeChanInfo >> makeHello) |> reply ""
+                    let! serverChannels = server |> (listChannels (fun _ -> true))
+                    return serverChannels |> (Result.map makeHello >> reply "")
 
                 | Protocol.ServerMsg.Join chanIdStr ->
                     match chanIdStr with

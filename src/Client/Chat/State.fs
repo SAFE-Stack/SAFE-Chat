@@ -17,7 +17,7 @@ open FsChat
 module Conversions =
 
     let mapUserInfo (u: Protocol.ChanUserInfo): UserInfo =
-        {Nick = u.nick; IsBot = u.isbot; Online = true}
+        {Id = u.id; Nick = u.nick; IsBot = u.isbot; Online = true; ImageUrl = Option.ofObj u.imageUrl}
 
     let mapChannel (ch: Protocol.ChannelInfo): ChannelData =
         let usersInfo =
@@ -87,7 +87,7 @@ let updateUsers (f: UsersInfo -> UsersInfo) =
     (fun ch -> { ch with Users = f ch.Users})
 
 let private getUser (userId: string) (users: UsersInfo) : UserInfo =
-    let fallback () = { Nick = "#" + userId; IsBot = false; Online = true}
+    let fallback () = {Id = userId; Nick = "Unknown #" + userId; IsBot = false; Online = true; ImageUrl = None}
 
     match users with
     | UserCount _ -> fallback()
@@ -137,14 +137,16 @@ let socketMsgUpdate (msg: Protocol.ClientMsg) prevState : ChatState * Cmd<MsgTyp
     match prevState with
     | Connected (me, prevChatState) ->
         match msg with
+
         | Protocol.ClientMsg.Hello hello ->
             let chatData =
               { ChatData.Empty with
                     socket = prevChatState.socket
                     Channels = hello.channels |> List.map (fun ch -> ch.id, Conversions.mapChannel ch) |> Map.ofList
                     }
-            let me: UserInfo = { Nick = hello.nick; Online = true; IsBot = false }
+            let me = Conversions.mapUserInfo hello.me
             Connected (me, chatData), Cmd.none
+
         | Protocol.ClientMsg.JoinedChannel chanInfo ->
             Connected (me,
                 {prevChatState with
