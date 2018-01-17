@@ -2,7 +2,7 @@ module ChatUser
 
 type UserId = UserId of string
 
-type PersonalInfo = {nick: string; status: string; email: string option; imageUrl: string option}
+type PersonalInfo = {oauthId: string option; nick: string; status: string; email: string option; imageUrl: string option}
 type AnonymousUserInfo = {nick: string; status: string; imageUrl: string option}
 
 type UserKind =
@@ -15,7 +15,7 @@ type RegisteredUser = RegisteredUser of UserId * UserKind
 
 let getUserId (RegisteredUser (userid,_)) = userid
 
-let private empty = {nick = ""; status = ""; email = None; imageUrl = None}
+let empty = {nick = ""; status = ""; email = None; imageUrl = None; oauthId = None}
 
 let makeUserImageUrl deflt = // FIXME find the place for the method
     let computeMd5 (text: string) =
@@ -26,8 +26,6 @@ let makeUserImageUrl deflt = // FIXME find the place for the method
     function
     | null | "" -> None
     | name -> name |> (computeMd5 >> sprintf "https://www.gravatar.com/avatar/%s?d=%s" >< deflt >> Some)
-
-let makeBot nick  =  Bot {empty with nick = nick; imageUrl = makeUserImageUrl "robohash" nick}
 
 let getUserNick = function
     | Anonymous {nick = nick}

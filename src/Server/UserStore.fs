@@ -19,35 +19,54 @@ module UserIds =
     let system = UserId "sys"
     let echo = UserId "echo"
 
-module Implementation =
+module private Implementation =
 
     let createUser userid user = Map.add userid (RegisteredUser(userid, user))
+    let makeBot nick = Bot {ChatUser.empty with nick = nick; imageUrl = makeUserImageUrl "robohash" nick}
 
     let initialState = {
         nextId = 100
         users = Map.empty
             |> createUser UserIds.system System
-            |> createUser UserIds.echo (ChatUser.makeBot "echo")
+            |> createUser UserIds.echo (makeBot "echo")
     }
 
-    let lookupByNick nickName (users: Map<UserId, RegisteredUser>) =
-        let lookup _ (RegisteredUser (_, user)) =
+    // in case user is logging anonymously check he cannot squote someone's nick
+    let (|AnonymousBusyNick|_|) (users: Map<UserId, RegisteredUser>) =
+        let lookup nickName _ (RegisteredUser (_, user)) =
             getUserNick user = nickName
 
-        users |> Map.tryFindKey lookup
+        function
+        | Anonymous {nick = userNick} ->
+            users |> Map.tryFindKey (lookup userNick) |> Option.map(fun uid -> uid, userNick)
+        | _ -> None
+
+    let (|AlreadyRegisteredOAuth|_|) (users: Map<UserId, RegisteredUser>) =
+        let lookup oauthIdArg _ = function
+            | (RegisteredUser (_, Person {oauthId = Some probe})) -> probe = oauthIdArg
+            | _ -> false
+
+        function
+        | Person {oauthId = Some oauthId} ->
+            users |> Map.tryFindKey (lookup oauthId)
+        | _ -> None
 
     let processMessage (state: State) =
         function
+
         | Register (user, chan) ->
-            let userNick = getUserNick user
-            match state.users |> lookupByNick userNick with
-            | Some (UserId uid) ->
-                sprintf "The nickname %s is already taken by user %s" userNick uid |> (Error >> chan.Reply)
+            match user with
+            | AnonymousBusyNick state.users (UserId uid, nickname) ->
+                sprintf "The nickname %s is already taken by user %s" nickname uid |> (Error >> chan.Reply)
+                state
+            | AlreadyRegisteredOAuth state.users userId ->
+                Ok userId |> chan.Reply
                 state
             | _ ->
                 let userId = UserId <| state.nextId.ToString()
                 Ok userId |> chan.Reply
                 {state with nextId = state.nextId + 1; users = state.users |> Map.add userId (RegisteredUser (userId, user))}
+
         | GetUser (userId, chan) ->
             state.users |> Map.tryFind userId |> chan.Reply
             state
@@ -71,6 +90,9 @@ open Implementation
 
 let register (user: UserKind) : Result<UserId,string> Async =
     storeAgent.PostAndAsyncReply (fun chan -> Register (user, chan))
+
+let unregister userid =
+    storeAgent.Post (Unregister userid)
 
 let getUser (userId: UserId) : RegisteredUser option Async =
     storeAgent.PostAndAsyncReply (fun chan -> GetUser (userId, chan))

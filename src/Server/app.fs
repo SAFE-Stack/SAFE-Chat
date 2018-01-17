@@ -159,19 +159,16 @@ let root: WebPart =
                             getUserImageUrl loginData.ProviderData
                             |> Option.orElseWith (fun () -> makeUserImageUrl "wavatar" loginData.Name)
 
-                        let user = Person {nick = loginData.Name; status = ""; email = None; imageUrl = imageUrl}
+                        let user = Person {
+                            oauthId = Some loginData.Id
+                            nick = loginData.Name; status = ""; email = None; imageUrl = imageUrl}
 
                         let! registerResult = UserStore.register user
                         match registerResult with
                         | Ok (UserId userid) ->
                             
-                            logger.info (Message.eventX "User registered by name {name}"
+                            logger.info (Message.eventX "User registered via oauth \"{name}\""
                                 >> Message.setFieldValue "name" loginData.Name)
-
-                            loginData.ProviderData |> Map.iter(fun name value ->
-                                logger.info (Message.eventX "Provider data {name}={value}"
-                                    >> Message.setFieldValue "name" name >> Message.setFieldValue "value" value)
-                            )
 
                             return! (statefulForSession
                                 >=> sessionStore (fun store -> store.set "userid" userid)
@@ -215,9 +212,16 @@ let root: WebPart =
                         )
                     ]
                     GET >=> path "/logoff" >=> noCache >=>
-                        deauthenticate >=> FOUND "/logon"
+                        deauthenticate >=> (warbler(fun _ ->
+                            match session with
+                            | UserLoggedOn (RegisteredUser (userid, Anonymous { nick = nick})) ->
+                                logger.info (Message.eventX "LOGOFF: Unregistering anonymous {nick}"
+                                    >> Message.setFieldValue "nick" nick)
+                                do UserStore.unregister userid
+                            | _ -> ()
+                            FOUND "/logon"
+                        ))
 
-                    
                     path "/api/socket" >=>
                         match session with
                         | UserLoggedOn user ->
