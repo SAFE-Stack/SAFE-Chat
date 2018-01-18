@@ -16,7 +16,7 @@ let update (msg: Msg) state: (ChannelData * Msg Cmd) =
     | PostText ->
         match state.PostText with
         | text when text.Trim() <> "" ->
-            {state with PostText = ""}, Cmd.ofMsg (Forward {text = text; chan = state.Id})
+            {state with PostText = ""}, Cmd.ofMsg (Forward text)
         | _ ->
             state, Cmd.none
 

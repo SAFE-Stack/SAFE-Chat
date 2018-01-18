@@ -22,7 +22,7 @@ module UserIds =
 module private Implementation =
 
     let createUser userid user = Map.add userid (RegisteredUser(userid, user))
-    let makeBot nick = Bot {ChatUser.empty with nick = nick; imageUrl = makeUserImageUrl "robohash" nick}
+    let makeBot nick = Bot {ChatUser.empty with nick = nick; imageUrl = makeUserImageUrl "robohash" "echobott"}
 
     let initialState = {
         nextId = 100

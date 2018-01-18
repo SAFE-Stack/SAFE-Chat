@@ -40,10 +40,16 @@ let applicationMsgUpdate (msg: AppMsg) state: (ChatState * MsgType Cmd) =
     | Connected (me, chat) ->
         match msg with
         | Nop -> state, Cmd.none
-        | ChannelMsg (chanId, Forward msg) ->
-            state, Cmd.ofSocketMessage chat.socket (Protocol.UserMessage {msg with chan = chanId})
+
+        | ChannelMsg (chanId, Forward text) ->
+            let message : string -> _ = function
+                | text when text.StartsWith "/" -> Protocol.ControlCommand | _ -> Protocol.UserMessage
+
+            state, Cmd.ofSocketMessage chat.socket (message text {text = text; chan = chanId})
+
         | ChannelMsg (chanId, Msg.Leave) ->
             state, Cmd.ofSocketMessage chat.socket (Protocol.ServerMsg.Leave chanId)
+
         | ChannelMsg (chanId, msg) ->
             match chat.Channels |> Map.tryFind chanId with
             | Some prevChan ->

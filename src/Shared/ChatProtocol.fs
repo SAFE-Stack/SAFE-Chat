@@ -24,6 +24,7 @@ module Protocol =
     type ServerMsg =
         | Greets
         | UserMessage of UserMessageInfo
+        | ControlCommand of UserMessageInfo
         | Join of ChannelId    // TODO add req id (pass back in response message)
         | JoinOrCreate of channelName: string
         | Leave of ChannelId
