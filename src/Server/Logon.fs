@@ -5,9 +5,9 @@ open Suave.Html
 
 open ChatUser
 
-module Views =
-    open UserSession
+type ClientSession = NoSession | UserLoggedOn of RegisteredUser
 
+module Views =
     let private partUser (session : ClientSession) = 
         div ["id", "part-user"] [
             match session with

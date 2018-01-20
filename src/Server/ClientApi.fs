@@ -3,9 +3,7 @@ module RestApi
 
 open System
 open Akka.Actor
-open Akkling
 open Akkling.Streams
-open Akka.Streams
 open Akka.Streams.Dsl
 
 open Suave
@@ -18,188 +16,59 @@ open ChatServer
 open SocketFlow
 
 open FsChat
+open ProtocolConv
 
-let private logger = Log.create "chatapi"
+let logger = Log.create "chatapi"
 
-module private Implementation =
-    type ServerActor = IActorRef<ChatServer.ServerControlMessage>
+type internal IncomingMessage =
+    | ChannelMessage of ChannelId * Message
+    | ControlMessage of Protocol.ServerMsg
+    | Trash of reason: string
 
-    type IncomingMessage =
-        | ChannelMessage of ChannelId * Message
-        | ControlMessage of Protocol.ServerMsg
-        | Trash of reason: string
-
-    let makeBlank userid nick :Protocol.ChanUserInfo =
-        {id = userid; nick = nick; isbot = false; status = ""; email = null; imageUrl = null}
-    let mapUserToProtocol (RegisteredUser (UserId userid, user)) :Protocol.ChanUserInfo =
-        let tostr = Option.toObj
-
-        match user with
-        | Person u ->
-            {id = userid; nick = u.nick; isbot = false; status = u.status; email = tostr u.email; imageUrl = Option.toObj u.imageUrl}
-        | Bot u ->
-            {id = userid; nick = u.nick; isbot = true; status = u.status; email = tostr u.email; imageUrl = tostr u.imageUrl}
-        | Anonymous info ->
-            {makeBlank userid info.nick with isbot = false; status = info.status; imageUrl = tostr info.imageUrl}
-        | System ->
-            makeBlank userid "system"
-       
-    let encodeChannelMessage (getUser: GetUser) channelId : ClientMessage<UserId, Message> -> Protocol.ClientMsg Async =
-        let returnUserEvent f userid = async {
-            let! userResult = getUser userid
-            return f <|
-                match userResult with
-                | Some user -> mapUserToProtocol user
-                | _ -> makeBlank "zz" "unknown"
-        }
-        function
-        | ChatMessage ((id, ts), UserId authorId, Message message) ->
-            async.Return <| Protocol.ChanMsg {id = id; ts = ts; text = message; chan = channelId; author = authorId}
-        | Joined ((id, ts), userid, _) ->
-            returnUserEvent (fun user -> Protocol.UserJoined  ({id = id; ts = ts; user = user}, channelId)) userid
-        | Left ((id, ts), userid, _) ->
-            returnUserEvent (fun user -> Protocol.UserLeft ({id = id; ts = ts; user = user}, channelId)) userid
-
-    let (|ParseChannelId|_|) s = 
-        let (result, value) = Int32.TryParse s
-        if result then Some (ChannelId value) else None
-
-    // extracts message from websocket reply, only handles User input (channel * string)
-    let extractMessage message =
-        try
-            match message with
-            | Text t ->
-                match t |> Json.unjson<Protocol.ServerMsg> with
-                | Protocol.UserMessage {chan = channelId; text = messageText} ->
-                    match channelId with
-                    | ParseChannelId chanId -> ChannelMessage (chanId, Message messageText)
-                    | _ -> Trash "Bad channel id"
-                | message -> ControlMessage message                
-            | x -> Trash <| sprintf "Not a Text message '%A'" x
-        with e ->
-            do logger.error (Message.eventX "Failed to parse message '{msg}': {e}" >> Message.setFieldValue "msg" message  >> Message.setFieldValue "e" e)
-            Trash "exception"
-    let isChannelMessage = function |ChannelMessage _ -> true | _ -> false
-    let isControlMessage = function |ControlMessage _ -> true | _ -> false
-
-    let extractChannelMessage (ChannelMessage (chan, message) | OtherwiseFail (chan, message)) = chan, message
-    let extractControlMessage (ControlMessage message | OtherwiseFail message) = message
-
-    let mapChanInfo ({name = name; topic = topic; id = (ChannelId id)}: ChannelData) : Protocol.ChannelInfo =
-        {id = id.ToString(); name = name; topic = topic; userCount = 0; users = []; joined = false}
-
-    let setJoined v (ch: Protocol.ChannelInfo) =
-        {ch with joined = v}
-
-    let replyErrorProtocol requestId errtext =
-        Protocol.CannotProcess (requestId, errtext) |> Protocol.ClientMsg.Error
-
-    let reply requestId = function
-        | Ok response ->    response
-        | Result.Error e -> replyErrorProtocol requestId e
-
-open Implementation
-open UserStore
-open System
-
-type internal Session(server, me) =
-    // session data
-    let mutable session = UserSession.make server me
-    let mutable listenChannel = None
-
-    let updateSession requestId f = function
-        | Ok (newSession, response) -> session <- newSession; f response
-        | Result.Error e ->            replyErrorProtocol requestId e
-
-    let makeChannelInfoResult v = async {
-        match v with
-        | Ok (arg1, channel: ChannelData) ->
-            let! (userIds: UserId list) = channel.channelActor <? ListUsers
-            let! users = UserStore.getUsers userIds
-            let chaninfo = { mapChanInfo channel with users = users |> List.map mapUserToProtocol}
-            return Ok (arg1, chaninfo)
-        | Result.Error e -> return Result.Error e
-    }
-
-    let (|CommandPrefix|_|) (p:string) (s:string) =
-        if s.StartsWith(p, StringComparison.OrdinalIgnoreCase) then
-            Some(s.Substring(p.Length).TrimStart())
-        else
-            None
-
-    let rec processControlMessage message =
-        async {
-            let requestId = "" // TODO take from server message
-            match message with
-
-            | Protocol.ServerMsg.Greets ->
-                let makeChanInfo chanData =
-                    { mapChanInfo chanData with joined = session.channels |> Map.containsKey chanData.id}
-
-                let makeHello channels =
-                    Protocol.ClientMsg.Hello {me = mapUserToProtocol me; channels = channels |> List.map makeChanInfo}
-
-                let! serverChannels = server |> (listChannels (fun _ -> true))
-                return serverChannels |> (Result.map makeHello >> reply "")
-
-            | Protocol.ServerMsg.Join chanIdStr ->
-                match chanIdStr with
-                | ParseChannelId channelId ->
-                    let! result = session |> UserSession.join listenChannel channelId
-                    let! chaninfo = makeChannelInfoResult result
-                    return chaninfo |> updateSession requestId (setJoined true >> Protocol.JoinedChannel)
-                | _ -> return replyErrorProtocol requestId "bad channel id"
-
-            | Protocol.ServerMsg.JoinOrCreate channelName ->
-                let! channelResult = server |> getOrCreateChannel channelName
-                match channelResult with
-                | Ok channelData ->
-                    let! result = session |> UserSession.join listenChannel channelData.id
-                    let! chaninfo = makeChannelInfoResult result
-                    return chaninfo |> updateSession requestId (setJoined true >> Protocol.JoinedChannel)
-                | Result.Error err ->
-                    return replyErrorProtocol requestId err
-
-            | Protocol.ServerMsg.Leave chanIdStr ->
-                return chanIdStr |> function
-                    | ParseChannelId channelId ->
-                        let result = session |> UserSession.leave channelId
-                        result |> updateSession requestId (fun _ -> Protocol.LeftChannel chanIdStr)
-                    | _ ->
-                        replyErrorProtocol requestId "bad channel id"
-
-            | Protocol.ServerMsg.ControlCommand {text = text; chan = chanIdStr } ->
-                match text.ToLower() with
-                | CommandPrefix "/leave" _ ->
-                    return! processControlMessage (Protocol.ServerMsg.Leave chanIdStr)
-                | CommandPrefix "/join" chanName ->
-                    return! processControlMessage (Protocol.ServerMsg.JoinOrCreate chanName)
-                | _ ->
-                    return replyErrorProtocol requestId "command was not processed"
-
-            | _ ->
-                return replyErrorProtocol requestId "event was not processed"
-        }
-    with
-        member __.ProcessControlMessage(message) = processControlMessage message 
-        member __.SetListenChannel(lsn) = listenChannel <- lsn
+// extracts message from websocket reply, only handles User input (channel * string)
+let internal extractMessage message =
+    try
+        match message with
+        | Text t ->
+            match t |> Json.unjson<Protocol.ServerMsg> with
+            | Protocol.UserMessage {chan = channelId; text = messageText} ->
+                match Int32.TryParse channelId with
+                | true, chanId -> ChannelMessage (ChannelId chanId, Message messageText)
+                | _ -> Trash "Bad channel id"
+            | message -> ControlMessage message                
+        | x -> Trash <| sprintf "Not a Text message '%A'" x
+    with e ->
+        do logger.error (Message.eventX "Failed to parse message '{msg}': {e}" >> Message.setFieldValue "msg" message  >> Message.setFieldValue "e" e)
+        Trash "exception"
 
 let connectWebSocket (actorSystem: ActorSystem) server me : WebPart =
     fun ctx -> async {
-        let session = Session(server, me)
+        let session = UserSession.Session(server, me)
 
         let materializer = actorSystem.Materializer()
         let sessionFlow = createUserSessionFlow<UserId,Message,ChannelId> materializer
-        let controlMessageFlow = Flow.empty<_, Akka.NotUsed> |> Flow.asyncMap 1 session.ProcessControlMessage
 
-        let serverEventsSource: Source<Protocol.ClientMsg, Akka.NotUsed> =
-            let notifyNew sub = startSession server (ChatUser.getUserId me) sub; Akka.NotUsed.Instance
-            let source = Source.actorRef OverflowStrategy.Fail 1 |> Source.mapMaterializedValue notifyNew
+        let isChannelMessage = function |ChannelMessage _ -> true | _ -> false
+        let extractChannelMessage (ChannelMessage (chan, message) | OtherwiseFail (chan, message)) = chan, message
 
-            source |> Source.map (function
-                | AddChannel ch -> ch |> (mapChanInfo >> Protocol.ClientMsg.NewChannel)
-                | DropChannel ch -> ch |> (mapChanInfo >> Protocol.ClientMsg.RemoveChannel)
-            )
+        let isControlMessage = function |ControlMessage _ -> true | _ -> false
+        let extractControlMessage (ControlMessage message | OtherwiseFail message) = message
+
+        let encodeChannelMessage (getUser: GetUser) channelId : ClientMessage<UserId, Message> -> Protocol.ClientMsg Async =
+            let returnUserEvent f userid = async {
+                let! userResult = getUser userid
+                return f <|
+                    match userResult with
+                    | Some user -> mapUserToProtocol user
+                    | _ -> makeBlankUserInfo "zz" "unknown"
+            }
+            function
+            | ChatMessage ((id, ts), UserId authorId, Message message) ->
+                async.Return <| Protocol.ChanMsg {id = id; ts = ts; text = message; chan = channelId; author = authorId}
+            | Joined ((id, ts), userid, _) ->
+                returnUserEvent (fun user -> Protocol.UserJoined  ({id = id; ts = ts; user = user}, channelId)) userid
+            | Left ((id, ts), userid, _) ->
+                returnUserEvent (fun user -> Protocol.UserLeft ({id = id; ts = ts; user = user}, channelId)) userid
 
         let userMessageFlow =
             Flow.empty<IncomingMessage, Akka.NotUsed>
@@ -207,15 +76,14 @@ let connectWebSocket (actorSystem: ActorSystem) server me : WebPart =
             |> Flow.map extractChannelMessage
             // |> Flow.log "User flow"
             |> Flow.viaMat sessionFlow Keep.right
-            |> Flow.asyncMap 1 (fun (ChannelId channelId, message) -> encodeChannelMessage getUser (channelId.ToString()) message)
+            |> Flow.asyncMap 1 (fun (ChannelId channelId, message) -> encodeChannelMessage UserStore.getUser (channelId.ToString()) message)
 
         let controlFlow =
             Flow.empty<IncomingMessage, Akka.NotUsed>
             |> Flow.filter isControlMessage
             |> Flow.map extractControlMessage
             // |> Flow.log "Control flow"
-            |> Flow.via controlMessageFlow
-            |> Flow.mergeMat serverEventsSource Keep.left
+            |> Flow.via session.ControlFlow
 
         let combinedFlow : Flow<IncomingMessage,Protocol.ClientMsg,_> =
             FlowImpl.split2 userMessageFlow controlFlow Keep.left
@@ -227,7 +95,7 @@ let connectWebSocket (actorSystem: ActorSystem) server me : WebPart =
             |> Flow.viaMat combinedFlow Keep.right
             |> Flow.map (Json.json >> Text)
 
-        let materialize materializer (source: Source<WsMessage, Akka.NotUsed>) (sink: Sink<WsMessage, _>) =
+        let materialize materializer (source: Source<WsMessage, _>) (sink: Sink<WsMessage, _>) =
             session.SetListenChannel(
                 source
                 |> Source.viaMat socketFlow Keep.right

@@ -16,10 +16,8 @@ open Akka.Actor
 open Akkling
 
 open ChatUser
-open UserSession
+open Logon
 open Suave.Html
-open ChatServer
-open Suave.Logging
 // ---------------------------------
 // Web app
 // ---------------------------------
