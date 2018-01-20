@@ -21,7 +21,6 @@ type ChannelData = {
     topic: string
     channelActor: ChannelMessage<UserId, Message> IActorRef
 }
-
 and UserSessionData = {
     notifySink: ServerNotifyMessage IActorRef
 }

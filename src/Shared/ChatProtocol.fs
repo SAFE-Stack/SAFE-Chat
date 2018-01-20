@@ -13,10 +13,6 @@ module Protocol =
         id: ChannelId; name: string; userCount: int; topic: string; joined: bool; users: ChanUserInfo list
     }
 
-    type UserEventRec = {
-        id: int; ts: System.DateTime; user: ChanUserInfo
-    }
-
     type UserMessageInfo = {
         text: string; chan: ChannelId
     }
@@ -42,17 +38,27 @@ module Protocol =
         id: int; ts: System.DateTime; text: string; chan: ChannelId; author: UserId
     }
 
+    type UserEventKind =
+        | Joined of ChannelId
+        | Left of ChannelId
+        | Updated of ChannelId
+
+    type UserEventInfo = {
+        id: int; ts: System.DateTime; user: ChanUserInfo
+        evt: UserEventKind
+    }
+
     /// The messages from server to client
     type ClientMsg =
         | Error of ClientErrMsg
         | Hello of HelloInfo
+        | UserUpdated of ChanUserInfo
         | ChanMsg of ChannelMsgInfo
         | JoinedChannel of ChannelInfo  // client joined a channel
         | LeftChannel of chanId: string
 
         // The following types are incomplete
-        | UserJoined of UserEventRec * ChannelId
-        | UserLeft of UserEventRec * ChannelId
+        | UserEvent of UserEventInfo
         | NewChannel of ChannelInfo
         | RemoveChannel of ChannelInfo
 

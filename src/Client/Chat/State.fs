@@ -106,7 +106,7 @@ let appendMessage (msg: Protocol.ChannelMsgInfo) (chan: ChannelData) =
     let newMessage: Message = { Id = msg.id; Ts = msg.ts; Content = UserMessage (msg.text, getUser msg.author chan.Users ) }
     {chan with Messages = chan.Messages @ [newMessage]}
 
-let appendSysMessage verb (ev: Protocol.UserEventRec) (chan: ChannelData) =
+let appendSysMessage verb (ev: Protocol.UserEventInfo) (chan: ChannelData) =
     let newMessage: Message = { Id = ev.id; Ts = ev.ts; Content = SystemMessage <| sprintf "%s %s the channel" ev.user.nick verb}
     {chan with Messages = chan.Messages @ [newMessage]}
 
@@ -115,19 +115,23 @@ let chatUpdate (msg: Protocol.ClientMsg) (state: ChatData) : ChatData * Cmd<MsgT
     | Protocol.ClientMsg.ChanMsg chanMsg ->
         updateChan chanMsg.chan (appendMessage chanMsg) state, Cmd.none
 
-    | Protocol.ClientMsg.UserJoined (ev, chan) ->
-        updateChan chan (updateUsers <| function
-            | UserCount c -> UserCount (c + 1)
-            | UserList m -> m |> Map.add ev.user.id (Conversions.mapUserInfo ev.user) |> UserList
-            >> appendSysMessage "joined" ev
-            ) state, Cmd.none
+    | Protocol.ClientMsg.UserEvent ev ->
+        match ev.evt with
+        | Protocol.Joined chan ->
+            updateChan chan (updateUsers <| function
+                | UserCount c -> UserCount (c + 1)
+                | UserList m -> m |> Map.add ev.user.id (Conversions.mapUserInfo ev.user) |> UserList
+                >> appendSysMessage "joined" ev
+                ) state, Cmd.none
 
-    | Protocol.ClientMsg.UserLeft (ev, chan) ->
-        updateChan chan (updateUsers <| function
-            | UserCount c -> UserCount (if c > 0 then c - 1 else 0)
-            | UserList m -> m |> Map.remove ev.user.id |> UserList
-            >> appendSysMessage "left" ev
-            ) state, Cmd.none
+        | Protocol.Left chan ->
+            updateChan chan (updateUsers <| function
+                | UserCount c -> UserCount (if c > 0 then c - 1 else 0)
+                | UserList m -> m |> Map.remove ev.user.id |> UserList
+                >> appendSysMessage "left" ev
+                ) state, Cmd.none
+        | _ ->
+            state, Cmd.none
 
     | Protocol.ClientMsg.NewChannel chan ->
         { state with Channels = state.Channels |> Map.add chan.id (Conversions.mapChannel chan)}, Cmd.none
@@ -152,6 +156,10 @@ let socketMsgUpdate (msg: Protocol.ClientMsg) prevState : ChatState * Cmd<MsgTyp
                     }
             let me = Conversions.mapUserInfo hello.me
             Connected (me, chatData), Cmd.none
+
+        | Protocol.ClientMsg.UserUpdated newUser ->
+            let me = Conversions.mapUserInfo newUser
+            Connected (me, prevChatState), Cmd.none
 
         | Protocol.ClientMsg.JoinedChannel chanInfo ->
             Connected (me,

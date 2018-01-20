@@ -55,20 +55,22 @@ let connectWebSocket (actorSystem: ActorSystem) server me : WebPart =
         let extractControlMessage (ControlMessage message | OtherwiseFail message) = message
 
         let encodeChannelMessage (getUser: GetUser) channelId : ClientMessage<UserId, Message> -> Protocol.ClientMsg Async =
-            let returnUserEvent f userid = async {
+            let returnUserEvent (id, ts) userid evt = async {
                 let! userResult = getUser userid
-                return f <|
-                    match userResult with
+                let user = function
                     | Some user -> mapUserToProtocol user
                     | _ -> makeBlankUserInfo "zz" "unknown"
+                return Protocol.UserEvent {id = id; ts = ts; user = user userResult; evt = evt}
             }
             function
             | ChatMessage ((id, ts), UserId authorId, Message message) ->
                 async.Return <| Protocol.ChanMsg {id = id; ts = ts; text = message; chan = channelId; author = authorId}
-            | Joined ((id, ts), userid, _) ->
-                returnUserEvent (fun user -> Protocol.UserJoined  ({id = id; ts = ts; user = user}, channelId)) userid
-            | Left ((id, ts), userid, _) ->
-                returnUserEvent (fun user -> Protocol.UserLeft ({id = id; ts = ts; user = user}, channelId)) userid
+            | Joined (idts, userid, _) ->
+                returnUserEvent idts userid (Protocol.Joined channelId)
+            | Left (idts, userid, _) ->
+                returnUserEvent idts userid (Protocol.Left channelId)
+            | Updated (idts, userid) ->
+                returnUserEvent idts userid (Protocol.Updated channelId)
 
         let userMessageFlow =
             Flow.empty<IncomingMessage, Akka.NotUsed>

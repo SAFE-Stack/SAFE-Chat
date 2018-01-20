@@ -8,6 +8,7 @@ type UserStoreMessage =
     | GetUser of UserId * RegisteredUser option AsyncReplyChannel
     | GetUsers of UserId list * (RegisteredUser list AsyncReplyChannel)
     | Unregister of UserId
+    | Update of RegisteredUser * Result<RegisteredUser, string> AsyncReplyChannel
 
 type State = {
     nextId: int
@@ -31,14 +32,34 @@ module private Implementation =
             |> createUser UserIds.echo (makeBot "echo")
     }
 
+    let lookupNick nickName _ (RegisteredUser (_, user)) =
+        getUserNick user = nickName
+
+    let updateUser (users: Map<UserId, RegisteredUser>) (RegisteredUser (userid, newuser)) =
+        let newNick = getUserNick newuser
+        match users |> Map.tryFindKey (lookupNick newNick) with
+        | Some foundUserId when foundUserId <> userid ->
+            Result.Error <| "Updated nick was already taken by other user"
+        | _ ->
+            match users |> Map.tryFind userid with
+            | Some (RegisteredUser (_, user)) ->
+                match user, newuser with
+                | Anonymous _, Anonymous n -> Ok <| Anonymous n
+                | Person p, Person n -> Ok <| Person {n with oauthId = p.oauthId}
+                | Bot p, Bot n -> Ok <| Bot {n with oauthId = p.oauthId} // id cannot be overwritten
+                | _ -> Result.Error <| "Cannot update user because of different type"
+            | _ -> Result.Error <| "User not found, nothing to update"
+            |> function
+            | Ok u ->
+                let newUser = RegisteredUser (userid, u)
+                Ok (newUser, users |> Map.add userid newUser)
+            | Result.Error e -> Result.Error e
+
     // in case user is logging anonymously check he cannot squote someone's nick
     let (|AnonymousBusyNick|_|) (users: Map<UserId, RegisteredUser>) =
-        let lookup nickName _ (RegisteredUser (_, user)) =
-            getUserNick user = nickName
-
         function
         | Anonymous {nick = userNick} ->
-            users |> Map.tryFindKey (lookup userNick) |> Option.map(fun uid -> uid, userNick)
+            users |> Map.tryFindKey (lookupNick userNick) |> Option.map(fun uid -> uid, userNick)
         | _ -> None
 
     let (|AlreadyRegisteredOAuth|_|) (users: Map<UserId, RegisteredUser>) =
@@ -76,7 +97,16 @@ module private Implementation =
         | Unregister userid ->
             {state with users = state.users |> Map.remove userid}
 
-    let storeAgent = MailboxProcessor.Start(fun inbox-> 
+        | Update (user, chan) ->
+            match updateUser state.users user with
+            | Ok(newUser, newState) ->
+                Ok newUser |> chan.Reply
+                {state with users = newState}
+            | Result.Error e ->
+                Result.Error e |> chan.Reply
+                state
+
+    let storeAgent = MailboxProcessor.Start(fun inbox -> 
 
         let rec messageLoop (state: State) =
             async {
@@ -93,6 +123,9 @@ let register (user: UserKind) : Result<UserId,string> Async =
 
 let unregister userid =
     storeAgent.Post (Unregister userid)
+
+let update (user: RegisteredUser) : Result<RegisteredUser,string> Async =
+    storeAgent.PostAndAsyncReply (fun chan -> Update (user, chan))
 
 let getUser (userId: UserId) : RegisteredUser option Async =
     storeAgent.PostAndAsyncReply (fun chan -> GetUser (userId, chan))

@@ -17,11 +17,13 @@ type ClientMessage<'User, 'Message> =
     | ChatMessage of ts: Timestamp * author: 'User * 'Message
     | Joined of ts: Timestamp * user: 'User * all: 'User seq
     | Left of ts: Timestamp * user: 'User * all: 'User seq
+    | Updated of ts: Timestamp * user: 'User
 
 /// Channel actor protocol (server side protocol)
 type ChannelMessage<'User, 'Message> =
     | NewParticipant of user: 'User * subscriber: ClientMessage<'User, 'Message> IActorRef
     | ParticipantLeft of 'User
+    | ParticipantUpdate of 'User
     | NewMessage of 'User * 'Message
     | ListUsers
 
@@ -59,6 +61,11 @@ let createChannel<'User, 'Message when 'User: comparison> (system: ActorSystem) 
             let parties = state.Parties |> Map.remove user
             do dispatch state.Parties <| Left (ts, user, parties |> allMembers)
             incId { state with Parties = parties} |> updateState
+
+        | ParticipantUpdate user ->
+            logger.debug (Message.eventX "Participant updated {user}" >> Message.setFieldValue "user" user)
+            do dispatch state.Parties <| Updated (ts, user)
+            ignored state
 
         | NewMessage (user, message) ->
             if state.Parties |> Map.containsKey user then

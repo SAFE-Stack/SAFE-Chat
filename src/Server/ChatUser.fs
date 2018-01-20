@@ -13,8 +13,6 @@ type UserKind =
 
 type RegisteredUser = RegisteredUser of UserId * UserKind
 
-let getUserId (RegisteredUser (userid,_)) = userid
-
 let empty = {nick = ""; status = ""; email = None; imageUrl = None; oauthId = None}
 
 let makeUserImageUrl deflt = // FIXME find the place for the method
