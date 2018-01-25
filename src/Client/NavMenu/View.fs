@@ -35,7 +35,7 @@ let menu (chatData: ChatState) currentPage dispatch =
           [ ClassName "fs-user" ]
           [ UserAvatar.View.root me.ImageUrl
             h3 [] [str me.Nick]
-            span [] [ str "The first human Spectre"]
+            span [] [ str me.Status]
             button
               [ ClassName "btn"; Title "Logout"
                 OnClick (fun _ -> Browser.location.href <- "/logoff") ]

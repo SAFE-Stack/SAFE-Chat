@@ -1,6 +1,5 @@
 module Channel.View
 
-open Elmish
 open Fable.Core.JsInterop
 open Fable.Helpers.React
 open Props

@@ -61,7 +61,6 @@ module private Implementation =
     let isMember (ChannelList channels) channelId = channels |> Map.containsKey channelId
 
 open Implementation
-open Suave.Logging
 type Session(server, meArg) =
 
     let (RegisteredUser (meUserId, meUserInit)) = meArg
@@ -101,17 +100,23 @@ type Session(server, meArg) =
         return ()
     }
 
-    let updateNick newNick = function
-        | Anonymous person -> Anonymous {person with nick = newNick}
-        | Person person -> Person {person with nick = newNick}
-        | Bot bot -> Bot {bot with nick = newNick}
+    let updateStatus status = function
+        | Anonymous person -> Anonymous {person with status = status}
+        | Person person -> Person {person with status = status}
+        | Bot bot -> Bot {bot with status = status}
         | other -> other
 
-    let updateUserNick requestId = function
+    let updateNick nick = function
+        | Anonymous person -> Anonymous {person with nick = nick}
+        | Person person -> Person {person with nick = nick}
+        | Bot bot -> Bot {bot with nick = nick}
+        | other -> other
+
+    let updateUser requestId fn = function
         | s when System.String.IsNullOrWhiteSpace s ->
-            async.Return <| replyErrorProtocol requestId "Invalid (blank) nick name is not allowed"
+            async.Return <| replyErrorProtocol requestId "Invalid (blank) value is not allowed"
         | newNick -> async {
-            let meNew = meUser |> updateNick newNick
+            let meNew = meUser |> fn newNick
             let! updateResult = UserStore.update (RegisteredUser (meUserId, meNew))
             match updateResult with
             | Ok (RegisteredUser(_, updatedUser)) ->
@@ -180,7 +185,9 @@ type Session(server, meArg) =
                 | CommandPrefix "/join" chanName ->
                     return! processControlMessage (Protocol.ServerMsg.JoinOrCreate chanName)
                 | CommandPrefix "/nick" newNick ->
-                    return! updateUserNick requestId newNick
+                    return! updateUser requestId updateNick newNick
+                | CommandPrefix "/status" newStatus ->
+                    return! updateUser requestId updateStatus newStatus
                 | _ ->
                     return replyErrorProtocol requestId "command was not processed"
 

@@ -18,7 +18,10 @@ open FsChat
 module Conversions =
 
     let mapUserInfo isMe (u: Protocol.ChanUserInfo) :UserInfo =
-        {Id = u.id; Nick = u.nick; IsBot = u.isbot; Online = true; ImageUrl = Option.ofObj u.imageUrl; isMe = isMe u.id}
+        { Id = u.id; Nick = u.nick; IsBot = u.isbot
+          Status = u.status
+          Online = true; ImageUrl = Option.ofObj u.imageUrl
+          isMe = isMe u.id}
 
     let mapChannel isMe (ch: Protocol.ChannelInfo) : ChannelData =
         let usersInfo =
@@ -92,7 +95,9 @@ let updateUsers (f: UsersInfo -> UsersInfo) =
     (fun ch -> { ch with Users = f ch.Users})
 
 let private getUser (userId: string) (users: UsersInfo) : UserInfo =
-    let fallback () = {Id = userId; Nick = "Unknown #" + userId; IsBot = false; Online = true; ImageUrl = None; isMe = false}
+    let fallback () = {
+        Id = userId; Nick = "Unknown #" + userId; Status = ""
+        IsBot = false; Online = true; ImageUrl = None; isMe = false}
 
     match users with
     | UserCount _ -> fallback()
@@ -143,13 +148,15 @@ let chatUpdate isMe (msg: Protocol.ClientMsg) (state: ChatData) : ChatData * Cmd
                 (appendSysMsg ev <| sprintf "%s joined the channel" ev.user.nick)
 
         | Protocol.Updated chan ->
-            let systemMessage = getChanUserNick state chan ev.user.id |> function
-                | None -> sprintf "someone is now known as %s" ev.user.nick
-                | Some name -> sprintf "%s is now known as %s" name ev.user.nick
+            let appendMessage = getChanUserNick state chan ev.user.id |> function
+                | Some newnick when newnick <> ev.user.nick ->
+                    let txt = sprintf "%s is now known as %s" newnick ev.user.nick
+                    (appendSysMsg ev txt)
+                | _ -> id
 
             processUserEvent
                 chan id (Map.add ev.user.id user)
-                (appendSysMsg ev systemMessage)
+                appendMessage
 
         | Protocol.Left chan ->
             processUserEvent
