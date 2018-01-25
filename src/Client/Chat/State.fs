@@ -31,7 +31,7 @@ module Conversions =
         {Id = ch.id; Name = ch.name; Topic = ch.topic; Users = usersInfo; Messages = []; Joined = ch.joined; PostText = ""}
 
 let init () : ChatState * Cmd<MsgType> =
-  NotConnected, Cmd.tryOpenSocket "ws://localhost:8083/api/socket"
+  NotConnected, Cmd.tryOpenSocket <| sprintf "ws://%s/api/socket" Browser.location.host
 
 let applicationMsgUpdate (msg: AppMsg) state: (ChatState * MsgType Cmd) =
 
