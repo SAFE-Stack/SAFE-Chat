@@ -1,7 +1,7 @@
 module Channel.Types
 
-type UserInfo = {Id: string; Nick: string; IsBot: bool; Online: bool; ImageUrl: string option}
-with static member Anon = {Id = "0"; Nick = "anonymous"; IsBot = false; Online = true; ImageUrl = None}
+type UserInfo = {Id: string; Nick: string; IsBot: bool; Online: bool; ImageUrl: string option; isMe: bool}
+with static member Anon = {Id = "0"; Nick = "anonymous"; IsBot = false; Online = true; ImageUrl = None; isMe = false}
 
 type MessageContent =
     | UserMessage of text: string * author: UserInfo

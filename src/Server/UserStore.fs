@@ -35,25 +35,25 @@ module private Implementation =
     let lookupNick nickName _ (RegisteredUser (_, user)) =
         getUserNick user = nickName
 
-    let updateUser (users: Map<UserId, RegisteredUser>) (RegisteredUser (userid, newuser)) =
+    let updateUserKind =
+        function
+        | Anonymous _, Anonymous n -> Ok <| Anonymous n
+        | Person p, Person n -> Ok <| Person {n with oauthId = p.oauthId}
+        | Bot p, Bot n -> Ok <| Bot {n with oauthId = p.oauthId} // id cannot be overwritten
+        | _ -> Result.Error <| "Cannot update user because of different type"
+
+    let updateUser (RegisteredUser (userid, newuser)) (users: Map<UserId, RegisteredUser>) =
         let newNick = getUserNick newuser
         match users |> Map.tryFindKey (lookupNick newNick) with
         | Some foundUserId when foundUserId <> userid ->
             Result.Error <| "Updated nick was already taken by other user"
         | _ ->
             match users |> Map.tryFind userid with
-            | Some (RegisteredUser (_, user)) ->
-                match user, newuser with
-                | Anonymous _, Anonymous n -> Ok <| Anonymous n
-                | Person p, Person n -> Ok <| Person {n with oauthId = p.oauthId}
-                | Bot p, Bot n -> Ok <| Bot {n with oauthId = p.oauthId} // id cannot be overwritten
-                | _ -> Result.Error <| "Cannot update user because of different type"
+            | Some (RegisteredUser (_, user)) -> updateUserKind (user, newuser)
             | _ -> Result.Error <| "User not found, nothing to update"
-            |> function
-            | Ok u ->
+            |> Result.map(fun u ->
                 let newUser = RegisteredUser (userid, u)
-                Ok (newUser, users |> Map.add userid newUser)
-            | Result.Error e -> Result.Error e
+                newUser, users |> Map.add userid newUser )
 
     // in case user is logging anonymously check he cannot squote someone's nick
     let (|AnonymousBusyNick|_|) (users: Map<UserId, RegisteredUser>) =
@@ -98,7 +98,7 @@ module private Implementation =
             {state with users = state.users |> Map.remove userid}
 
         | Update (user, chan) ->
-            match updateUser state.users user with
+            match state.users |> updateUser user with
             | Ok(newUser, newState) ->
                 Ok newUser |> chan.Reply
                 {state with users = newState}

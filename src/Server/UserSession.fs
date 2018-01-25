@@ -61,6 +61,7 @@ module private Implementation =
     let isMember (ChannelList channels) channelId = channels |> Map.containsKey channelId
 
 open Implementation
+open Suave.Logging
 type Session(server, meArg) =
 
     let (RegisteredUser (meUserId, meUserInit)) = meArg
@@ -86,38 +87,40 @@ type Session(server, meArg) =
         | Result.Error e -> return Result.Error e
     }
 
-    let notifyChannels () = async {
+    let notifyChannels message = async {
         do logger.debug (Message.eventX "notifyChannels")
         let (ChannelList channelList) = channels
         let! serverChannels = server |> (listChannels (fun {id = chid} -> Map.containsKey chid channelList))
         match serverChannels with
         | Ok list ->
             do logger.debug (Message.eventX "notifyChannels: {list}" >> Message.setFieldValue "list" list)
-            list |> List.iter(fun chan -> chan.channelActor <! ParticipantUpdate meUserId)
+            list |> List.iter(fun chan -> chan.channelActor <! message)
         | _ ->
             // TODO log the warning/error
             ()
         return ()
-    }        
-    let updateUserNick requestId newNick = async {
-        if System.String.IsNullOrWhiteSpace newNick then
-            return replyErrorProtocol requestId "Invalid (blank) nick name is not allowed"
-        else
-            let meNew =
-                match meUser with
-                | Anonymous person -> Anonymous {person with nick = newNick}
-                | Person person -> Person {person with nick = newNick}
-                | Bot bot -> Bot {bot with nick = newNick}
-                | other -> other
+    }
+
+    let updateNick newNick = function
+        | Anonymous person -> Anonymous {person with nick = newNick}
+        | Person person -> Person {person with nick = newNick}
+        | Bot bot -> Bot {bot with nick = newNick}
+        | other -> other
+
+    let updateUserNick requestId = function
+        | s when System.String.IsNullOrWhiteSpace s ->
+            async.Return <| replyErrorProtocol requestId "Invalid (blank) nick name is not allowed"
+        | newNick -> async {
+            let meNew = meUser |> updateNick newNick
             let! updateResult = UserStore.update (RegisteredUser (meUserId, meNew))
             match updateResult with
             | Ok (RegisteredUser(_, updatedUser)) ->
                 meUser <- updatedUser
-                do! notifyChannels()
+                do! notifyChannels (ParticipantUpdate meUserId)
                 return Protocol.ClientMsg.UserUpdated (mapUserToProtocol <| getMe())
             | Result.Error e ->
                 return replyErrorProtocol requestId e
-    }
+        }
 
     let rec processControlMessage message =
         async {

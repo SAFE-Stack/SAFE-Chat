@@ -24,11 +24,9 @@ let root model dispatch =
             let toChannelMessage m = ChannelMsg (chan, m)
 
             match model.chat with
-            | Connected ( { Nick = myname },chatdata) when chatdata.Channels |> Map.containsKey chan ->
+            | Connected (_,chatdata) when chatdata.Channels |> Map.containsKey chan ->
 
-                let isMe = (=) myname
-
-                Channel.View.root isMe chatdata.Channels.[chan]
+                Channel.View.root chatdata.Channels.[chan]
                   (toChannelMessage >> ApplicationMsg >> ChatDataMsg >> dispatch)
 
             | _ ->

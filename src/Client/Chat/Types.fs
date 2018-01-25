@@ -25,7 +25,6 @@ type AppMsg =
     | CreateJoin
     | Join of chanId: string
 
-    //| Joined of chan: ChannelData  // by name
     | Leave of chanId: string
     | Left of chanId: string
 

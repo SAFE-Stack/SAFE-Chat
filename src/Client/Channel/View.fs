@@ -1,5 +1,6 @@
 module Channel.View
 
+open Elmish
 open Fable.Core.JsInterop
 open Fable.Helpers.React
 open Props
@@ -55,14 +56,15 @@ let chatInfo dispatch (model: ChannelData) =
         [ i [ ClassName "mdi mdi-door-closed mdi-18px" ] []]
     ]
 
-let messageList isMe (messages: Message list) =
+let messageList (messages: Message list) =
     div
       [ ClassName "fs-messages" ]
       [ for m in messages ->
           match m.Content with
           | UserMessage (text, user) ->
+              // Fable.Import.Browser.console.warn <| sprintf "%A %A" text user
               div
-                [ classList ["fs-message", true; "user", isMe user.Nick ] ]
+                [ classList ["fs-message", true; "user", user.isMe ] ]
                 [ div
                     []
                     [ p [] [ str text ]
@@ -80,7 +82,7 @@ let messageList isMe (messages: Message list) =
       ]
 
 
-let root isMe (model: ChannelData) dispatch =
+let root (model: ChannelData) dispatch =
     // let users = model.Users |> function | UserCount _ -> Map.empty | UserList list -> list
     // let getUser author =
     //     users |> Map.tryFind author
@@ -88,7 +90,7 @@ let root isMe (model: ChannelData) dispatch =
 
     [ chatInfo dispatch model
       div [ ClassName "fs-splitter" ] []
-      messageList isMe  model.Messages
+      messageList model.Messages
       div [ ClassName "fs-splitter" ] []
       messageInput dispatch model
      ]

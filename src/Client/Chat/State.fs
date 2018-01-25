@@ -3,6 +3,7 @@ module Chat.State
 open Elmish
 open Elmish.Browser.Navigation
 
+open Fable.Import
 open Fable.Websockets.Elmish
 open Fable.Websockets.Protocol
 open Fable.Websockets.Elmish.Types
@@ -16,17 +17,15 @@ open FsChat
 
 module Conversions =
 
-    let mapUserInfo (u: Protocol.ChanUserInfo): UserInfo =
-        {Id = u.id; Nick = u.nick; IsBot = u.isbot; Online = true; ImageUrl = Option.ofObj u.imageUrl}
+    let mapUserInfo isMe (u: Protocol.ChanUserInfo) :UserInfo =
+        {Id = u.id; Nick = u.nick; IsBot = u.isbot; Online = true; ImageUrl = Option.ofObj u.imageUrl; isMe = isMe u.id}
 
-    let mapChannel (ch: Protocol.ChannelInfo): ChannelData =
+    let mapChannel isMe (ch: Protocol.ChannelInfo) : ChannelData =
         let usersInfo =
             match ch.userCount, ch.users with
             | cnt, [] -> UserCount cnt
-            | _, lst -> lst |> List.map (fun u -> u.id, mapUserInfo u) |> Map.ofList |> UserList
+            | _, lst -> lst |> List.map (fun u -> u.id, mapUserInfo isMe u) |> Map.ofList |> UserList
         {Id = ch.id; Name = ch.name; Topic = ch.topic; Users = usersInfo; Messages = []; Joined = ch.joined; PostText = ""}
-
-open Fable.Import
 
 let init () : ChatState * Cmd<MsgType> =
   NotConnected, Cmd.tryOpenSocket "ws://localhost:8083/api/socket"
@@ -93,7 +92,7 @@ let updateUsers (f: UsersInfo -> UsersInfo) =
     (fun ch -> { ch with Users = f ch.Users})
 
 let private getUser (userId: string) (users: UsersInfo) : UserInfo =
-    let fallback () = {Id = userId; Nick = "Unknown #" + userId; IsBot = false; Online = true; ImageUrl = None}
+    let fallback () = {Id = userId; Nick = "Unknown #" + userId; IsBot = false; Online = true; ImageUrl = None; isMe = false}
 
     match users with
     | UserCount _ -> fallback()
@@ -102,39 +101,63 @@ let private getUser (userId: string) (users: UsersInfo) : UserInfo =
         | Some userInfo -> userInfo
         | None -> fallback()
 
-let appendMessage (msg: Protocol.ChannelMsgInfo) (chan: ChannelData) =
-    let newMessage: Message = { Id = msg.id; Ts = msg.ts; Content = UserMessage (msg.text, getUser msg.author chan.Users ) }
+let appendMessage makeMessage (chan: ChannelData) =
+    {chan with Messages = chan.Messages @ [makeMessage chan]}
+
+let appendSysMsg (ev: Protocol.UserEventInfo) content (chan: ChannelData) =
+    let newMessage: Message = { Id = ev.id; Ts = ev.ts; Content = SystemMessage <| content}
     {chan with Messages = chan.Messages @ [newMessage]}
 
-let appendSysMessage verb (ev: Protocol.UserEventInfo) (chan: ChannelData) =
-    let newMessage: Message = { Id = ev.id; Ts = ev.ts; Content = SystemMessage <| sprintf "%s %s the channel" ev.user.nick verb}
-    {chan with Messages = chan.Messages @ [newMessage]}
-
-let chatUpdate (msg: Protocol.ClientMsg) (state: ChatData) : ChatData * Cmd<MsgType> =
+let getChannelUser userid (chan: ChannelData) =
+    match chan.Users with
+        | UserCount _ -> None
+        | UserList l -> l |> Map.tryFind userid
+let getChanUserNick state chanid userid =
+    state.Channels |> Map.tryFind chanid
+    |> Option.bind (getChannelUser userid)
+    |> Option.map (fun user -> user.Nick)
+    
+let chatUpdate isMe (msg: Protocol.ClientMsg) (state: ChatData) : ChatData * Cmd<MsgType> =
     match msg with
-    | Protocol.ClientMsg.ChanMsg chanMsg ->
-        updateChan chanMsg.chan (appendMessage chanMsg) state, Cmd.none
+    | Protocol.ClientMsg.ChanMsg msg ->
+        let message chan =
+            { Id = msg.id; Ts = msg.ts
+              Content = UserMessage (msg.text, getUser msg.author chan.Users ) }
+        updateChan msg.chan (appendMessage message) state, Cmd.none
 
     | Protocol.ClientMsg.UserEvent ev ->
+
+        let processUserEvent chan countAction listAction updateAction =
+            updateChan chan (updateUsers <| function
+                | UserCount c -> UserCount <| countAction c
+                | UserList m -> listAction m |> UserList
+                >> updateAction
+                ) state, Cmd.none
+        let user = Conversions.mapUserInfo isMe ev.user
+
         match ev.evt with
         | Protocol.Joined chan ->
-            updateChan chan (updateUsers <| function
-                | UserCount c -> UserCount (c + 1)
-                | UserList m -> m |> Map.add ev.user.id (Conversions.mapUserInfo ev.user) |> UserList
-                >> appendSysMessage "joined" ev
-                ) state, Cmd.none
+
+            processUserEvent
+                chan ((+) 1) (Map.add ev.user.id user)
+                (appendSysMsg ev <| sprintf "%s joined the channel" ev.user.nick)
+
+        | Protocol.Updated chan ->
+            let systemMessage = getChanUserNick state chan ev.user.id |> function
+                | None -> sprintf "someone is now known as %s" ev.user.nick
+                | Some name -> sprintf "%s is now known as %s" name ev.user.nick
+
+            processUserEvent
+                chan id (Map.add ev.user.id user)
+                (appendSysMsg ev systemMessage)
 
         | Protocol.Left chan ->
-            updateChan chan (updateUsers <| function
-                | UserCount c -> UserCount (if c > 0 then c - 1 else 0)
-                | UserList m -> m |> Map.remove ev.user.id |> UserList
-                >> appendSysMessage "left" ev
-                ) state, Cmd.none
-        | _ ->
-            state, Cmd.none
+            processUserEvent
+                chan id (Map.remove ev.user.id)
+                (appendSysMsg ev <| sprintf "%s left the channel" ev.user.nick)
 
     | Protocol.ClientMsg.NewChannel chan ->
-        { state with Channels = state.Channels |> Map.add chan.id (Conversions.mapChannel chan)}, Cmd.none
+        { state with Channels = state.Channels |> Map.add chan.id (Conversions.mapChannel isMe chan)}, Cmd.none
 
     | Protocol.ClientMsg.RemoveChannel chan ->
         { state with Channels = state.Channels |> Map.remove chan.id }, Cmd.none
@@ -144,28 +167,34 @@ let chatUpdate (msg: Protocol.ClientMsg) (state: ChatData) : ChatData * Cmd<MsgT
         state, Cmd.none
 
 let socketMsgUpdate (msg: Protocol.ClientMsg) prevState : ChatState * Cmd<MsgType> =
+    let isMe =
+        match prevState with
+        | Connected (me,_) -> (=) me.Id
+        | _ -> fun _ -> false
     match prevState with
     | Connected (me, prevChatState) ->
         match msg with
 
         | Protocol.ClientMsg.Hello hello ->
+            let me = Conversions.mapUserInfo ((=) hello.me.id) hello.me
             let chatData =
               { ChatData.Empty with
                     socket = prevChatState.socket
-                    Channels = hello.channels |> List.map (fun ch -> ch.id, Conversions.mapChannel ch) |> Map.ofList
+                    Channels = hello.channels |> List.map (fun ch -> ch.id, Conversions.mapChannel isMe ch) |> Map.ofList
                     }
-            let me = Conversions.mapUserInfo hello.me
             Connected (me, chatData), Cmd.none
 
         | Protocol.ClientMsg.UserUpdated newUser ->
-            let me = Conversions.mapUserInfo newUser
-            Connected (me, prevChatState), Cmd.none
+            let meNew = Conversions.mapUserInfo isMe newUser
+            Connected (meNew, prevChatState), Cmd.none
 
         | Protocol.ClientMsg.JoinedChannel chanInfo ->
+            let chanData = Conversions.mapChannel isMe chanInfo
             Connected (me,
                 {prevChatState with
-                    Channels = prevChatState.Channels |> Map.add chanInfo.id (Conversions.mapChannel chanInfo)}),
+                    Channels = prevChatState.Channels |> Map.add chanInfo.id chanData}),
                 Channel chanInfo.id |> toHash |> Navigation.newUrl
+
         | Protocol.ClientMsg.LeftChannel channelId ->
             let chan = prevChatState.Channels |> Map.tryFind channelId
             match chan with
@@ -177,8 +206,9 @@ let socketMsgUpdate (msg: Protocol.ClientMsg) prevState : ChatState * Cmd<MsgTyp
             | _ ->
                 printfn "Channel not found %s" channelId
                 prevState, Cmd.none
+
         | protocolMsg ->
-            let chatData, cmds = chatUpdate protocolMsg prevChatState
+            let chatData, cmds = chatUpdate isMe protocolMsg prevChatState
             Connected (me, chatData), cmds
     | other ->
         printfn "Socket message %A" other
