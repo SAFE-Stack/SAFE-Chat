@@ -16,14 +16,15 @@ let menuItem htmlProp name topic isCurrent =
       [ str name
         span [] [str topic]]
 
-let menuItemChannel (ch: ChannelData) currentPage = 
+let menuItemChannel (ch: ChannelInfo) currentPage = 
     let targetRoute = Channel ch.Id
     let jump _ = Browser.location.hash <- toHash targetRoute
     menuItem (OnClick jump) ch.Name ch.Topic (targetRoute = currentPage)
 
-let menuItemChannelJoin dispatch (ch: ChannelData) = 
-    let join _ = dispatch (Join ch.Id)
-    menuItem (OnClick join) ch.Name ch.Topic false
+let menuItemChannelJoin dispatch = 
+    let join chid _ = chid |> Join |> dispatch
+    fun (ch: ChannelInfo) ->
+      menuItem (OnClick <| join ch.Id) ch.Name ch.Topic false
 
 let menu (chatData: ChatState) currentPage dispatch =
     match chatData with
@@ -42,12 +43,12 @@ let menu (chatData: ChatState) currentPage dispatch =
               [ i [ ClassName "mdi mdi-logout-variant"] [] ]
            ]
         yield h2 []
-           [ str "My Channels"
-             button
-               [ ClassName "btn"; Title "Create New"
-                 OnClick (fun _ -> (if opened then None else Some "") |> (SetNewChanName >> dispatch)) ]
-               [ i [ classList [ "mdi", true; "mdi-close", opened; "mdi-plus", not opened ] ] []]
-           ]
+          [ str "My Channels"
+            button
+              [ ClassName "btn"; Title "Create New"
+                OnClick (fun _ -> (if opened then None else Some "") |> (SetNewChanName >> dispatch)) ]
+              [ i [ classList [ "mdi", true; "mdi-close", opened; "mdi-plus", not opened ] ] []]
+          ]
         yield input
           [ Type "text"
             classList ["fs-new-channel", true; "open", opened]
@@ -59,16 +60,15 @@ let menu (chatData: ChatState) currentPage dispatch =
             ]
 
         for (_, ch) in chat.Channels |> Map.toSeq do
-            if ch.Joined then
-                yield menuItemChannel ch currentPage
+          yield menuItemChannel ch.Info currentPage
 
         yield h2 []
-           [ str "All Channels"
-             button
-               [ ClassName "btn"; Title "Search" ]
-               [ i [ ClassName "mdi mdi-magnify" ] []]
-           ]
-        for (_, ch) in chat.Channels |> Map.toSeq do
-            if not ch.Joined then
+            [ str "All Channels"
+              button
+                [ ClassName "btn"; Title "Search" ]
+                [ i [ ClassName "mdi mdi-magnify" ] []]
+            ]
+        for (chid, ch) in chat.ChannelList |> Map.toSeq do
+            if chat.Channels |> Map.containsKey chid then
                 yield menuItemChannelJoin dispatch ch
       ]

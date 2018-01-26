@@ -45,9 +45,9 @@ let chatInfo dispatch (model: ChannelData) =
   div
     [ ClassName "fs-chat-info" ]
     [ h1
-        [] [ str model.Name ]
+        [] [ str model.Info.Name ]
       span
-        [] [ str model.Topic ]
+        [] [ str model.Info.Topic ]
       button
         [ ClassName "btn"
           Title "Leave"
@@ -55,7 +55,7 @@ let chatInfo dispatch (model: ChannelData) =
         [ i [ ClassName "mdi mdi-door-closed mdi-18px" ] []]
     ]
 
-let messageList (messages: Message list) =
+let messageList (messages: Message Envelope list) =
     div
       [ ClassName "fs-messages" ]
       [ for m in messages ->

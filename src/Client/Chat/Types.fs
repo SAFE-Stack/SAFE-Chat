@@ -8,25 +8,26 @@ open Channel.Types
 
 type ChatData = {
     socket: SocketHandle<Protocol.ServerMsg, Protocol.ClientMsg>
-    Channels: Map<string, ChannelData>
+    ChannelList: Map<ChannelId,ChannelInfo>
+    Channels: Map<ChannelId, ChannelData>
     NewChanName: string option   // name for new channel (part of SetCreateChanName), None - panel is hidden
-    }
-    with static member Empty = {socket = SocketHandle.Blackhole(); Channels = Map.empty; NewChanName = None}
+} with
+    static member Empty = {
+        socket = SocketHandle.Blackhole()
+        ChannelList = Map.empty; Channels = Map.empty; NewChanName = None}
 
 type ChatState =
     | NotConnected
     | Connected of UserInfo * ChatData
 
-// TODO shorten the list
 type AppMsg =
     | Nop
-    | ChannelMsg of chanId: string * Channel.Types.Msg
+    | ChannelMsg of ChannelId * Channel.Types.Msg
     | SetNewChanName of string option
     | CreateJoin
     | Join of chanId: string
 
     | Leave of chanId: string
-    | Left of chanId: string
-
+ 
 // TODO rename to Msg
 type MsgType = Msg<Protocol.ServerMsg, Protocol.ClientMsg, AppMsg>
