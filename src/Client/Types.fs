@@ -1,7 +1,7 @@
 module App.Types
 
 type Msg =
-  | ChatDataMsg of Chat.Types.MsgType
+  | ChatDataMsg of Chat.Types.Msg
 
 type Model = {
     currentPage: Router.Route

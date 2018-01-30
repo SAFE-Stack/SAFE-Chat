@@ -95,7 +95,7 @@ type Session(server, meArg) =
             do logger.debug (Message.eventX "notifyChannels: {list}" >> Message.setFieldValue "list" list)
             list |> List.iter(fun chan -> chan.channelActor <! message)
         | _ ->
-            // TODO log the warning/error
+            do logger.error (Message.eventX "notifyChannel: Failed to get channel list")
             ()
         return ()
     }

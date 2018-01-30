@@ -29,5 +29,4 @@ type AppMsg =
 
     | Leave of chanId: string
  
-// TODO rename to Msg
-type MsgType = Msg<Protocol.ServerMsg, Protocol.ClientMsg, AppMsg>
+type Msg = Msg<Protocol.ServerMsg, Protocol.ClientMsg, AppMsg>
