@@ -3,7 +3,7 @@ module Chat.State
 open Elmish
 open Elmish.Browser.Navigation
 
-open Fable.Import
+open Fable.Import.Browser
 open Fable.Websockets.Elmish
 open Fable.Websockets.Protocol
 open Fable.Websockets.Elmish.Types
@@ -20,14 +20,16 @@ module Conversions =
     let mapUserInfo isMe (u: Protocol.ChanUserInfo) :UserInfo =
         { Id = u.id; Nick = u.nick; IsBot = u.isbot
           Status = u.status
-          Online = true; ImageUrl = Option.ofObj u.imageUrl
+          Online = true; ImageUrl = Core.Option.ofObj u.imageUrl
           isMe = isMe u.id}
 
     let mapChannel (ch: Protocol.ChannelInfo) : ChannelInfo =
         {Id = ch.id; Name = ch.name; Topic = ch.topic; UserCount = ch.userCount}
 
 let init () : ChatState * Cmd<MsgType> =
-  NotConnected, Cmd.tryOpenSocket <| sprintf "ws://%s/api/socket" Browser.location.host
+    let socketAddr = sprintf "ws://%s/api/socket" location.host
+    console.debug ("Opening socket at '%s'", socketAddr)
+    NotConnected, Cmd.tryOpenSocket socketAddr
 
 let updateChanCmd chanId (f: ChannelData -> ChannelData * Channel.Types.Msg Cmd) (chat: ChatData) : ChatData * Chat.Types.AppMsg Cmd=
     match chat.Channels |> Map.tryFind chanId with
@@ -38,7 +40,7 @@ let updateChanCmd chanId (f: ChannelData -> ChannelData * Channel.Types.Msg Cmd)
             { chat with Channels = chat.Channels |> Map.add chanId newData },
               cmd |> Cmd.map (fun x -> Types.ChannelMsg (chanId, x))
     | None ->
-        Browser.console.error ("Channel %s update failed - channel not found", chanId)
+        console.error ("Channel %s update failed - channel not found", chanId)
         chat, Cmd.none
 
 let updateChan chanId (f: ChannelData -> ChannelData) (chat: ChatData) : ChatData =
@@ -48,7 +50,7 @@ let updateChan chanId (f: ChannelData -> ChannelData) (chat: ChatData) : ChatDat
         | newData when newData = channel -> chat
         | newData -> { chat with Channels = chat.Channels |> Map.add chanId newData }
     | None ->
-        Browser.console.error ("Channel %s update failed - channel not found", chanId)
+        console.error ("Channel %s update failed - channel not found", chanId)
         chat
 
 let applicationMsgUpdate (msg: AppMsg) (state: ChatData) :(ChatData * MsgType Cmd) =
@@ -89,7 +91,7 @@ let unknownUser userId = {
     IsBot = false; Online = true; ImageUrl = None; isMe = false}
 
 let private getUser (userId: string) (users: Map<UserId,UserInfo>) : UserInfo =
-    users |> Map.tryFind userId |> Option.defaultWith (fun () -> unknownUser userId)
+    users |> Map.tryFind userId |> Core.Option.defaultWith (fun () -> unknownUser userId)
     
 let chatUpdate isMe (msg: Protocol.ClientMsg) (state: ChatData) : ChatData * Cmd<MsgType> =
     match msg with
@@ -103,7 +105,7 @@ let chatUpdate isMe (msg: Protocol.ClientMsg) (state: ChatData) : ChatData * Cmd
         let user = Conversions.mapUserInfo isMe ev.user
 
         let chan, message =
-            match ev.evt with
+            ev.evt |> function
             | Protocol.Joined chan -> chan, Channel.Types.UserJoined user
             | Protocol.Left chan -> chan, Channel.Types.UserLeft ev.user.id
             | Protocol.Updated chan -> chan, Channel.Types.UserUpdated user
@@ -142,12 +144,15 @@ let socketMsgUpdate msg =
         | Protocol.ClientMsg.JoinedChannel chanInfo ->
             let channel = Conversions.mapChannel chanInfo
             let users = chanInfo.users |> List.map (Conversions.mapUserInfo isMe)
-            let (chanData, cmds) =
+            let (chanData, cmd) =
                 Channel.State.init() |> fst
                 |> Channel.State.update (Init (channel, users))
                 // Conversions.mapChannel isMe chanInfo
             Connected (me, {chat with Channels = chat.Channels |> Map.add chanInfo.id chanData}),
-                Channel chanInfo.id |> toHash |> Navigation.newUrl
+                Cmd.batch [
+                    cmd |> Cmd.map (fun msg -> ChannelMsg (chanInfo.id, msg) |> ApplicationMsg)
+                    Channel chanInfo.id |> toHash |> Navigation.newUrl
+                ]
 
         | Protocol.ClientMsg.LeftChannel channelId ->
             chat.Channels |> Map.tryFind channelId
@@ -160,24 +165,24 @@ let socketMsgUpdate msg =
                 state, Cmd.none
 
         | protocolMsg ->
-            let chatData, cmds = chatUpdate isMe protocolMsg chat
-            Connected (me, chatData), cmds
+            let chatData, cmd = chatUpdate isMe protocolMsg chat
+            Connected (me, chatData), cmd
     | other ->
         printfn "Socket message %A" other
         (other, Cmd.none)
 
-let inline update msg prevState : ChatState * Cmd<MsgType> = 
+let update msg state : ChatState * Cmd<MsgType> = 
     match msg with
     | ApplicationMsg amsg ->
-        match prevState with
+        match state with
         | Connected (me, chat) ->
             let newChat, cmd = applicationMsgUpdate amsg chat
             Connected(me, newChat), cmd
         | _ ->
-            Browser.console.error <| "Failed to process channel message. Server is not connected"
-            prevState, Cmd.none
+            console.error <| "Failed to process channel message. Server is not connected"
+            state, Cmd.none
     | WebsocketMsg (socket, Opened) ->
         Connected (UserInfo.Anon, { ChatData.Empty with socket = socket }), Cmd.ofSocketMessage socket Protocol.ServerMsg.Greets
     | WebsocketMsg (_, Msg socketMsg) ->
-        socketMsgUpdate socketMsg prevState
-    | _ -> (prevState, Cmd.none)
+        socketMsgUpdate socketMsg state
+    | _ -> (state, Cmd.none)

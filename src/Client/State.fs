@@ -3,14 +3,13 @@ module App.State
 open Elmish
 open Elmish.Browser.Navigation
 open Fable.Websockets.Elmish
-open Fable.Import.Browser
 open Router
 open Types
 
 let urlUpdate (result: Option<Route>) model =
     match result with
     | None ->
-        console.error("Error parsing url")
+        // console.error("Error parsing url")
         model, Navigation.modifyUrl  "#" // no matching route - go home
         // model,Navigation.modifyUrl (toHash model.currentPage)
     | Some route ->

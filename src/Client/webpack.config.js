@@ -34,11 +34,17 @@ module.exports = {
         ]
     },
     devServer: {
-        proxy: [{
-            context: ['/api', '/', '/logon', '/logoff', '/logonfast'],
-            target: 'http://localhost:' + port,
-            changeOrigin: true
-        }],
+        proxy: [
+            {
+                context: ['/api/socket'],
+                target: 'ws://localhost:' + port,
+                ws: true
+            },
+            {
+                context: ['/api', '/', '/logon', '/logoff', '/logonfast'],
+                target: 'http://localhost:' + port,
+                changeOrigin: true
+            }],
         hot: true,
         inline: true
       },

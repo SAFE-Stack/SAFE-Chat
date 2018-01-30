@@ -69,6 +69,6 @@ let menu (chatData: ChatState) currentPage dispatch =
                 [ i [ ClassName "mdi mdi-magnify" ] []]
             ]
         for (chid, ch) in chat.ChannelList |> Map.toSeq do
-            if chat.Channels |> Map.containsKey chid then
+            if chat.Channels |> Map.containsKey chid |> not then
                 yield menuItemChannelJoin dispatch ch
       ]
