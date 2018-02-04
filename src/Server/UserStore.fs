@@ -32,7 +32,7 @@ module private Implementation =
             |> createUser UserIds.echo (makeBot "echo")
     }
 
-    let lookupNick nickName _ (RegisteredUser (_, user)) =
+    let lookupNick nickName _ user =
         getUserNick user = nickName
 
     let updateUserKind =
@@ -42,8 +42,8 @@ module private Implementation =
         | Bot p, Bot n -> Ok <| Bot {n with oauthId = p.oauthId} // id cannot be overwritten
         | _ -> Result.Error <| "Cannot update user because of different type"
 
-    let updateUser (RegisteredUser (userid, newuser)) (users: Map<UserId, RegisteredUser>) =
-        let newNick = getUserNick newuser
+    let updateUser (RegisteredUser (userid, newuser) as uxx) (users: Map<UserId, RegisteredUser>) =
+        let newNick = getUserNick uxx
         match users |> Map.tryFindKey (lookupNick newNick) with
         | Some foundUserId when foundUserId <> userid ->
             Result.Error <| "Updated nick was already taken by other user"

@@ -103,7 +103,7 @@ let createChannelFlow<'User, 'Message> (channelActor: IActorRef<_>) (user: 'User
 /// User session multiplexer. Creates a flow that receives user messages for multiple channels, binds each stream to channel flow
 /// and finally collects the messages from multiple channels into single stream.
 /// When materialized return a "connect" function which, given channel and channel flow, adds it to session. "Connect" returns a killswitch to remove the channel.
-let createUserSessionFlow<'User, 'Message, 'ChanId when 'ChanId: equality>
+let createChannelMuxFlow<'User, 'Message, 'ChanId when 'ChanId: equality>
     (materializer: Akka.Streams.IMaterializer) =
 
     let inhub = BroadcastHub.Sink<'ChanId * 'Message>(bufferSize = 256)

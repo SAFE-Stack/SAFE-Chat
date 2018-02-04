@@ -25,7 +25,8 @@ let makeUserImageUrl deflt = // FIXME find the place for the method
     | null | "" -> None
     | name -> name |> (computeMd5 >> sprintf "https://www.gravatar.com/avatar/%s?d=%s" >< deflt >> Some)
 
-let getUserNick = function
+let getUserNick (RegisteredUser (_, user)) =
+    match user with
     | Anonymous {nick = nick}
     | Bot {nick = nick}
     | Person {nick = nick} -> nick

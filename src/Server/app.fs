@@ -14,10 +14,13 @@ open Suave.State.CookieStateStore
 open Akka.Configuration
 open Akka.Actor
 open Akkling
+open Akkling.Streams
 
 open ChatUser
+open ChatServer
 open Logon
 open Suave.Html
+
 // ---------------------------------
 // Web app
 // ---------------------------------
@@ -222,8 +225,25 @@ let root: WebPart =
 
                     path "/api/socket" >=>
                         match session with
-                        | UserLoggedOn user ->
-                            (RestApi.connectWebSocket actorSystem server user)
+                        | UserLoggedOn user -> fun ctx -> async {
+                            let session = UserSession.Session(server, user)
+                            let materializer = actorSystem.Materializer()
+                            let messageFlow = ChannelFlow.createChannelMuxFlow<UserId,Message,ChannelId> materializer
+                            let socketFlow = UserSessionFlow.create messageFlow session.ControlFlow
+                            let materialize materializer source sink =
+                                session.SetListenChannel(
+                                    source
+                                    |> Source.viaMat socketFlow Keep.right
+                                    |> Source.toMat sink Keep.left
+                                    |> Graph.run materializer |> Some)
+                                ()
+
+                            logger.debug (Message.eventX "Opening socket for {user}" >> Message.setField "user" (getUserNick user))
+                            let! result = WebSocket.handShake (SocketFlow.handleWebsocketMessages actorSystem materialize) ctx
+                            logger.debug (Message.eventX "Closing socket for {user}" >> Message.setField "user" (getUserNick user))
+
+                            return result
+                            }
                         | NoSession ->
                             BAD_REQUEST "Authorization required"
 

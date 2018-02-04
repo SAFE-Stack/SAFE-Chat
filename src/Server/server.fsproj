@@ -22,7 +22,8 @@
     <Compile Include="Diag.fs" />
     <Compile Include="Json.fs" />
     <Compile Include="SocketFlow.fs" />
-    <Compile Include="ClientApi.fs" />
+    <Compile Include="UserSessionFlow.fs" />
+    
     <Compile Include="Logon.fs" />
     <Compile Include="app.fs" />
     <Compile Include="Program.fs" />
