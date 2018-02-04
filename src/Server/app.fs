@@ -17,6 +17,7 @@ open Akkling
 open Akkling.Streams
 
 open ChatUser
+open UserStore
 open ChatServer
 open Logon
 open Suave.Html
@@ -89,11 +90,12 @@ let startChatServer () =
     }  
     """
     let actorSystem = ActorSystem.Create("chatapp", config)
+    let userStore = UserStore.UserStoreNew actorSystem
     let chatServer = ChatServer.startServer actorSystem
-    do Diag.createDiagChannel UserStore.getUser actorSystem chatServer (UserStore.UserIds.echo, "Demo", "Channel for testing purposes. Notice the bots are always ready to keep conversation.")
+    do Diag.createDiagChannel userStore.GetUser actorSystem chatServer (UserStore.UserIds.echo, "Demo", "Channel for testing purposes. Notice the bots are always ready to keep conversation.")
     do ChatServer.createTestChannels actorSystem chatServer
 
-    appServerState <- Some (actorSystem, chatServer)
+    appServerState <- Some (actorSystem, userStore, chatServer)
     ()
 
 let logger = Log.create "fschat"
@@ -110,7 +112,7 @@ let sessionStore setF = context (fun x ->
     | Some state -> setF state
     | None -> never)
 
-let session (f: ClientSession -> WebPart) = 
+let session (userStore: UserStoreNew) (f: ClientSession -> WebPart) = 
     statefulForSession
     >=> context (HttpContext.state >>
         function
@@ -119,7 +121,7 @@ let session (f: ClientSession -> WebPart) =
             match state.get "userid" with
             | Some userid ->
                 fun ctx -> async {
-                    let! result = UserStore.getUser (UserId userid)
+                    let! result = userStore.GetUser (UserId userid)
                     match result with
                     | Some me ->
                         return! f (UserLoggedOn me) ctx
@@ -147,7 +149,7 @@ let getUserImageUrl (claims: Map<string,obj>) : string option =
 let root: WebPart =
   warbler(fun _ ->
     match appServerState with
-    | Some (actorSystem, server) ->
+    | Some (actorSystem, userStore, server) ->
         choose [
             warbler(fun ctx ->
                 // problem is that redirection leads to localhost and authorization does not go well
@@ -164,7 +166,7 @@ let root: WebPart =
                             oauthId = Some loginData.Id
                             nick = loginData.Name; status = ""; email = None; imageUrl = imageUrl}
 
-                        let! registerResult = UserStore.register user
+                        let! registerResult = userStore.Register user
                         match registerResult with
                         | Ok (UserId userid) ->
                             
@@ -182,7 +184,7 @@ let root: WebPart =
                     (fun error -> OK <| sprintf "Authorization failed because of `%s`" error.Message)
                 )
 
-            session (fun session ->
+            session userStore (fun session ->
                 choose [
                     GET >=> path "/" >=> noCache >=> (
                         match session with
@@ -198,7 +200,7 @@ let root: WebPart =
                                 let nick = (getPayloadString ctx.request).Substring 5
                                 let imageUrl = makeUserImageUrl "monsterid" nick
                                 let user = Anonymous {nick = nick; status = ""; imageUrl = imageUrl}
-                                let! registerResult = UserStore.register user
+                                let! registerResult = userStore.Register user
                                 match registerResult with
                                 | Ok (UserId userid) ->
                                     logger.info (Message.eventX "Anonymous login by nick {nick}"
@@ -218,7 +220,7 @@ let root: WebPart =
                             | UserLoggedOn (RegisteredUser (userid, Anonymous { nick = nick})) ->
                                 logger.info (Message.eventX "LOGOFF: Unregistering anonymous {nick}"
                                     >> Message.setFieldValue "nick" nick)
-                                do UserStore.unregister userid
+                                do userStore.Unregister userid
                             | _ -> ()
                             FOUND "/logon"
                         ))
@@ -226,10 +228,10 @@ let root: WebPart =
                     path "/api/socket" >=>
                         match session with
                         | UserLoggedOn user -> fun ctx -> async {
-                            let session = UserSession.Session(server, user)
+                            let session = UserSession.Session(server, userStore, user)
                             let materializer = actorSystem.Materializer()
                             let messageFlow = ChannelFlow.createChannelMuxFlow<UserId,Message,ChannelId> materializer
-                            let socketFlow = UserSessionFlow.create messageFlow session.ControlFlow
+                            let socketFlow = UserSessionFlow.create userStore messageFlow session.ControlFlow
                             let materialize materializer source sink =
                                 session.SetListenChannel(
                                     source

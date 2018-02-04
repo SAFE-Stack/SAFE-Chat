@@ -3,24 +3,24 @@ module UserStore
 // implements users catalog + persistance
 open ChatUser
 
-type UserStoreMessage =
-    | Register of UserKind * Result<UserId, string> AsyncReplyChannel
-    | GetUser of UserId * RegisteredUser option AsyncReplyChannel
-    | GetUsers of UserId list * (RegisteredUser list AsyncReplyChannel)
-    | Unregister of UserId
-    | Update of RegisteredUser * Result<RegisteredUser, string> AsyncReplyChannel
-
-type State = {
-    nextId: int
-    users: Map<UserId, RegisteredUser>
-}
-
 module UserIds =
 
     let system = UserId "sys"
     let echo = UserId "echo"
 
 module private Implementation =
+
+    type UserStoreMessage =
+        | Register of UserKind * Result<UserId, string> AsyncReplyChannel
+        | GetUser of UserId * RegisteredUser option AsyncReplyChannel
+        | GetUsers of UserId list * (RegisteredUser list AsyncReplyChannel)
+        | Unregister of UserId
+        | Update of RegisteredUser * Result<RegisteredUser, string> AsyncReplyChannel
+
+    type State = {
+        nextId: int
+        users: Map<UserId, RegisteredUser>
+    }
 
     let createUser userid user = Map.add userid (RegisteredUser(userid, user))
     let makeBot nick = Bot {ChatUser.empty with nick = nick; imageUrl = makeUserImageUrl "robohash" "echobott"}
@@ -106,6 +106,10 @@ module private Implementation =
                 Result.Error e |> chan.Reply
                 state
 
+open Implementation
+
+type UserStoreNew(actorSystem: Akka.Actor.ActorSystem) =
+
     let storeAgent = MailboxProcessor.Start(fun inbox -> 
 
         let rec messageLoop (state: State) =
@@ -116,20 +120,17 @@ module private Implementation =
 
         messageLoop initialState )
 
-open Implementation
+    member _this.Register(user: UserKind) : Result<UserId,string> Async =
+        storeAgent.PostAndAsyncReply (fun chan -> Register (user, chan))
 
-let register (user: UserKind) : Result<UserId,string> Async =
-    storeAgent.PostAndAsyncReply (fun chan -> Register (user, chan))
+    member _this.Unregister (userid: UserId) : unit =
+        storeAgent.Post (Unregister userid)
 
-let unregister userid =
-    storeAgent.Post (Unregister userid)
+    member _this.Update(user: RegisteredUser) : Result<RegisteredUser,string> Async =
+        storeAgent.PostAndAsyncReply (fun chan -> Update (user, chan))
 
-let update (user: RegisteredUser) : Result<RegisteredUser,string> Async =
-    storeAgent.PostAndAsyncReply (fun chan -> Update (user, chan))
+    member _this.GetUser userid : RegisteredUser option Async =
+        storeAgent.PostAndAsyncReply (fun chan -> GetUser (userid, chan))
 
-let getUser (userId: UserId) : RegisteredUser option Async =
-    storeAgent.PostAndAsyncReply (fun chan -> GetUser (userId, chan))
-
-let getUsers (userIds: UserId list) : RegisteredUser list Async =
-    storeAgent.PostAndAsyncReply (fun chan -> GetUsers (userIds, chan))
-
+    member _this.GetUsers (userids: UserId list) : RegisteredUser list Async =
+        storeAgent.PostAndAsyncReply (fun chan -> GetUsers (userids, chan))

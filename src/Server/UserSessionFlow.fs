@@ -9,6 +9,7 @@ open Suave.Logging
 
 open ChatUser
 open ChannelFlow
+open UserStore
 open ChatServer
 open SocketFlow
 
@@ -38,7 +39,7 @@ let internal extractMessage message =
         do logger.error (Message.eventX "Failed to parse message '{msg}': {e}" >> Message.setFieldValue "msg" message  >> Message.setFieldValue "e" e)
         Trash "exception"
 
-let create sessionFlow controlFlow =
+let create (userStore: UserStoreNew) messageFlow controlFlow =
 
     let isChannelMessage = function |ChannelMessage _ -> true | _ -> false
     let extractChannelMessage (ChannelMessage (chan, message) | OtherwiseFail (chan, message)) = chan, message
@@ -69,8 +70,8 @@ let create sessionFlow controlFlow =
         |> Flow.filter isChannelMessage
         |> Flow.map extractChannelMessage
         // |> Flow.log "User flow"
-        |> Flow.viaMat sessionFlow Keep.right
-        |> Flow.asyncMap 1 (fun (ChannelId channelId, message) -> encodeChannelMessage UserStore.getUser (channelId.ToString()) message)
+        |> Flow.viaMat messageFlow Keep.right
+        |> Flow.asyncMap 1 (fun (ChannelId channelId, message) -> encodeChannelMessage userStore.GetUser (channelId.ToString()) message)
 
     let controlFlow =
         Flow.empty<IncomingMessage, Akka.NotUsed>

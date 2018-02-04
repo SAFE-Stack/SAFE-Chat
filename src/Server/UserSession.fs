@@ -11,6 +11,7 @@ open Suave.Logging
 
 open ChatUser
 open ChannelFlow
+open UserStore
 open ChatServer
 
 open FsChat
@@ -61,7 +62,7 @@ module private Implementation =
     let isMember (ChannelList channels) channelId = channels |> Map.containsKey channelId
 
 open Implementation
-type Session(server, meArg) =
+type Session(server, userStore: UserStoreNew, meArg) =
 
     let (RegisteredUser (meUserId, meUserInit)) = meArg
     let mutable meUser = meUserInit
@@ -80,7 +81,7 @@ type Session(server, meArg) =
         match v with
         | Ok (arg1, channel: ChannelData) ->
             let! (userIds: UserId list) = channel.channelActor <? ListUsers
-            let! users = UserStore.getUsers userIds
+            let! users = userStore.GetUsers userIds
             let chaninfo = { mapChanInfo channel with users = users |> List.map mapUserToProtocol}
             return Ok (arg1, chaninfo)
         | Result.Error e -> return Result.Error e
@@ -117,7 +118,7 @@ type Session(server, meArg) =
             async.Return <| replyErrorProtocol requestId "Invalid (blank) value is not allowed"
         | newNick -> async {
             let meNew = meUser |> fn newNick
-            let! updateResult = UserStore.update (RegisteredUser (meUserId, meNew))
+            let! updateResult = userStore.Update (RegisteredUser (meUserId, meNew))
             match updateResult with
             | Ok (RegisteredUser(_, updatedUser)) ->
                 meUser <- updatedUser
