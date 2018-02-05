@@ -62,7 +62,7 @@ module private Implementation =
     let isMember (ChannelList channels) channelId = channels |> Map.containsKey channelId
 
 open Implementation
-type Session(server, userStore: UserStoreNew, meArg) =
+type Session(server, userStore: UserStore, meArg) =
 
     let (RegisteredUser (meUserId, meUserInit)) = meArg
     let mutable meUser = meUserInit

@@ -1,6 +1,9 @@
 module UserStore
-
 // implements users catalog + persistance
+
+open Akka.Actor
+open Akkling
+
 open ChatUser
 
 module UserIds =
@@ -10,12 +13,18 @@ module UserIds =
 
 module private Implementation =
 
-    type UserStoreMessage =
-        | Register of UserKind * Result<UserId, string> AsyncReplyChannel
-        | GetUser of UserId * RegisteredUser option AsyncReplyChannel
-        | GetUsers of UserId list * (RegisteredUser list AsyncReplyChannel)
+    type ErrorInfo = ErrorInfo of string
+
+    type Command =
+        | Register of UserKind
         | Unregister of UserId
-        | Update of RegisteredUser * Result<RegisteredUser, string> AsyncReplyChannel
+        | Update of RegisteredUser
+        | GetUsers of UserId list
+
+    type ReplyMessage =
+        | RegisterResult of Result<UserId, ErrorInfo>
+        | UpdateResult of Result<RegisteredUser, ErrorInfo>
+        | GetUsersResult of RegisteredUser list
 
     type State = {
         nextId: int
@@ -40,17 +49,17 @@ module private Implementation =
         | Anonymous _, Anonymous n -> Ok <| Anonymous n
         | Person p, Person n -> Ok <| Person {n with oauthId = p.oauthId}
         | Bot p, Bot n -> Ok <| Bot {n with oauthId = p.oauthId} // id cannot be overwritten
-        | _ -> Result.Error <| "Cannot update user because of different type"
+        | _ -> Result.Error <| ErrorInfo "Cannot update user because of different type"
 
-    let updateUser (RegisteredUser (userid, newuser) as uxx) (users: Map<UserId, RegisteredUser>) =
+    let updateUser (RegisteredUser (userid, newuser) as uxx) (users: Map<UserId, RegisteredUser>) : Result<_,ErrorInfo> =
         let newNick = getUserNick uxx
         match users |> Map.tryFindKey (lookupNick newNick) with
         | Some foundUserId when foundUserId <> userid ->
-            Result.Error <| "Updated nick was already taken by other user"
+            Result.Error <| ErrorInfo "Updated nick was already taken by other user"
         | _ ->
             match users |> Map.tryFind userid with
             | Some (RegisteredUser (_, user)) -> updateUserKind (user, newuser)
-            | _ -> Result.Error <| "User not found, nothing to update"
+            | _ -> Result.Error <| ErrorInfo "User not found, nothing to update"
             |> Result.map(fun u ->
                 let newUser = RegisteredUser (userid, u)
                 newUser, users |> Map.add userid newUser )
@@ -72,65 +81,74 @@ module private Implementation =
             users |> Map.tryFindKey (lookup oauthId)
         | _ -> None
 
-    let processMessage (state: State) =
-        function
-
-        | Register (user, chan) ->
+    let processMessage reply state = function
+        | Register (user) ->
             match user with
             | AnonymousBusyNick state.users (UserId uid, nickname) ->
-                sprintf "The nickname %s is already taken by user %s" nickname uid |> (Error >> chan.Reply)
+                sprintf "The nickname %s is already taken by user %s" nickname uid |> (ErrorInfo >> Result.Error >> RegisterResult >> reply)
                 state
             | AlreadyRegisteredOAuth state.users userId ->
-                Ok userId |> chan.Reply
+                Ok userId |> (RegisterResult >> reply)
                 state
             | _ ->
                 let userId = UserId <| state.nextId.ToString()
-                Ok userId |> chan.Reply
+                Ok userId |> (RegisterResult >> reply)
                 {state with nextId = state.nextId + 1; users = state.users |> Map.add userId (RegisteredUser (userId, user))}
 
-        | GetUser (userId, chan) ->
-            state.users |> Map.tryFind userId |> chan.Reply
-            state
-        | GetUsers (userids, chan) ->
-            userids |> List.collect (Map.tryFind >< state.users >> Option.toList) |> chan.Reply
+        | GetUsers (userids) ->
+            userids |> List.collect (Map.tryFind >< state.users >> Option.toList) |> (GetUsersResult >> reply)
             state
         | Unregister userid ->
             {state with users = state.users |> Map.remove userid}
 
-        | Update (user, chan) ->
+        | Update user ->
             match state.users |> updateUser user with
             | Ok(newUser, newState) ->
-                Ok newUser |> chan.Reply
+                Ok newUser |> (UpdateResult >> reply)
                 {state with users = newState}
             | Result.Error e ->
-                Result.Error e |> chan.Reply
+                Result.Error e |> (UpdateResult >> reply)
                 state
+
+    let handler (ctx: Actor<_>) =
+        let rec loop (state: State) = actor {
+
+            let! msg = ctx.Receive()
+            let reply = (<!) (ctx.Sender())
+            let newState = processMessage reply state msg
+            return! loop newState
+        }
+        loop initialState
 
 open Implementation
 
-type UserStoreNew(actorSystem: Akka.Actor.ActorSystem) =
+type UserStore(actorSystem: Akka.Actor.ActorSystem) =
 
-    let storeAgent = MailboxProcessor.Start(fun inbox -> 
-
-        let rec messageLoop (state: State) =
-            async {
-                let! msg = inbox.Receive()
-                return! messageLoop (processMessage state msg)
-            }
-
-        messageLoop initialState )
+    let storeActor = spawn actorSystem "userstore" <| props(handler)
 
     member _this.Register(user: UserKind) : Result<UserId,string> Async =
-        storeAgent.PostAndAsyncReply (fun chan -> Register (user, chan))
+        async {
+            let! (RegisterResult result | OtherwiseFail result) = storeActor <? (Register user)
+            return result |> Result.mapError (fun (ErrorInfo error) -> error)
+        }
 
     member _this.Unregister (userid: UserId) : unit =
-        storeAgent.Post (Unregister userid)
+        storeActor <! (Unregister userid)
 
     member _this.Update(user: RegisteredUser) : Result<RegisteredUser,string> Async =
-        storeAgent.PostAndAsyncReply (fun chan -> Update (user, chan))
+        async {
+            let! (UpdateResult result | OtherwiseFail result) = storeActor <? (Update user)
+            return result |> Result.mapError (fun (ErrorInfo error) -> error)
+        }
 
     member _this.GetUser userid : RegisteredUser option Async =
-        storeAgent.PostAndAsyncReply (fun chan -> GetUser (userid, chan))
+        async {
+            let! (GetUsersResult result | OtherwiseFail result) = storeActor <? (GetUsers [userid])
+            return result |> function | [] -> None | x::_ -> Some x
+        }
 
     member _this.GetUsers (userids: UserId list) : RegisteredUser list Async =
-        storeAgent.PostAndAsyncReply (fun chan -> GetUsers (userids, chan))
+        async {
+            let! (GetUsersResult result | OtherwiseFailErr "no choice" result) = storeActor <? (GetUsers userids)
+            return result
+        }

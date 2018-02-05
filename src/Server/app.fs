@@ -90,7 +90,7 @@ let startChatServer () =
     }  
     """
     let actorSystem = ActorSystem.Create("chatapp", config)
-    let userStore = UserStore.UserStoreNew actorSystem
+    let userStore = UserStore.UserStore actorSystem
     let chatServer = ChatServer.startServer actorSystem
     do Diag.createDiagChannel userStore.GetUser actorSystem chatServer (UserStore.UserIds.echo, "Demo", "Channel for testing purposes. Notice the bots are always ready to keep conversation.")
     do ChatServer.createTestChannels actorSystem chatServer
@@ -112,7 +112,7 @@ let sessionStore setF = context (fun x ->
     | Some state -> setF state
     | None -> never)
 
-let session (userStore: UserStoreNew) (f: ClientSession -> WebPart) = 
+let session (userStore: UserStore) (f: ClientSession -> WebPart) = 
     statefulForSession
     >=> context (HttpContext.state >>
         function

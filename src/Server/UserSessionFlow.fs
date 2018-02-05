@@ -39,7 +39,7 @@ let internal extractMessage message =
         do logger.error (Message.eventX "Failed to parse message '{msg}': {e}" >> Message.setFieldValue "msg" message  >> Message.setFieldValue "e" e)
         Trash "exception"
 
-let create (userStore: UserStoreNew) messageFlow controlFlow =
+let create (userStore: UserStore) messageFlow controlFlow =
 
     let isChannelMessage = function |ChannelMessage _ -> true | _ -> false
     let extractChannelMessage (ChannelMessage (chan, message) | OtherwiseFail (chan, message)) = chan, message
