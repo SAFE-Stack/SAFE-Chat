@@ -1,8 +1,8 @@
 module UserStore
 // implements users catalog + persistance
 
-open Akka.Actor
 open Akkling
+open Akkling.Persistence
 
 open ChatUser
 
@@ -15,16 +15,25 @@ module private Implementation =
 
     type ErrorInfo = ErrorInfo of string
 
-    type Command =
+    type StoreCommand =
         | Register of UserKind
         | Unregister of UserId
         | Update of RegisteredUser
         | GetUsers of UserId list
 
+    type StoreEvent =
+        | AddUser of RegisteredUser
+        | DropUser of UserId
+        | UpdateUser of RegisteredUser
+
     type ReplyMessage =
         | RegisterResult of Result<UserId, ErrorInfo>
         | UpdateResult of Result<RegisteredUser, ErrorInfo>
         | GetUsersResult of RegisteredUser list
+
+    type StoreMessage =
+        | Event of StoreEvent
+        | Command of StoreCommand
 
     type State = {
         nextId: int
@@ -62,7 +71,7 @@ module private Implementation =
             | _ -> Result.Error <| ErrorInfo "User not found, nothing to update"
             |> Result.map(fun u ->
                 let newUser = RegisteredUser (userid, u)
-                newUser, users |> Map.add userid newUser )
+                newUser )
 
     // in case user is logging anonymously check he cannot squote someone's nick
     let (|AnonymousBusyNick|_|) (users: Map<UserId, RegisteredUser>) =
@@ -81,42 +90,56 @@ module private Implementation =
             users |> Map.tryFindKey (lookup oauthId)
         | _ -> None
 
-    let processMessage reply state = function
-        | Register (user) ->
-            match user with
-            | AnonymousBusyNick state.users (UserId uid, nickname) ->
-                sprintf "The nickname %s is already taken by user %s" nickname uid |> (ErrorInfo >> Result.Error >> RegisterResult >> reply)
-                state
-            | AlreadyRegisteredOAuth state.users userId ->
-                Ok userId |> (RegisterResult >> reply)
-                state
-            | _ ->
-                let userId = UserId <| state.nextId.ToString()
-                Ok userId |> (RegisterResult >> reply)
-                {state with nextId = state.nextId + 1; users = state.users |> Map.add userId (RegisteredUser (userId, user))}
-
-        | GetUsers (userids) ->
-            userids |> List.collect (Map.tryFind >< state.users >> Option.toList) |> (GetUsersResult >> reply)
-            state
-        | Unregister userid ->
-            {state with users = state.users |> Map.remove userid}
-
-        | Update user ->
-            match state.users |> updateUser user with
-            | Ok(newUser, newState) ->
-                Ok newUser |> (UpdateResult >> reply)
-                {state with users = newState}
-            | Result.Error e ->
-                Result.Error e |> (UpdateResult >> reply)
-                state
-
     let handler (ctx: Actor<_>) =
         let rec loop (state: State) = actor {
 
             let! msg = ctx.Receive()
             let reply = (<!) (ctx.Sender())
-            let newState = processMessage reply state msg
-            return! loop newState
+            
+            match msg with
+            | Event e ->
+                let newState =
+                    match e with
+                    | AddUser user ->
+                        let (RegisteredUser (userId, _)) = user
+                        // FIXME nextId should be compared to userId
+                        {state with nextId = state.nextId + 1; users = state.users |> Map.add userId user}
+                    | DropUser userid ->
+                        {state with users = state.users |> Map.remove userid}
+                    | UpdateUser user ->
+                        let (RegisteredUser (userId, _)) = user
+                        {state with users = state.users |> Map.add userId user}
+                return! loop newState
+            | Command cmd ->
+                match cmd with
+                | Register (user) ->
+                    match user with
+                    | AnonymousBusyNick state.users (UserId uid, nickname) ->
+                        sprintf "The nickname %s is already taken by user %s" nickname uid |> (ErrorInfo >> Result.Error >> RegisterResult >> reply)
+                        return loop state
+                    | AlreadyRegisteredOAuth state.users userId ->
+                        Ok userId |> (RegisterResult >> reply)
+                        return loop state
+                    | _ ->
+                        let userId = UserId <| state.nextId.ToString()
+                        Ok userId |> (RegisterResult >> reply)
+                        return Persist (Event <| AddUser (RegisteredUser (userId, user)))
+
+                | Unregister userid ->
+                    return Persist (Event <| DropUser userid)
+
+                | Update user ->
+                    match state.users |> updateUser user with
+                    | Ok(newUser) ->
+                        Ok newUser |> (UpdateResult >> reply)
+                        return Persist (Event <| UpdateUser newUser)
+                    | Result.Error e ->
+                        Result.Error e |> (UpdateResult >> reply)
+                        return loop state
+
+                | GetUsers (userids) ->
+                    userids |> List.collect (Map.tryFind >< state.users >> Option.toList) |> (GetUsersResult >> reply)
+                    return loop state
         }
         loop initialState
 
@@ -124,31 +147,31 @@ open Implementation
 
 type UserStore(actorSystem: Akka.Actor.ActorSystem) =
 
-    let storeActor = spawn actorSystem "userstore" <| props(handler)
+    let storeActor = spawn actorSystem "userstore" <| propsPersist(handler)
 
     member _this.Register(user: UserKind) : Result<UserId,string> Async =
         async {
-            let! (RegisterResult result | OtherwiseFail result) = storeActor <? (Register user)
+            let! (RegisterResult result | OtherwiseFail result) = storeActor <? (Command <| Register user)
             return result |> Result.mapError (fun (ErrorInfo error) -> error)
         }
 
     member _this.Unregister (userid: UserId) : unit =
-        storeActor <! (Unregister userid)
+        storeActor <! (Command <| Unregister userid)
 
     member _this.Update(user: RegisteredUser) : Result<RegisteredUser,string> Async =
         async {
-            let! (UpdateResult result | OtherwiseFail result) = storeActor <? (Update user)
+            let! (UpdateResult result | OtherwiseFail result) = storeActor <? (Command <| Update user)
             return result |> Result.mapError (fun (ErrorInfo error) -> error)
         }
 
     member _this.GetUser userid : RegisteredUser option Async =
         async {
-            let! (GetUsersResult result | OtherwiseFail result) = storeActor <? (GetUsers [userid])
+            let! (GetUsersResult result | OtherwiseFail result) = storeActor <? (Command <| GetUsers [userid])
             return result |> function | [] -> None | x::_ -> Some x
         }
 
     member _this.GetUsers (userids: UserId list) : RegisteredUser list Async =
         async {
-            let! (GetUsersResult result | OtherwiseFailErr "no choice" result) = storeActor <? (GetUsers userids)
+            let! (GetUsersResult result | OtherwiseFailErr "no choice" result) = storeActor <? (Command <| GetUsers userids)
             return result
         }
