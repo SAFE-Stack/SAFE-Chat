@@ -7,6 +7,10 @@ nuget Suave.OAuth
 nuget Suave.Experimental
 nuget Akkling 0.7.1
 nuget Akkling.Streams 0.7.1
+nuget Akkling.Persistence
+nuget Akka.Persistence.SqlServer
+nuget Akka.Persistence.Sqlite
+
 nuget Newtonsoft.Json
 nuget Fable.JsonConverter
 

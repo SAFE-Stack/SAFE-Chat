@@ -35,8 +35,7 @@ let chanUsers (users: Map<string, UserInfo>) =
     match u.IsBot with |true -> sprintf "#%s" u.Nick |_ -> u.Nick
   div [ ClassName "userlist" ]
       [ str "Users:"
-        ul
-          []
+        ul []
           [ for u in users ->
               li [] [str <| screenName u.Value]
           ]]
@@ -82,11 +81,6 @@ let messageList (messages: Message Envelope list) =
 
 
 let root (model: ChannelData) dispatch =
-    // let users = model.Users |> function | UserCount _ -> Map.empty | UserList list -> list
-    // let getUser author =
-    //     users |> Map.tryFind author
-    //     |> function | Some u -> u | _ -> {Nick = author; IsBot = false; Online = false}
-
     [ chatInfo dispatch model
       div [ ClassName "fs-splitter" ] []
       messageList model.Messages

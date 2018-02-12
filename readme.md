@@ -28,9 +28,39 @@ Sample chat application built with netcore, F#, Akka.net and Fable.
 * In your browser, open: http://localhost:8080/
 * Enjoy HMR (hotload module reload) experience
 
-> Notice: logon screen will redirect your browser to localhost:8083 (per configuration of server auth handler), you have manually change the port to 8080
+## Implementation overview
+
+### Authentication
+
+Chat supports both *permanent* users, authorized via goodle or github account, and *anonymous* ones, those who provide only nickname.
+
+In order to support the google/fb authentication scenario, fill in the client/secret in the CHAT_DATA/suave.oauth.config file. In case you do not see this file, run the server once and the file will be created automatically.
+
+### Akka streams
+
+Chat server is built on Akka.Streams. The entry point is a `ChannelFlow` module which implements the channel actor, the flow for user participating in particular channel, and the flow for all channels the user is participating in.
+
+`UserSessionFlow` brings everything together and implements the flow for the user browser session.
+
+`ChatServer` is an actor which purpose is to keep the channel list. It's responsible for creating/dropping the channels.
+
+`UserStore` is an actor which purpose is to know all user logged in. It supposed to be made persistent but it does not work for some reason (I created issue).
+
+`SocketFlow` implements a flow decorating the server-side web socket.
+
+### Akkling
+
+Akkling is a great tool for F# developers. It does not support netcore yet so I hacked it in my own clone and I store hacked packaged in the chat repository.
+
+### Fable, Elmish
+
+Client is written on F# with the help of Fable and Elmish (library?, framework?). Fable is great, Elmish is great.
+
+### Communication protocol
+
+After client is authenticated all communication between client and server is carried via WebSockets. The protocol is defined in `src/Shared/ChatProtocol.fs` file which is shared between client and server projects.
 
 ## References
 
 * [paket and dotnet cli](https://fsprojects.github.io/Paket/paket-and-dotnet-cli.html)
-* ...
+* [Akkling Wiki](https://github.com/Horusiath/Akkling/wiki)

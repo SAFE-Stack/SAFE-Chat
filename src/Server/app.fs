@@ -13,11 +13,16 @@ open Suave.State.CookieStateStore
 
 open Akka.Configuration
 open Akka.Actor
+open Akka.Persistence.Sqlite
 open Akkling
+open Akkling.Streams
 
 open ChatUser
+open UserStore
+open ChatServer
 open Logon
 open Suave.Html
+
 // ---------------------------------
 // Web app
 // ---------------------------------
@@ -70,28 +75,53 @@ module Secrets =
 type ServerActor = IActorRef<ChatServer.ServerControlMessage>
 let mutable private appServerState = None
 
-let startChatServer () =
+let startChatServer () = async {
     let config = ConfigurationFactory.ParseString """akka {  
     stdout-loglevel = DEBUG
     loglevel = DEBUG
-    // actor {                
-    //     debug {  
-    //           receive = on 
-    //           autoreceive = on
-    //           lifecycle = on
-    //           event-stream = on
-    //           unhandled = on
-    //     }
-    // }
-    }  
-    """
+    persistence {
+        journal {
+            plugin = "akka.persistence.journal.sqlite"
+            sqlite {
+                class = "Akka.Persistence.Sqlite.Journal.SqliteJournal, Akka.Persistence.Sqlite"
+                plugin-dispatcher = "akka.actor.default-dispatcher"
+                connection-string = "Data Source=C:\\projects\\fschat\\src\\Server\\CHAT_DATA\\Sqlite-journal.db;cache=shared;"
+                connection-timeout = 30s
+                schema-name = dbo
+                table-name = event_journal
+                auto-initialize = on
+                timestamp-provider = "Akka.Persistence.Sql.Common.Journal.DefaultTimestampProvider, Akka.Persistence.Sql.Common"
+            }
+            sql-server {
+                class = "Akka.Persistence.SqlServer.Journal.SqlServerJournal, Akka.Persistence.SqlServer"
+                connection-string = "Data Source=bigt\\SQLEXPRESS;Initial Catalog=chatlog;Integrated Security=True;"
+                schema-name = dbo
+                auto-initialize = on
+            }
+        }
+    }
+    actor {
+        debug {
+              receive = on
+              autoreceive = on
+              lifecycle = on
+              event-stream = on
+              unhandled = on
+        }
+    }
+    }"""
     let actorSystem = ActorSystem.Create("chatapp", config)
+    let userStore = UserStore.UserStore actorSystem
+    let persistence = SqlitePersistence.Get actorSystem
+    do! Async.Sleep(1000)
+
     let chatServer = ChatServer.startServer actorSystem
-    do Diag.createDiagChannel UserStore.getUser actorSystem chatServer (UserStore.UserIds.echo, "Demo", "Channel for testing purposes. Notice the bots are always ready to keep conversation.")
+    do Diag.createDiagChannel userStore.GetUser actorSystem chatServer (UserStore.UserIds.echo, "Demo", "Channel for testing purposes. Notice the bots are always ready to keep conversation.")
     do ChatServer.createTestChannels actorSystem chatServer
 
-    appServerState <- Some (actorSystem, chatServer)
-    ()
+    appServerState <- Some (actorSystem, userStore, chatServer)
+    return ()
+}
 
 let logger = Log.create "fschat"
 
@@ -107,7 +137,7 @@ let sessionStore setF = context (fun x ->
     | Some state -> setF state
     | None -> never)
 
-let session (f: ClientSession -> WebPart) = 
+let session (userStore: UserStore) (f: ClientSession -> WebPart) = 
     statefulForSession
     >=> context (HttpContext.state >>
         function
@@ -116,7 +146,7 @@ let session (f: ClientSession -> WebPart) =
             match state.get "userid" with
             | Some userid ->
                 fun ctx -> async {
-                    let! result = UserStore.getUser (UserId userid)
+                    let! result = userStore.GetUser (UserId userid)
                     match result with
                     | Some me ->
                         return! f (UserLoggedOn me) ctx
@@ -144,7 +174,7 @@ let getUserImageUrl (claims: Map<string,obj>) : string option =
 let root: WebPart =
   warbler(fun _ ->
     match appServerState with
-    | Some (actorSystem, server) ->
+    | Some (actorSystem, userStore, server) ->
         choose [
             warbler(fun ctx ->
                 // problem is that redirection leads to localhost and authorization does not go well
@@ -161,7 +191,7 @@ let root: WebPart =
                             oauthId = Some loginData.Id
                             nick = loginData.Name; status = ""; email = None; imageUrl = imageUrl}
 
-                        let! registerResult = UserStore.register user
+                        let! registerResult = userStore.Register user
                         match registerResult with
                         | Ok (UserId userid) ->
                             
@@ -179,7 +209,7 @@ let root: WebPart =
                     (fun error -> OK <| sprintf "Authorization failed because of `%s`" error.Message)
                 )
 
-            session (fun session ->
+            session userStore (fun session ->
                 choose [
                     GET >=> path "/" >=> noCache >=> (
                         match session with
@@ -195,7 +225,7 @@ let root: WebPart =
                                 let nick = (getPayloadString ctx.request).Substring 5
                                 let imageUrl = makeUserImageUrl "monsterid" nick
                                 let user = Anonymous {nick = nick; status = ""; imageUrl = imageUrl}
-                                let! registerResult = UserStore.register user
+                                let! registerResult = userStore.Register user
                                 match registerResult with
                                 | Ok (UserId userid) ->
                                     logger.info (Message.eventX "Anonymous login by nick {nick}"
@@ -215,15 +245,32 @@ let root: WebPart =
                             | UserLoggedOn (RegisteredUser (userid, Anonymous { nick = nick})) ->
                                 logger.info (Message.eventX "LOGOFF: Unregistering anonymous {nick}"
                                     >> Message.setFieldValue "nick" nick)
-                                do UserStore.unregister userid
+                                do userStore.Unregister userid
                             | _ -> ()
                             FOUND "/logon"
                         ))
 
                     path "/api/socket" >=>
                         match session with
-                        | UserLoggedOn user ->
-                            (RestApi.connectWebSocket actorSystem server user)
+                        | UserLoggedOn user -> fun ctx -> async {
+                            let session = UserSession.Session(server, userStore, user)
+                            let materializer = actorSystem.Materializer()
+                            let messageFlow = ChannelFlow.createChannelMuxFlow<UserId,Message,ChannelId> materializer
+                            let socketFlow = UserSessionFlow.create userStore messageFlow session.ControlFlow
+                            let materialize materializer source sink =
+                                session.SetListenChannel(
+                                    source
+                                    |> Source.viaMat socketFlow Keep.right
+                                    |> Source.toMat sink Keep.left
+                                    |> Graph.run materializer |> Some)
+                                ()
+
+                            logger.debug (Message.eventX "Opening socket for {user}" >> Message.setField "user" (getUserNick user))
+                            let! result = WebSocket.handShake (SocketFlow.handleWebsocketMessages actorSystem materialize) ctx
+                            logger.debug (Message.eventX "Closing socket for {user}" >> Message.setField "user" (getUserNick user))
+
+                            return result
+                            }
                         | NoSession ->
                             BAD_REQUEST "Authorization required"
 
