@@ -13,6 +13,7 @@ open Suave.State.CookieStateStore
 
 open Akka.Configuration
 open Akka.Actor
+open Akka.Persistence.Sqlite
 open Akkling
 open Akkling.Streams
 
@@ -74,29 +75,53 @@ module Secrets =
 type ServerActor = IActorRef<ChatServer.ServerControlMessage>
 let mutable private appServerState = None
 
-let startChatServer () =
+let startChatServer () = async {
     let config = ConfigurationFactory.ParseString """akka {  
     stdout-loglevel = DEBUG
     loglevel = DEBUG
-    // actor {                
-    //     debug {  
-    //           receive = on 
-    //           autoreceive = on
-    //           lifecycle = on
-    //           event-stream = on
-    //           unhandled = on
-    //     }
-    // }
-    }  
-    """
+    persistence {
+        journal {
+            plugin = "akka.persistence.journal.sqlite"
+            sqlite {
+                class = "Akka.Persistence.Sqlite.Journal.SqliteJournal, Akka.Persistence.Sqlite"
+                plugin-dispatcher = "akka.actor.default-dispatcher"
+                connection-string = "Data Source=C:\\projects\\fschat\\src\\Server\\CHAT_DATA\\Sqlite-journal.db;cache=shared;"
+                connection-timeout = 30s
+                schema-name = dbo
+                table-name = event_journal
+                auto-initialize = on
+                timestamp-provider = "Akka.Persistence.Sql.Common.Journal.DefaultTimestampProvider, Akka.Persistence.Sql.Common"
+            }
+            sql-server {
+                class = "Akka.Persistence.SqlServer.Journal.SqlServerJournal, Akka.Persistence.SqlServer"
+                connection-string = "Data Source=bigt\\SQLEXPRESS;Initial Catalog=chatlog;Integrated Security=True;"
+                schema-name = dbo
+                auto-initialize = on
+            }
+        }
+    }
+    actor {
+        debug {
+              receive = on
+              autoreceive = on
+              lifecycle = on
+              event-stream = on
+              unhandled = on
+        }
+    }
+    }"""
     let actorSystem = ActorSystem.Create("chatapp", config)
     let userStore = UserStore.UserStore actorSystem
+    let persistence = SqlitePersistence.Get actorSystem
+    do! Async.Sleep(1000)
+
     let chatServer = ChatServer.startServer actorSystem
     do Diag.createDiagChannel userStore.GetUser actorSystem chatServer (UserStore.UserIds.echo, "Demo", "Channel for testing purposes. Notice the bots are always ready to keep conversation.")
     do ChatServer.createTestChannels actorSystem chatServer
 
     appServerState <- Some (actorSystem, userStore, chatServer)
-    ()
+    return ()
+}
 
 let logger = Log.create "fschat"
 

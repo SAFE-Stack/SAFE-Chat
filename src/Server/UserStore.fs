@@ -3,15 +3,19 @@ module UserStore
 
 open Akkling
 open Akkling.Persistence
+open Suave.Logging
 
 open ChatUser
+open Akka.Persistence
 
 module UserIds =
 
     let system = UserId "sys"
     let echo = UserId "echo"
 
-module private Implementation =
+let private logger = Log.create "userstore"
+
+module public Implementation =
 
     type ErrorInfo = ErrorInfo of string
 
@@ -90,39 +94,51 @@ module private Implementation =
             users |> Map.tryFindKey (lookup oauthId)
         | _ -> None
 
-    let handler (ctx: Actor<_>) =
-        let rec loop (state: State) = actor {
+    let update (state: State) = function
+        | AddUser user ->
+            let (RegisteredUser (userId, _)) = user
+            // FIXME nextId should be compared to userId
+            {state with nextId = state.nextId + 1; users = state.users |> Map.add userId user}
+        | DropUser userid ->
+            {state with users = state.users |> Map.remove userid}
+        | UpdateUser user ->
+            let (RegisteredUser (userId, _)) = user
+            {state with users = state.users |> Map.add userId user}
 
+    let handler (ctx: Eventsourced<_>) =
+        let rec loop (state: State) = actor {
             let! msg = ctx.Receive()
             let reply = (<!) (ctx.Sender())
             
+            let messg =
+                match msg with
+                | event when ctx.IsRecovering () -> 
+                    sprintf "recovering %A" event
+                | Persisted ctx event -> 
+                    sprintf "persisted %A" event
+                | Deffered ctx event ->
+                    sprintf "deferred %A" event
+                | _ ->
+                    sprintf "other %A" msg
+            logger.debug (Message.eventX "MESSG {e}" >> Message.setField "e" messg)
+
             match msg with
             | Event e ->
-                let newState =
-                    match e with
-                    | AddUser user ->
-                        let (RegisteredUser (userId, _)) = user
-                        // FIXME nextId should be compared to userId
-                        {state with nextId = state.nextId + 1; users = state.users |> Map.add userId user}
-                    | DropUser userid ->
-                        {state with users = state.users |> Map.remove userid}
-                    | UpdateUser user ->
-                        let (RegisteredUser (userId, _)) = user
-                        {state with users = state.users |> Map.add userId user}
-                return! loop newState
+                return! loop (update state e)
             | Command cmd ->
                 match cmd with
                 | Register (user) ->
                     match user with
                     | AnonymousBusyNick state.users (UserId uid, nickname) ->
-                        sprintf "The nickname %s is already taken by user %s" nickname uid |> (ErrorInfo >> Result.Error >> RegisterResult >> reply)
+                        let errorMessage = sprintf "The nickname %s is already taken by user %s" nickname uid
+                        errorMessage |> (ErrorInfo >> Result.Error >> RegisterResult >> reply)
                         return loop state
                     | AlreadyRegisteredOAuth state.users userId ->
-                        Ok userId |> (RegisterResult >> reply)
+                        userId |> (Ok >> RegisterResult >> reply)
                         return loop state
                     | _ ->
                         let userId = UserId <| state.nextId.ToString()
-                        Ok userId |> (RegisterResult >> reply)
+                        userId |> (Ok >> RegisterResult >> reply)
                         return Persist (Event <| AddUser (RegisteredUser (userId, user)))
 
                 | Unregister userid ->
@@ -131,10 +147,10 @@ module private Implementation =
                 | Update user ->
                     match state.users |> updateUser user with
                     | Ok(newUser) ->
-                        Ok newUser |> (UpdateResult >> reply)
+                        newUser |> (Ok >> UpdateResult >> reply)
                         return Persist (Event <| UpdateUser newUser)
                     | Result.Error e ->
-                        Result.Error e |> (UpdateResult >> reply)
+                        e |> (Result.Error >> UpdateResult >> reply)
                         return loop state
 
                 | GetUsers (userids) ->
@@ -145,9 +161,9 @@ module private Implementation =
 
 open Implementation
 
-type UserStore(actorSystem: Akka.Actor.ActorSystem) =
+type UserStore(system: Akka.Actor.ActorSystem) =
 
-    let storeActor = spawn actorSystem "userstore" <| propsPersist(handler)
+    let storeActor = spawn system "userstore" <| propsPersist(handler)
 
     member _this.Register(user: UserKind) : Result<UserId,string> Async =
         async {

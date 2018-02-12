@@ -66,7 +66,7 @@ let main argv =
     let cts = new System.Threading.CancellationTokenSource()
     let application = async {
         let _, webServer = startWebServerAsync config app
-        do App.startChatServer()
+        do! App.startChatServer()
         do! webServer
      
         return ()

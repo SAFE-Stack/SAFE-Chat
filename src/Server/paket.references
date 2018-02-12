@@ -1,6 +1,8 @@
 Akkling
 Akkling.Streams
 Akkling.Persistence
+Akka.Persistence.SqlServer
+Akka.Persistence.Sqlite
 
 Suave
 Suave.OAuth
