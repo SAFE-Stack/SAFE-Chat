@@ -109,18 +109,6 @@ module public Implementation =
         let rec loop (state: State) = actor {
             let! msg = ctx.Receive()
             let reply = (<!) (ctx.Sender())
-            
-            let messg =
-                match msg with
-                | event when ctx.IsRecovering () -> 
-                    sprintf "recovering %A" event
-                | Persisted ctx event -> 
-                    sprintf "persisted %A" event
-                | Deffered ctx event ->
-                    sprintf "deferred %A" event
-                | _ ->
-                    sprintf "other %A" msg
-            logger.debug (Message.eventX "MESSG {e}" >> Message.setField "e" messg)
 
             match msg with
             | Event e ->

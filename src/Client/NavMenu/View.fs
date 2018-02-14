@@ -42,6 +42,7 @@ let menu (chatData: ChatState) currentPage dispatch =
                 OnClick (fun _ -> Browser.location.href <- "/logoff") ]
               [ i [ ClassName "mdi mdi-logout-variant"] [] ]
            ]
+        yield h2 [] [a [Href (toHash About)] [str "about"]]
         yield h2 []
           [ str "My Channels"
             button

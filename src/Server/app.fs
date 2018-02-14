@@ -77,7 +77,7 @@ let mutable private appServerState = None
 
 let startChatServer () = async {
     let config = ConfigurationFactory.ParseString """akka {  
-    stdout-loglevel = DEBUG
+    stdout-loglevel = WARNING
     loglevel = DEBUG
     persistence {
         journal {
@@ -102,11 +102,11 @@ let startChatServer () = async {
     }
     actor {
         debug {
-              receive = on
-              autoreceive = on
-              lifecycle = on
-              event-stream = on
-              unhandled = on
+            # receive = on
+            # autoreceive = on
+            # lifecycle = on
+            # event-stream = on
+            # unhandled = on
         }
     }
     }"""
