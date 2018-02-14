@@ -85,7 +85,7 @@ let startChatServer () = async {
             sqlite {
                 class = "Akka.Persistence.Sqlite.Journal.SqliteJournal, Akka.Persistence.Sqlite"
                 plugin-dispatcher = "akka.actor.default-dispatcher"
-                connection-string = "Data Source=C:\\projects\\fschat\\src\\Server\\CHAT_DATA\\Sqlite-journal.db;cache=shared;"
+                connection-string = "Data Source=CHAT_DATA\\journal.db;cache=shared;"
                 connection-timeout = 30s
                 schema-name = dbo
                 table-name = event_journal
@@ -94,7 +94,7 @@ let startChatServer () = async {
             }
             sql-server {
                 class = "Akka.Persistence.SqlServer.Journal.SqlServerJournal, Akka.Persistence.SqlServer"
-                connection-string = "Data Source=bigt\\SQLEXPRESS;Initial Catalog=chatlog;Integrated Security=True;"
+                connection-string = "Data Source=localhost\\SQLEXPRESS;Initial Catalog=journal;Integrated Security=True;"
                 schema-name = dbo
                 auto-initialize = on
             }
