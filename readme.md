@@ -2,6 +2,8 @@
 
 Sample chat application built with netcore, F#, Akka.net and Fable.
 
+![Harvest chat](docs/harvest-chat.png "Channel view")
+
 ## Requirements
 
 * [dotnet SDK](https://www.microsoft.com/net/download/core) 2.0.0 or higher
