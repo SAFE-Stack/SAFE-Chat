@@ -13,7 +13,6 @@ open Suave.State.CookieStateStore
 
 open Akka.Configuration
 open Akka.Actor
-open Akka.Persistence.Sqlite
 open Akkling
 open Akkling.Streams
 
@@ -81,7 +80,7 @@ let startChatServer () = async {
     loglevel = DEBUG
     persistence {
         journal {
-            plugin = "akka.persistence.journal.sqlite"
+            # plugin = "akka.persistence.journal.sqlite"
             sqlite {
                 class = "Akka.Persistence.Sqlite.Journal.SqliteJournal, Akka.Persistence.Sqlite"
                 plugin-dispatcher = "akka.actor.default-dispatcher"
@@ -112,7 +111,7 @@ let startChatServer () = async {
     }"""
     let actorSystem = ActorSystem.Create("chatapp", config)
     let userStore = UserStore.UserStore actorSystem
-    let persistence = SqlitePersistence.Get actorSystem
+    // let _ = SqlitePersistence.Get actorSystem
     do! Async.Sleep(1000)
 
     let chatServer = ChatServer.startServer actorSystem

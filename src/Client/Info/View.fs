@@ -18,5 +18,6 @@ let root =
           li [] [b [] [str "/join <chan name>"]; str " - joins the channel, creates if it doesn't exist"]
           li [] [b [] [str "/nick <newnick>"]; str " - changes your nickname"]
           li [] [b [] [str "/status <newstatus>"]; str " - change status"]
+          li [] [b [] [str "/avatar <imageUrl>"]; str " - change user avatar"]
           ]
     ]
