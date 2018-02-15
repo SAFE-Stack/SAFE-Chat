@@ -113,6 +113,15 @@ type Session(server, userStore: UserStore, meArg) =
         | Bot bot -> Bot {bot with nick = nick}
         | other -> other
 
+    let updateAvatar ava =
+        let imageUrl = if System.String.IsNullOrWhiteSpace ava then None else Some ava
+        in
+        function
+        | Anonymous person -> Anonymous {person with imageUrl = imageUrl}
+        | Person person -> Person {person with imageUrl = imageUrl}
+        | Bot bot -> Bot {bot with imageUrl = imageUrl}
+        | other -> other
+
     let updateUser requestId fn = function
         | s when System.String.IsNullOrWhiteSpace s ->
             async.Return <| replyErrorProtocol requestId "Invalid (blank) value is not allowed"
@@ -180,7 +189,7 @@ type Session(server, userStore: UserStore, meArg) =
                         replyErrorProtocol requestId "bad channel id"
 
             | Protocol.ServerMsg.ControlCommand {text = text; chan = chanIdStr } ->
-                match text.ToLower() with
+                match text with
                 | CommandPrefix "/leave" _ ->
                     return! processControlMessage (Protocol.ServerMsg.Leave chanIdStr)
                 | CommandPrefix "/join" chanName ->
@@ -189,6 +198,8 @@ type Session(server, userStore: UserStore, meArg) =
                     return! updateUser requestId updateNick newNick
                 | CommandPrefix "/status" newStatus ->
                     return! updateUser requestId updateStatus newStatus
+                | CommandPrefix "/avatar" newAvatarUrl ->
+                    return! updateUser requestId updateAvatar newAvatarUrl
                 | _ ->
                     return replyErrorProtocol requestId "command was not processed"
 
