@@ -2,7 +2,7 @@
 
 Sample chat application built with netcore, F#, Akka.net and Fable.
 
-![Harvest chat](docs/harvest-chat.png "Channel view")
+![Harvest chat](docs/FsChat-login.gif "Channel view")
 
 ## Requirements
 
