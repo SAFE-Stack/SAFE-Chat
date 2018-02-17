@@ -1178,3 +1178,24 @@ NUGET
       Akkling (>= 0.7.1) - restriction: >= netstandard1.6
       FSharp.Core (>= 4.2.3) - restriction: >= netstandard1.6
       Reactive.Streams (>= 1.0.2) - restriction: >= netstandard1.6
+
+GROUP UITests
+RESTRICTION: >= net461
+NUGET
+  remote: https://www.nuget.org/api/v2
+    Argu (5.0.1)
+      FSharp.Core (>= 4.0.0.1)
+    canopy (1.6.2)
+      FSharp.Core (>= 4.0.0.1)
+      Selenium.WebDriver (>= 3.7)
+    Expecto (5.1.2)
+      Argu (>= 3.7)
+      FSharp.Core (>= 4.1.18)
+      Mono.Cecil (>= 0.10.0-beta7)
+      System.ValueTuple (>= 4.4)
+    FSharp.Core (4.3.4) - redirects: force
+    Mono.Cecil (0.10.0-beta7)
+    PhantomJS (2.1.1)
+    Selenium.WebDriver (3.9.1)
+    Selenium.WebDriver.ChromeDriver (2.35)
+    System.ValueTuple (4.4)
