@@ -35,10 +35,10 @@ let menu (chatData: ChatState) currentPage dispatch =
       [ yield div
           [ ClassName "fs-user" ]
           [ UserAvatar.View.root me.ImageUrl
-            h3 [] [str me.Nick]
-            span [] [ str me.Status]
+            h3 [Id "usernick"] [str me.Nick]
+            span [Id "userstatus"] [ str me.Status]
             button
-              [ ClassName "btn"; Title "Logout"
+              [ Id "logout"; ClassName "btn"; Title "Logout"
                 OnClick (fun _ -> Browser.location.href <- "/logoff") ]
               [ i [ ClassName "mdi mdi-logout-variant"] [] ]
            ]
