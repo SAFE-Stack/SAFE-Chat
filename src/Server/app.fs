@@ -1,5 +1,7 @@
 module App
 
+open System.Net
+
 open Suave
 open Suave.OAuth
 open Suave.Authentication
@@ -222,6 +224,7 @@ let root: WebPart =
                         POST >=> (
                             fun ctx -> async {
                                 let nick = (getPayloadString ctx.request).Substring 5
+                                           |> WebUtility.UrlDecode  |> WebUtility.HtmlDecode
                                 let imageUrl = makeUserImageUrl "monsterid" nick
                                 let user = Anonymous {nick = nick; status = ""; imageUrl = imageUrl}
                                 let! registerResult = userStore.Register user

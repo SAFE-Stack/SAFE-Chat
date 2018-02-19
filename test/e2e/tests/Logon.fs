@@ -41,4 +41,23 @@ let all() =
 
         "Kaidan Alenko" === read ".fs-user #usernick"
 
+    "Nick contains non-ascii characters" &&& fun _ ->
+        "#nickname" << "Иван Петров"
+
+        click "#login"
+        on "http://localhost:8083/#"
+
+        "Иван Петров" === read ".fs-user #usernick"
+
+
+    "Logoff button is functioning" &&& fun _ ->
+        "#nickname" << "Godzilla"
+
+        click "#login"
+        on "http://localhost:8083/#"
+
+        click "#logout"
+        on "http://localhost:8083/logon"
+        
+
     // TODO does not accept the user with the same name

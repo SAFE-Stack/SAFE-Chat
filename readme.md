@@ -30,6 +30,12 @@ Sample chat application built with netcore, F#, Akka.net and Fable.
 * In your browser, open: http://localhost:8080/
 * Enjoy HMR (hotload module reload) experience
 
+## Running integration (e2e) tests
+
+* Start the server
+* **Move to `test/e2e` folder**: `cd test\e2e`
+* run the tests: `dotnet run`
+
 ## Implementation overview
 
 ### Authentication

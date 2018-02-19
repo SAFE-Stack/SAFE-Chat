@@ -48,7 +48,8 @@ let chatInfo dispatch (model: ChannelData) =
       span
         [] [ str model.Info.Topic ]
       button
-        [ ClassName "btn"
+        [ Id "leaveChannel"
+          ClassName "btn"
           Title "Leave"
           OnClick (fun _ -> dispatch Leave) ]
         [ i [ ClassName "mdi mdi-door-closed mdi-18px" ] []]
