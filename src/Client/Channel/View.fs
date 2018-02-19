@@ -20,7 +20,7 @@ let messageInput dispatch model =
     [ input
         [ Type "text"
           Placeholder "Type the message here..."
-          Value model.PostText
+          DefaultValue model.PostText
           OnChange (fun ev -> !!ev.target?value |> (SetPostText >> dispatch))
           OnKeyPress (fun ev -> if !!ev.which = 13 || !!ev.keyCode = 13 then dispatch PostText)
         ]
@@ -48,7 +48,8 @@ let chatInfo dispatch (model: ChannelData) =
       span
         [] [ str model.Info.Topic ]
       button
-        [ ClassName "btn"
+        [ Id "leaveChannel"
+          ClassName "btn"
           Title "Leave"
           OnClick (fun _ -> dispatch Leave) ]
         [ i [ ClassName "mdi mdi-door-closed mdi-18px" ] []]

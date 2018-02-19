@@ -31,9 +31,10 @@ module Views =
                         [ Text "Choose a nickname" ]
                       div ["class", "field"]
                         [ div ["class", "control"]
-                            [ tag "input" ["class","input"; "name", "nick"; "type", "text"; "required", "true"] [] ]]
+                            [ tag "input" ["id", "nickname"; "class","input"; "name", "nick"; "type", "text"; "required", "true"] [] ]]
                       div ["class", "control"]
                           [ tag "input" [
+                              "id", "login"
                               "class", "button is-primary"
                               "type", "submit"; "value", "Connect anonymously"] [] ] ]
                 )
