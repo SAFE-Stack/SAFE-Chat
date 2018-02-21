@@ -11,7 +11,7 @@ let all() =
         url "http://localhost:8083"
         onn "http://localhost:8083/logon"
 
-        "#nickname" << "Hacker"
+        "#nickname" << "Tester-tester"
 
         click "#login"
         on "http://localhost:8083/#"
@@ -26,7 +26,7 @@ let all() =
         click ".fs-menu a:contains('about')"
         on "http://localhost:8083/#about"
 
-    "Join demo channel" &&& fun _ ->
+    "Join channel" &&& fun _ ->
 
         click ".fs-menu button.fs-channel:contains('Demo')"
         on "http://localhost:8083/#channel"
@@ -36,6 +36,17 @@ let all() =
         read ".fs-chat-info span" |> contains "Channel for testing"
 
         displayed ".fs-message-input"
+
+    "Leave channel channel" &&& fun _ ->
+
+        click ".fs-menu button.fs-channel:contains('Demo')"
+        on "http://localhost:8083/#channel"
+
+        displayed ".fs-message-input"
+        displayed ".fs-chat-info button[title='Leave']"
+
+        click ".fs-chat-info button[title='Leave']"
+        on "http://localhost:8083/#about"
 
     "Create channel" &&& fun _ ->
 
