@@ -13,6 +13,7 @@ let main _ =
     Logon.all ()
     UserCommands.all ()
     NavigationPane.all ()
+    InputArea.all()
 
     run()
     quit()

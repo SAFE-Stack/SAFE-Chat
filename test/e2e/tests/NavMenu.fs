@@ -75,7 +75,10 @@ let all() =
         click ".fs-menu button.fs-channel:contains('Test')"
 
         // ensure there a title and input area
+        sleep()
         (element ".fs-menu button.selected").Text |> contains "Test"
         
         click ".fs-menu button.fs-channel:contains('Demo')"
+
+        sleep()
         (element ".fs-menu button.selected").Text |> contains "Demo"
