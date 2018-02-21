@@ -8,6 +8,7 @@ open Router
 open Channel.Types
 open Chat.Types
 open Fable.Import
+open System.ComponentModel
 
 let menuItem htmlProp name topic isCurrent =
     button
@@ -54,7 +55,7 @@ let menu (chatData: ChatState) currentPage dispatch =
           [ Type "text"
             classList ["fs-new-channel", true; "open", opened]
             Placeholder "Type the channel name here..."
-            Value newChanName
+            DefaultValue newChanName
             AutoFocus true
             OnChange (fun ev -> !!ev.target?value |> (Some >> SetNewChanName >> dispatch) )
             OnKeyPress (fun ev -> if !!ev.which = 13 || !!ev.keyCode = 13 then dispatch CreateJoin)

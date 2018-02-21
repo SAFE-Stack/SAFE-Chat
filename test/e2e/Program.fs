@@ -12,6 +12,7 @@ let main _ =
     // define tests
     Logon.all ()
     UserCommands.all ()
+    NavigationPane.all ()
 
     run()
     quit()
