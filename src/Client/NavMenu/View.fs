@@ -8,6 +8,7 @@ open Router
 open Channel.Types
 open Chat.Types
 open Fable.Import
+open System.ComponentModel
 
 let menuItem htmlProp name topic isCurrent =
     button
@@ -35,10 +36,10 @@ let menu (chatData: ChatState) currentPage dispatch =
       [ yield div
           [ ClassName "fs-user" ]
           [ UserAvatar.View.root me.ImageUrl
-            h3 [] [str me.Nick]
-            span [] [ str me.Status]
+            h3 [Id "usernick"] [str me.Nick]
+            span [Id "userstatus"] [ str me.Status]
             button
-              [ ClassName "btn"; Title "Logout"
+              [ Id "logout"; ClassName "btn"; Title "Logout"
                 OnClick (fun _ -> Browser.location.href <- "/logoff") ]
               [ i [ ClassName "mdi mdi-logout-variant"] [] ]
            ]
@@ -54,7 +55,7 @@ let menu (chatData: ChatState) currentPage dispatch =
           [ Type "text"
             classList ["fs-new-channel", true; "open", opened]
             Placeholder "Type the channel name here..."
-            Value newChanName
+            DefaultValue newChanName
             AutoFocus true
             OnChange (fun ev -> !!ev.target?value |> (Some >> SetNewChanName >> dispatch) )
             OnKeyPress (fun ev -> if !!ev.which = 13 || !!ev.keyCode = 13 then dispatch CreateJoin)

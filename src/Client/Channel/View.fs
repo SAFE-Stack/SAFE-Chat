@@ -2,8 +2,8 @@ module Channel.View
 
 open Fable.Core.JsInterop
 open Fable.Helpers.React
-open Props
 
+open Props
 open Types
 
 let private formatTs (ts: System.DateTime) =
@@ -14,13 +14,16 @@ let private formatTs (ts: System.DateTime) =
   | diff when diff.TotalDays <= 5.0 -> sprintf "%i days ago" (int diff.TotalDays)
   | _ -> ts.ToShortDateString()
 
+let inline valueOrDefault value =
+    Ref <| (fun e -> if e |> isNull |> not && !!e?value <> !!value then e?value <- !!value)
+
 let messageInput dispatch model =
   div
     [ ClassName "fs-message-input" ]
     [ input
         [ Type "text"
           Placeholder "Type the message here..."
-          Value model.PostText
+          valueOrDefault model.PostText
           OnChange (fun ev -> !!ev.target?value |> (SetPostText >> dispatch))
           OnKeyPress (fun ev -> if !!ev.which = 13 || !!ev.keyCode = 13 then dispatch PostText)
         ]
@@ -48,7 +51,8 @@ let chatInfo dispatch (model: ChannelData) =
       span
         [] [ str model.Info.Topic ]
       button
-        [ ClassName "btn"
+        [ Id "leaveChannel"
+          ClassName "btn"
           Title "Leave"
           OnClick (fun _ -> dispatch Leave) ]
         [ i [ ClassName "mdi mdi-door-closed mdi-18px" ] []]
