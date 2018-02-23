@@ -13,7 +13,7 @@ let all() =
 
         "#nickname" << "Tester-tester"
 
-        click "#login"
+        click Selectors.loginBtn
         on "http://localhost:8083/#"
     )
 
@@ -28,57 +28,56 @@ let all() =
 
     "Join channel" &&& fun _ ->
 
-        click ".fs-menu button.fs-channel:contains('Demo')"
+        click <| Selectors.switchChannel "Demo"
         on "http://localhost:8083/#channel"
 
         // ensure there a title and input area
-        "Demo" === read ".fs-chat-info h1"
-        read ".fs-chat-info span" |> contains "Channel for testing"
+        "Demo" === read Selectors.channelTitle
+        read Selectors.channelTopic |> contains "Channel for testing"
 
         displayed ".fs-message-input"
 
     "Leave channel channel" &&& fun _ ->
 
-        click ".fs-menu button.fs-channel:contains('Demo')"
+        click <| Selectors.switchChannel "Demo"
         on "http://localhost:8083/#channel"
 
-        displayed ".fs-message-input"
-        displayed ".fs-chat-info button[title='Leave']"
+        displayed Selectors.messageInputPanel
+        displayed Selectors.channelLeaveBtn
 
-        click ".fs-chat-info button[title='Leave']"
+        click Selectors.channelLeaveBtn
         on "http://localhost:8083/#about"
 
     "Create channel" &&& fun _ ->
 
         let height selector = (element selector).Size.Height
-        let newChannelInput = ".fs-menu input.fs-new-channel"
 
         sleep()
-        0 === (height newChannelInput)
+        0 === (height Selectors.newChannelInput)
         
         click ".fs-menu button[title='Create New'] i.mdi-plus"
         sleep()
 
-        Expect.isGreaterThan (height newChannelInput) 30 "input is visible"
+        Expect.isGreaterThan (height Selectors.newChannelInput) 30 "input is visible"
 
         // enter text
-        newChannelInput << "Harvest"
-        click newChannelInput
+        Selectors.newChannelInput << "Harvest"
+        click Selectors.newChannelInput
         press enter
 
         on "http://localhost:8083/#channel"
-        "Harvest" === read ".fs-chat-info h1"
+        "Harvest" === read Selectors.channelTitle
 
     "Select channel" &&& fun _ ->
 
-        click ".fs-menu button.fs-channel:contains('Demo')"
-        click ".fs-menu button.fs-channel:contains('Test')"
+        click <| Selectors.switchChannel "Demo"
+        click <| Selectors.switchChannel "Test"
 
         // ensure there a title and input area
         sleep()
-        (element ".fs-menu button.selected").Text |> contains "Test"
+        (element Selectors.selectedChanBtn).Text |> contains "Test"
         
-        click ".fs-menu button.fs-channel:contains('Demo')"
+        click <| Selectors.switchChannel "Demo"
 
         sleep()
-        (element ".fs-menu button.selected").Text |> contains "Demo"
+        (element Selectors.selectedChanBtn).Text |> contains "Demo"

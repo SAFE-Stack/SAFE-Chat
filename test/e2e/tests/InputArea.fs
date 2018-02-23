@@ -2,7 +2,10 @@ module InputArea
 
 open canopy
 
-let inputTextSelector = ".fs-message-input input[type='text']"
+let switchChannel name =
+    click <| Selectors.switchChannel name
+    on "http://localhost:8083/#channel"
+    (element Selectors.selectedChanBtn).Text |> contains name
 
 let all () =
     context "User console commands"
@@ -12,10 +15,10 @@ let all () =
         onn "http://localhost:8083/logon"
 
         "#nickname" << "InputAreaTester"
-        click "#login"
+        click Selectors.loginBtn
         on "http://localhost:8083/#"
 
-        ".fs-user #usernick" == "InputAreaTester"
+        Selectors.userNick == "InputAreaTester"
     )
 
     after (fun _ ->
@@ -24,25 +27,48 @@ let all () =
 
     "Input area is visible in channel view" &&& fun _ ->
 
-        notDisplayed ".fs-message-input"
+        notDisplayed Selectors.messageInputPanel
 
-        click ".fs-menu button.fs-channel:contains('Test')"
-        on "http://localhost:8083/#channel"
+        switchChannel "Test"
 
-        displayed ".fs-message-input"
+        displayed Selectors.messageInputPanel
 
     "Type and send text, input gets clean" &&& fun _ ->
 
-        click ".fs-menu button.fs-channel:contains('Test')"
-        on "http://localhost:8083/#channel"
+        switchChannel "Test"
 
-        inputTextSelector << "Hello world"
-        click ".fs-message-input"
-        inputTextSelector == "Hello world"
+        Selectors.messageInputText << "Hello world"
+        Selectors.messageInputText == "Hello world"
 
+        click Selectors.messageInputPanel
         press enter
         sleep()
         
-        inputTextSelector == ""
+        Selectors.messageInputText == ""
 
-    // TODO input is preserved on channel switch
+    "Input message stored per channel" &&& fun _ ->
+
+        switchChannel "Test"
+        Selectors.messageInputText << "test channel"
+
+        switchChannel "Demo"
+        Selectors.messageInputText == ""
+        Selectors.messageInputText << "hi demo"
+
+        switchChannel "Test"
+        Selectors.messageInputText == "test channel"
+
+        switchChannel "Demo"
+        Selectors.messageInputText == "hi demo"
+
+    "Type and send text" &&& fun _ ->
+
+        switchChannel "Test"
+
+        Selectors.messageInputText << "Hello world"
+        click Selectors.messageSendBtn
+
+        read ".fs-chat .fs-messages div[class*='fs-message user'] div p" |> contains "Hello world"
+
+        sleep()
+        Selectors.messageInputText == ""
