@@ -15,45 +15,49 @@ let all() =
         url "http://localhost:8083/logoff"
     )
 
-    "Regular user login" &&& fun _ ->
-        "#nickname" << "Hacker"
+    "Jump to logon screen" &&& fun _ ->
+        url "http://localhost:8083/#about"
+        on "http://localhost:8083/logon"
 
-        click "#login"
+    "Regular user login" &&& fun _ ->
+        Selectors.loginNickname << "Hacker"
+
+        click Selectors.loginBtn
         on "http://localhost:8083/#"
 
-        ".fs-user #usernick" == "Hacker"
-        ".fs-user #userstatus" == ""
+        Selectors.userNick == "Hacker"
+        Selectors.userStatus == ""
 
     "Reload page after login restores session" &&& fun _ ->
-        "#nickname" << "fish"
+        Selectors.loginNickname << "fish"
 
-        click "#login"
+        click Selectors.loginBtn
         on "http://localhost:8083/#"
 
         reload()
         on "http://localhost:8083/#"
 
     "Nick contains blank" &&& fun _ ->
-        "#nickname" << "Kaidan Alenko"
+        Selectors.loginNickname << "Kaidan Alenko"
 
-        click "#login"
+        click Selectors.loginBtn
         on "http://localhost:8083/#"
 
-        "Kaidan Alenko" === read ".fs-user #usernick"
+        "Kaidan Alenko" === read Selectors.userNick
 
     "Nick contains non-ascii characters" &&& fun _ ->
-        "#nickname" << "Иван Петров"
+        Selectors.loginNickname << "Иван Петров"
 
-        click "#login"
+        click Selectors.loginBtn
         on "http://localhost:8083/#"
 
-        "Иван Петров" === read ".fs-user #usernick"
+        "Иван Петров" === read Selectors.userNick
 
 
     "Logoff button is functioning" &&& fun _ ->
-        "#nickname" << "Godzilla"
+        Selectors.loginNickname << "Godzilla"
 
-        click "#login"
+        click Selectors.loginBtn
         on "http://localhost:8083/#"
 
         click "#logout"
