@@ -44,17 +44,14 @@ let createEchoActor (getUser: GetUser) (system: ActorSystem) (botUserId: UserId)
     spawn system "echobot" <| props(handler)
 
 let createDiagChannel (getUser: GetUser) (system: ActorSystem) (server: IActorRef<_>) (echoUserId, channelName, topic) =
-    let bot = createEchoActor getUser system echoUserId
+    async {
+        let bot = createEchoActor getUser system echoUserId
 
-    server <! UpdateState (fun state ->
-        state
-        |> ServerApi.addChannel (fun () -> createChannel system) channelName topic
-        |> Result.map (
-            fun (state, chan) ->
-                chan.channelActor <! (NewParticipant (echoUserId, bot))
-                state
-        )
-        |> function
-        | Ok state -> state
-        | Error _ -> state // FIXME log error
-    )
+        let! result = server |> addChannel channelName topic None
+        match result with
+        | Ok chan ->
+            chan.channelActor <! (NewParticipant (echoUserId, bot))
+        | Error e ->
+            () // FIXME log error
+
+    }

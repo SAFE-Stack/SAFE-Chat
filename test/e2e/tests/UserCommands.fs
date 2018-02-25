@@ -23,7 +23,11 @@ let all () =
         Selectors.userStatus == ""
 
         // activate channel for command input bar to appear (not nice thing)
-        click <| Selectors.switchChannel "Test"
+        click Selectors.newChannelPlus
+        click Selectors.newChannelInput
+        Selectors.newChannelInput << "Test"
+        press enter
+
         on "http://localhost:8083/#channel"
     )
 

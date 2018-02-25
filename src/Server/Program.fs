@@ -5,7 +5,7 @@ open Suave.Filters
 open Suave.Operators
 open Suave.Logging
 
-type CmdArgs = { IP: System.Net.IPAddress; Port: Sockets.Port }
+type CmdArgs = { IP: System.Net.IPAddress; Port: Sockets.Port; ClientPath: string }
 
 module TweakingSuave =
 
@@ -32,18 +32,24 @@ let main argv =
         let (|IPAddress|_|) = parse System.Net.IPAddress.TryParse
 
         //default bind to 127.0.0.1:8083
-        let defaultArgs = { IP = System.Net.IPAddress.Loopback; Port = 8083us }
+        let defaultArgs = {
+            IP = System.Net.IPAddress.Loopback; Port = 8083us
+            ClientPath = ".." </> "Client" </> "public"
+            }
 
         let rec parseArgs b args =
             match args with
             | [] -> b
             | "--ip" :: IPAddress ip :: xs -> parseArgs { b with IP = ip } xs
             | "--port" :: Port p :: xs -> parseArgs { b with Port = p } xs
+            | "-cp" :: clientPath :: xs
+            | "--clientpath" :: clientPath :: xs -> parseArgs { b with ClientPath = clientPath } xs
             | invalidArgs ->
                 printfn "error: invalid arguments %A" invalidArgs
                 printfn "Usage:"
-                printfn "    --ip ADDRESS   ip address (Default: %O)" defaultArgs.IP
-                printfn "    --port PORT    port (Default: %i)" defaultArgs.Port
+                printfn "    --ip ADDRESS      ip address (Default: %O)" defaultArgs.IP
+                printfn "    --port PORT       port (Default: %i)" defaultArgs.Port
+                printfn "    --clientpath PATH client bundle path(Default: %s)" defaultArgs.ClientPath
                 exit 1
 
         argv |> List.ofArray |> parseArgs defaultArgs
@@ -51,15 +57,14 @@ let main argv =
     let logger = Logging.Targets.create Logging.Verbose [| "Suave" |]
 
     let app = App.root >=> logWithLevelStructured Logging.Info logger logFormatStructured
-    let clientPath = (".." </> "Client" </> "public") |> Path.GetFullPath
 
     let config =
         { defaultConfig with
             logger = Targets.create LogLevel.Debug [|"ServerCode"; "Server" |]
             bindings = [ HttpBinding.create HTTP args.IP args.Port ]
             cookieSerialiser = TweakingSuave.JsonNetCookieSerialiser()
+            homeFolder = args.ClientPath |> (Path.GetFullPath >> Some)
 
-            homeFolder = Some clientPath
             serverKey = App.Secrets.readCookieSecret()
         }
 

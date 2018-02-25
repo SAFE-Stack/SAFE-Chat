@@ -8,6 +8,7 @@
 
   <ItemGroup>
     <Compile Include="Selectors.fs" />
+    <Compile Include="Routines.fs" />
     <Compile Include="tests/*.fs" />
     <Compile Include="Program.fs" />
   </ItemGroup>

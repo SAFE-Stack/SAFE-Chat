@@ -14,6 +14,7 @@ let main _ =
     UserCommands.all ()
     NavigationPane.all ()
     InputArea.all()
+    Features.all()
 
     run()
     quit()
