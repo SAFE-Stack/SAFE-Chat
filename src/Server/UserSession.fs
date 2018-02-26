@@ -62,6 +62,7 @@ module private Implementation =
     let isMember (ChannelList channels) channelId = channels |> Map.containsKey channelId
 
 open Implementation
+open Akka.Actor
 type Session(server, userStore: UserStore, meArg) =
 
     let (RegisteredUser (meUserId, meUserInit)) = meArg
@@ -80,10 +81,14 @@ type Session(server, userStore: UserStore, meArg) =
     let makeChannelInfoResult v = async {
         match v with
         | Ok (arg1, channel: ChannelData) ->
-            let! (userIds: UserId list) = channel.channelActor <? ListUsers
-            let! users = userStore.GetUsers userIds
-            let chaninfo = { mapChanInfo channel with users = users |> List.map mapUserToProtocol}
-            return Ok (arg1, chaninfo)
+            try
+                let! (userIds: UserId list) = channel.channelActor <? ListUsers
+                let! users = userStore.GetUsers userIds
+                let chaninfo = { mapChanInfo channel with users = users |> List.map mapUserToProtocol}
+                return Ok (arg1, chaninfo)
+            with :?AggregateException as e ->
+                do logger.error (Message.eventX "Error while communicating channel actor: {e}" >> Message.setFieldValue "e" e)
+                return Result.Error "Channel is not available"
         | Result.Error e -> return Result.Error e
     }
 
@@ -167,7 +172,8 @@ type Session(server, userStore: UserStore, meArg) =
                 return replyErrorProtocol requestId "bad channel id"
 
             | Protocol.ServerMsg.JoinOrCreate channelName ->
-                let! channelResult = server |> getOrCreateChannel channelName
+                // user channels are all created with autoRemove, system channels are not
+                let! channelResult = server |> getOrCreateChannel channelName "" { ChannelConfig.Default with autoRemove = true }
                 match channelResult with
                 | Ok channelData when isMember channels channelData.id ->
                     return replyErrorProtocol requestId "User already joined channel"

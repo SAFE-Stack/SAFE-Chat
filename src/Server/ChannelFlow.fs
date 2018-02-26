@@ -12,6 +12,11 @@ open Suave.Logging
 // message timestamp
 type Timestamp = int * System.DateTime
 
+type ChannelConfig = {
+    // instructs channel actor to shutdown channel after last member exited
+    autoRemove: bool
+} with static member Default = {autoRemove = false}
+
 /// Client protocol message (messages sent from channel to client actor)
 type ClientMessage<'User, 'Message> =
     | ChatMessage of ts: Timestamp * author: 'User * 'Message
@@ -30,7 +35,9 @@ type ChannelMessage<'User, 'Message> =
 module internal Internals =
     // maps user login
     type ChannelParties<'User, 'Message> when 'User: comparison = Map<'User, ClientMessage<'User, 'Message> IActorRef>
+
     type ChannelState<'User, 'Message> when 'User: comparison = {
+        Config: ChannelConfig
         Parties: ChannelParties<'User, 'Message>
         LastEventId: int
     }
@@ -38,8 +45,8 @@ module internal Internals =
     let logger = Log.create "chanflow"
 
 open Internals
-/// Creates channel actor
-let createChannel<'User, 'Message when 'User: comparison> (system: ActorSystem) =
+
+let createChannelActor<'User, 'Message when 'User: comparison> (system: IActorRefFactory) (config: ChannelConfig) =
 
     let incId chan = { chan with LastEventId = chan.LastEventId + 1}
     let dispatch (parties: ChannelParties<'User, 'Message>) (msg: ClientMessage<'User, 'Message>): unit =
@@ -60,7 +67,12 @@ let createChannel<'User, 'Message when 'User: comparison> (system: ActorSystem) 
             logger.debug (Message.eventX "Participant left {user}" >> Message.setFieldValue "user" user)
             let parties = state.Parties |> Map.remove user
             do dispatch state.Parties <| Left (ts, user, parties |> allMembers)
-            incId { state with Parties = parties} |> updateState
+
+            if config.autoRemove && parties |> Map.isEmpty then
+                logger.debug (Message.eventX "It was the last participant, closing the channel")
+                stop()
+            else
+                incId { state with Parties = parties} |> updateState
 
         | ParticipantUpdate user ->
             logger.debug (Message.eventX "Participant updated {user}" >> Message.setFieldValue "user" user)
@@ -78,7 +90,7 @@ let createChannel<'User, 'Message when 'User: comparison> (system: ActorSystem) 
             ignored state
 
     in
-    props <| actorOf2 (behavior { Parties = Map.empty; LastEventId = 1000 }) |> (spawn system null)
+    props <| actorOf2 (behavior { Parties = Map.empty; LastEventId = 1000; Config = config }) |> (spawn system null)
 
 // Creates a Flow instance for user in channel.
 // When materialized flow connects user to channel and starts bidirectional communication.

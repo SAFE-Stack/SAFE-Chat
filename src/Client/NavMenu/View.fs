@@ -14,7 +14,7 @@ let menuItem htmlProp name topic isCurrent =
     button
       [ classList [ "btn", true; "fs-channel", true; "selected", isCurrent ]
         htmlProp ]
-      [ str name
+      [ h1 [] [str name]
         span [] [str topic]]
 
 let menuItemChannel (ch: ChannelInfo) currentPage = 

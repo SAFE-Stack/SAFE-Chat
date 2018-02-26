@@ -23,6 +23,7 @@ open UserStore
 open ChatServer
 open Logon
 open Suave.Html
+open ChatServer
 
 // ---------------------------------
 // Web app
@@ -102,6 +103,7 @@ let startChatServer () = async {
         }
     }
     actor {
+        ask-timeout = 2000
         debug {
             # receive = on
             # autoreceive = on
@@ -117,8 +119,9 @@ let startChatServer () = async {
     do! Async.Sleep(1000)
 
     let chatServer = ChatServer.startServer actorSystem
-    do Diag.createDiagChannel userStore.GetUser actorSystem chatServer (UserStore.UserIds.echo, "Demo", "Channel for testing purposes. Notice the bots are always ready to keep conversation.")
-    do ChatServer.createTestChannels actorSystem chatServer
+    do! Diag.createDiagChannel userStore.GetUser actorSystem chatServer (UserStore.UserIds.echo, "Demo", "Channel for testing purposes. Notice the bots are always ready to keep conversation.")
+
+    do! chatServer |> addChannel "Test" "empty channel" None |> Async.Ignore
 
     appServerState <- Some (actorSystem, userStore, chatServer)
     return ()
@@ -257,8 +260,10 @@ let root: WebPart =
                         | UserLoggedOn user -> fun ctx -> async {
                             let session = UserSession.Session(server, userStore, user)
                             let materializer = actorSystem.Materializer()
+
                             let messageFlow = ChannelFlow.createChannelMuxFlow<UserId,Message,ChannelId> materializer
                             let socketFlow = UserSessionFlow.create userStore messageFlow session.ControlFlow
+
                             let materialize materializer source sink =
                                 session.SetListenChannel(
                                     source

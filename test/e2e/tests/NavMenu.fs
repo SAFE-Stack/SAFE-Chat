@@ -8,17 +8,11 @@ let all() =
     context "Navigation panel tests"
 
     before (fun _ ->
-        url "http://localhost:8083"
-        onn "http://localhost:8083/logon"
-
-        "#nickname" << "Tester-tester"
-
-        click Selectors.loginBtn
-        on "http://localhost:8083/#"
+        Routines.loginAnonymous "Tester-tester"
     )
 
     after (fun _ ->
-        url "http://localhost:8083/logoff"
+        Routines.logout ()
     )
 
     "About link" &&& fun _ ->
@@ -55,7 +49,7 @@ let all() =
         sleep()
         0 === (height Selectors.newChannelInput)
         
-        click ".fs-menu button[title='Create New'] i.mdi-plus"
+        click Selectors.newChannelPlus
         sleep()
 
         Expect.isGreaterThan (height Selectors.newChannelInput) 30 "input is visible"
@@ -70,14 +64,14 @@ let all() =
 
     "Select channel" &&& fun _ ->
 
-        click <| Selectors.switchChannel "Demo"
-        click <| Selectors.switchChannel "Test"
+        Routines.joinChannel "Demo"
+        Routines.joinChannel "Test"
 
         // ensure there a title and input area
         sleep()
         (element Selectors.selectedChanBtn).Text |> contains "Test"
         
-        click <| Selectors.switchChannel "Demo"
+        Routines.switchChannel "Demo"
 
         sleep()
         (element Selectors.selectedChanBtn).Text |> contains "Demo"

@@ -32,9 +32,15 @@ Sample chat application built with netcore, F#, Akka.net and Fable.
 
 ## Running integration (e2e) tests
 
-* Start the server
+* Follow the instructions above to start the server
 * **Move to `test/e2e` folder**: `cd test\e2e`
 * run the tests: `dotnet run`
+
+or, if you love VS Code as much as I do:
+
+* open Integrated Terminal (`Ctrl-~` keyboard shortcut)
+* start server by typing `dev-server` (this is for Windows, on Linux it should be `cd src/Server & dotnet run`)
+* press F1 and start typing `Expecto`, choose `Expecto: Run` in the dropdown
 
 ## Implementation overview
 
