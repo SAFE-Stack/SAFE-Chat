@@ -4,8 +4,8 @@ open canopy
 [<EntryPoint>]
 let main _ =
 
-    let executingDir () = System.IO.Path.GetDirectoryName(System.Reflection.Assembly.GetExecutingAssembly().Location)
-    configuration.chromeDir <- "..\\..\\packages\\uitests\\Selenium.WebDriver.ChromeDriver\\driver\\win32"
+    let executingDir = System.IO.Path.GetDirectoryName(System.Reflection.Assembly.GetExecutingAssembly().Location)
+    configuration.chromeDir <- executingDir
 
     start chrome
 

@@ -27,3 +27,14 @@ let all () =
             |> Expect.all "channel is not removed" ((<>) "MyPersonalChannel")
 
         ()
+
+    "Do not drop channel with autoRemove set to False" &&& fun _ ->
+
+        Routines.joinChannel "Test"
+
+        click Selectors.channelLeaveBtn
+
+        elements Selectors.menuSwitchChannelTitle |> List.map (fun e -> e.Text)
+            |> Expect.contains "newly added channel" "Test"
+
+        ()

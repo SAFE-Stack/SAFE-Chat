@@ -17,6 +17,9 @@
     <Content Include="App.config">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </Content>
+    <Content Include="..\\..\\packages\\uitests\\Selenium.WebDriver.ChromeDriver\\driver\\win32\*.*">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
   </ItemGroup>
 
   <Import Project="..\..\.paket\Paket.Restore.targets" />
