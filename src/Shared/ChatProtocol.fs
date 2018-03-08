@@ -38,14 +38,14 @@ module Protocol =
         id: int; ts: System.DateTime; text: string; chan: ChannelId; author: UserId
     }
 
-    type UserEventKind =
-        | Joined of ChannelId
-        | Left of ChannelId
-        | Updated of ChannelId
+    type ChannelEventKind =
+        | Joined of ChannelId * ChanUserInfo
+        | Left of ChannelId * UserId
+        | Updated of ChannelId * ChanUserInfo
 
-    type UserEventInfo = {
-        id: int; ts: System.DateTime; user: ChanUserInfo
-        evt: UserEventKind
+    type ChannelEventInfo = {
+        id: int; ts: System.DateTime
+        evt: ChannelEventKind
     }
 
     /// The messages from server to client
@@ -58,7 +58,7 @@ module Protocol =
         | LeftChannel of chanId: string
 
         // The following types are incomplete
-        | UserEvent of UserEventInfo
+        | ChannelEvent of ChannelEventInfo
         | NewChannel of ChannelInfo
         | RemoveChannel of ChannelInfo
 

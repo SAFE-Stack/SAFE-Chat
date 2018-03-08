@@ -97,15 +97,15 @@ module private Implementation =
             let newState, cmd = state |> updateChanCmd msg.chan (Channel.State.update message)
             newState, cmd |> Cmd.map ApplicationMsg
 
-        | Protocol.ClientMsg.UserEvent ev ->
+        | Protocol.ClientMsg.ChannelEvent ev ->
 
-            let user = Conversions.mapUserInfo isMe ev.user
+            let userInfo user = Conversions.mapUserInfo isMe user
 
             let chan, message =
                 ev.evt |> function
-                | Protocol.Joined chan -> chan, Channel.Types.UserJoined user
-                | Protocol.Left chan -> chan, Channel.Types.UserLeft ev.user.id
-                | Protocol.Updated chan -> chan, Channel.Types.UserUpdated user
+                | Protocol.Joined (chan, user)  -> chan, Channel.Types.UserJoined (userInfo user)
+                | Protocol.Left (chan, userid)    -> chan, Channel.Types.UserLeft userid
+                | Protocol.Updated (chan, user) -> chan, Channel.Types.UserUpdated (userInfo user)
 
             updateChanCmd chan (Channel.State.update message) state |> fst, Cmd.none
 
