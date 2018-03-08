@@ -36,7 +36,7 @@ let internal extractMessage message =
             | message -> ControlMessage message                
         | x -> Trash <| sprintf "Not a Text message '%A'" x
     with e ->
-        do logger.error (Message.eventX "Failed to parse message '{msg}': {e}" >> Message.setFieldValue "msg" message  >> Message.setFieldValue "e" e)
+        do logger.error (Message.eventX "Failed to parse message '{msg}'. Reason: {e}" >> Message.setFieldValue "msg" message  >> Message.setFieldValue "e" e)
         Trash "exception"
 
 let create (userStore: UserStore) messageFlow controlFlow =

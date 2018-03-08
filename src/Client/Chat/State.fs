@@ -50,19 +50,27 @@ module private Implementation =
             console.error ("Channel %s update failed - channel not found", chanId)
             chat
 
+    let mutable lastRequestId = 10000
+    let toCommand x =
+        let reqId = lastRequestId.ToString()
+        lastRequestId <- lastRequestId + 1
+        Protocol.ServerMsg.Command (reqId, x)
+
     let applicationMsgUpdate (msg: AppMsg) (state: ChatData) :(ChatData * Msg Cmd) =
 
         match msg with
         | Nop -> state, Cmd.none
 
         | ChannelMsg (chanId, Forward text) ->
-            let message : string -> _ = function
-                | text when text.StartsWith "/" -> Protocol.ControlCommand | _ -> Protocol.UserMessage
+            let message =
+                match text with
+                | cmd when cmd.StartsWith "/" -> Protocol.UserCommand {command = cmd; chan = chanId} |> toCommand
+                | _ -> Protocol.UserMessage {text = text; chan = chanId}
 
-            state, Cmd.ofSocketMessage state.socket (message text {text = text; chan = chanId})
+            state, Cmd.ofSocketMessage state.socket message
 
         | ChannelMsg (chanId, Msg.Leave) ->
-            state, Cmd.ofSocketMessage state.socket (Protocol.ServerMsg.Leave chanId)
+            state, Cmd.ofSocketMessage state.socket (Protocol.ServerCommand.Leave chanId |> toCommand)
 
         | ChannelMsg (chanId, msg) ->
             let newState, cmd = state |> updateChanCmd chanId (Channel.State.update msg)
@@ -75,13 +83,13 @@ module private Implementation =
             match state.NewChanName with
             | Some channelName ->
                 state, Cmd.batch
-                        [ Cmd.ofSocketMessage state.socket (Protocol.JoinOrCreate channelName)
+                        [ Cmd.ofSocketMessage state.socket (Protocol.JoinOrCreate channelName |> toCommand)
                           Cmd.ofMsg <| SetNewChanName None |> Cmd.map ApplicationMsg]
             | None -> state, Cmd.none
         | Join chanId ->
-            state, Cmd.ofSocketMessage state.socket (Protocol.Join chanId)
+            state, Cmd.ofSocketMessage state.socket (Protocol.Join chanId |> toCommand)
         | Leave chanId ->
-            state, Cmd.ofSocketMessage state.socket (Protocol.Leave chanId)
+            state, Cmd.ofSocketMessage state.socket (Protocol.Leave chanId |> toCommand)
 
     let unknownUser userId = {
         Id = userId; Nick = "Unknown #" + userId; Status = ""
@@ -134,38 +142,48 @@ module private Implementation =
                       ChannelList = hello.channels |> List.map mapChannel |> Map.ofList }
                 Connected (me, chatData), Cmd.none
 
-            | Protocol.ClientMsg.UserUpdated newUser ->
-                let meNew = Conversions.mapUserInfo isMe newUser
-                Connected (meNew, chat), Cmd.none
+            | Protocol.ClientMsg.CommandReply (reqId, reply) ->
+                match reply with
+                | Protocol.UserUpdated newUser ->
+                    let meNew = Conversions.mapUserInfo isMe newUser
+                    Connected (meNew, chat), Cmd.none
 
-            | Protocol.ClientMsg.JoinedChannel chanInfo ->
-                let channel = Conversions.mapChannel chanInfo
-                let users = chanInfo.users |> List.map (Conversions.mapUserInfo isMe)
-                let (chanData, cmd) =
-                    Channel.State.init() |> fst
-                    |> Channel.State.update (Init (channel, users))
-                    // Conversions.mapChannel isMe chanInfo
-                Connected (me, {chat with Channels = chat.Channels |> Map.add chanInfo.id chanData}),
-                    Cmd.batch [
-                        cmd |> Cmd.map (fun msg -> ChannelMsg (chanInfo.id, msg) |> ApplicationMsg)
-                        Channel chanInfo.id |> toHash |> Navigation.newUrl
-                    ]
+                | Protocol.JoinedChannel chanInfo ->
+                    let channel = Conversions.mapChannel chanInfo
+                    let users = chanInfo.users |> List.map (Conversions.mapUserInfo isMe)
+                    let (chanData, cmd) =
+                        Channel.State.init() |> fst
+                        |> Channel.State.update (Init (channel, users))
+                        // Conversions.mapChannel isMe chanInfo
+                    Connected (me, {chat with Channels = chat.Channels |> Map.add chanInfo.id chanData}),
+                        Cmd.batch [
+                            cmd |> Cmd.map (fun msg -> ChannelMsg (chanInfo.id, msg) |> ApplicationMsg)
+                            Channel chanInfo.id |> toHash |> Navigation.newUrl
+                        ]
 
-            | Protocol.ClientMsg.LeftChannel channelId ->
-                chat.Channels |> Map.tryFind channelId
-                |> function
-                | Some _ ->
-                    Connected (me, {chat with Channels = chat.Channels |> Map.remove channelId}),
-                        About |> toHash |> Navigation.newUrl
-                | _ ->
-                    printfn "Channel not found %s" channelId
+                | Protocol.LeftChannel channelId ->
+                    chat.Channels |> Map.tryFind channelId
+                    |> function
+                    | Some _ ->
+                        Connected (me, {chat with Channels = chat.Channels |> Map.remove channelId}),
+                            About |> toHash |> Navigation.newUrl
+                    | _ ->
+                        printfn "Channel not found %s" channelId
+                        state, Cmd.none
+
+                | Protocol.Pong ->
+                    console.debug <| sprintf "Pong %s" reqId
+                    state, Cmd.none
+
+                | Protocol.Error error ->
+                    console.error <| sprintf "Server replied with error %A" error    // FIXME report error to user
                     state, Cmd.none
 
             | protocolMsg ->
                 let chatData, cmd = chatUpdate isMe protocolMsg chat
                 Connected (me, chatData), cmd
         | other ->
-            printfn "Socket message %A" other
+            console.info <| sprintf "Socket message %A" other
             (other, Cmd.none)
 
 open Implementation

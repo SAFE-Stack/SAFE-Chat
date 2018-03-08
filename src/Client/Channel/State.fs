@@ -1,6 +1,6 @@
 module Channel.State
-open Elmish
 
+open Elmish
 open Types
 open Fable.Import
 
