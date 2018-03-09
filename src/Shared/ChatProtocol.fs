@@ -26,7 +26,7 @@ module Protocol =
     type ServerMsg =
         | Greets
         | UserMessage of UserMessageInfo
-        | Command of reqId: string * message: ServerCommand
+        | ServerCommand of reqId: string * message: ServerCommand
 
     type HelloInfo = {
         me: ChanUserInfo
@@ -51,7 +51,7 @@ module Protocol =
         evt: ChannelEventKind
     }
 
-    type CommandReply =
+    type CommandResponse =
         | Error of ClientErrMsg
         | UserUpdated of ChanUserInfo
         | JoinedChannel of ChannelInfo  // client joined a channel
@@ -61,7 +61,7 @@ module Protocol =
     /// The messages from server to client
     type ClientMsg =
         | Hello of HelloInfo
-        | CommandReply of reqId: string * reply: CommandReply
+        | CmdResponse of reqId: string * reply: CommandResponse
 
         // external events
         | ChanMsg of ChannelMsgInfo

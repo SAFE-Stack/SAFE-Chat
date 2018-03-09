@@ -47,7 +47,7 @@ module private Implementation =
         Ok (ChannelList Map.empty, ())
 
     let replyErrorProtocol requestId errtext =
-        Protocol.ClientMsg.CommandReply (requestId, Protocol.CannotProcess errtext |> Protocol.Error)
+        Protocol.ClientMsg.CmdResponse (requestId, Protocol.CannotProcess errtext |> Protocol.Error)
 
     let reply requestId = function
         | Ok response ->    response
@@ -136,29 +136,29 @@ type Session(server, userStore: UserStore, meArg) =
             | Ok (RegisteredUser(_, updatedUser)) ->
                 meUser <- updatedUser
                 do! notifyChannels (ParticipantUpdate meUserId)
-                return Protocol.CommandReply (requestId, Protocol.UserUpdated (mapUserToProtocol <| getMe()))
+                return Protocol.CmdResponse (requestId, Protocol.UserUpdated (mapUserToProtocol <| getMe()))
             | Result.Error e ->
                 return replyErrorProtocol requestId e
         }
 
     let replyJoinedChannel requestId chaninfo =
-        chaninfo |> updateChannels requestId (fun ch -> Protocol.CommandReply (requestId, Protocol.JoinedChannel {ch with joined = true}))
+        chaninfo |> updateChannels requestId (fun ch -> Protocol.CmdResponse (requestId, Protocol.JoinedChannel {ch with joined = true}))
 
     let rec processControlCommand requestId command = async {
         match command with
-        | Protocol.ServerCommand.Join (IsChannelId channelId) when isMember channels channelId ->
+        | Protocol.Join (IsChannelId channelId) when isMember channels channelId ->
             return replyErrorProtocol requestId "User already joined channel"
 
-        | Protocol.ServerCommand.Join (IsChannelId channelId) ->
+        | Protocol.Join (IsChannelId channelId) ->
             let! serverChannel = getChannel (byChanId channelId) server
             let result = join serverChannel listenChannel channels meUserId
             let! chaninfo = makeChannelInfoResult result
             return replyJoinedChannel requestId chaninfo
 
-        | Protocol.ServerCommand.Join _ ->
+        | Protocol.Join _ ->
             return replyErrorProtocol requestId "bad channel id"
 
-        | Protocol.ServerCommand.JoinOrCreate channelName ->
+        | Protocol.JoinOrCreate channelName ->
             // user channels are all created with autoRemove, system channels are not
             let! channelResult = server |> getOrCreateChannel channelName "" { ChannelConfig.Default with autoRemove = true }
             match channelResult with
@@ -173,22 +173,22 @@ type Session(server, userStore: UserStore, meArg) =
             | Result.Error err ->
                 return replyErrorProtocol requestId err
 
-        | Protocol.ServerCommand.Leave chanIdStr ->
+        | Protocol.Leave chanIdStr ->
             return chanIdStr |> function
                 | IsChannelId channelId ->
                     let result = leave channels channelId
-                    result |> updateChannels requestId (fun _ -> Protocol.CommandReply (requestId, Protocol.LeftChannel chanIdStr))
+                    result |> updateChannels requestId (fun _ -> Protocol.CmdResponse (requestId, Protocol.LeftChannel chanIdStr))
                 | _ ->
                     replyErrorProtocol requestId "bad channel id"
         | Protocol.Ping ->
-            return Protocol.CommandReply (requestId, Protocol.Pong)
+            return Protocol.CmdResponse (requestId, Protocol.Pong)
 
-        | Protocol.ServerCommand.UserCommand {command = text; chan = chanIdStr } ->
+        | Protocol.UserCommand {command = text; chan = chanIdStr } ->
             match text with
             | CommandPrefix "/leave" _ ->
-                return! processControlCommand requestId (Protocol.ServerCommand.Leave chanIdStr)
+                return! processControlCommand requestId (Protocol.Leave chanIdStr)
             | CommandPrefix "/join" chanName ->
-                return! processControlCommand requestId (Protocol.ServerCommand.JoinOrCreate chanName)
+                return! processControlCommand requestId (Protocol.JoinOrCreate chanName)
             | CommandPrefix "/nick" newNick ->
                 return! updateUser requestId updateNick newNick
             | CommandPrefix "/status" newStatus ->
@@ -210,7 +210,7 @@ type Session(server, userStore: UserStore, meArg) =
                 return serverChannels |> (Result.map makeHello >> reply "")
             }
 
-        | Protocol.ServerMsg.Command (requestId, command) ->
+        | Protocol.ServerMsg.ServerCommand (requestId, command) ->
             processControlCommand requestId command
 
         | _ ->

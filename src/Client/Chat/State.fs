@@ -54,7 +54,7 @@ module private Implementation =
     let toCommand x =
         let reqId = lastRequestId.ToString()
         lastRequestId <- lastRequestId + 1
-        Protocol.ServerMsg.Command (reqId, x)
+        Protocol.ServerMsg.ServerCommand (reqId, x)
 
     let applicationMsgUpdate (msg: AppMsg) (state: ChatData) :(ChatData * Msg Cmd) =
 
@@ -70,7 +70,7 @@ module private Implementation =
             state, Cmd.ofSocketMessage state.socket message
 
         | ChannelMsg (chanId, Msg.Leave) ->
-            state, Cmd.ofSocketMessage state.socket (Protocol.ServerCommand.Leave chanId |> toCommand)
+            state, Cmd.ofSocketMessage state.socket (Protocol.Leave chanId |> toCommand)
 
         | ChannelMsg (chanId, msg) ->
             let newState, cmd = state |> updateChanCmd chanId (Channel.State.update msg)
@@ -133,7 +133,7 @@ module private Implementation =
             let isMe = (=) me.Id
             match msg with
 
-            | Protocol.ClientMsg.Hello hello ->
+            | Protocol.Hello hello ->
                 let me = Conversions.mapUserInfo ((=) hello.me.id) hello.me
                 let mapChannel (ch: Protocol.ChannelInfo) = ch.id, Conversions.mapChannel ch
                 let chatData = {
@@ -142,7 +142,7 @@ module private Implementation =
                       ChannelList = hello.channels |> List.map mapChannel |> Map.ofList }
                 Connected (me, chatData), Cmd.none
 
-            | Protocol.ClientMsg.CommandReply (reqId, reply) ->
+            | Protocol.CmdResponse (reqId, reply) ->
                 match reply with
                 | Protocol.UserUpdated newUser ->
                     let meNew = Conversions.mapUserInfo isMe newUser
