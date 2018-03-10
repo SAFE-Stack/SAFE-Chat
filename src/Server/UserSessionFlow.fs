@@ -36,7 +36,7 @@ let internal extractMessage message =
             | message -> ControlMessage message                
         | x -> Trash <| sprintf "Not a Text message '%A'" x
     with e ->
-        do logger.error (Message.eventX "Failed to parse message '{msg}': {e}" >> Message.setFieldValue "msg" message  >> Message.setFieldValue "e" e)
+        do logger.error (Message.eventX "Failed to parse message '{msg}'. Reason: {e}" >> Message.setFieldValue "msg" message  >> Message.setFieldValue "e" e)
         Trash "exception"
 
 let create (userStore: UserStore) messageFlow controlFlow =
@@ -48,22 +48,22 @@ let create (userStore: UserStore) messageFlow controlFlow =
     let extractControlMessage (ControlMessage message | OtherwiseFail message) = message
 
     let encodeChannelMessage (getUser: GetUser) channelId : ClientMessage<UserId, Message> -> Protocol.ClientMsg Async =
-        let returnUserEvent (id, ts) userid evt = async {
+        let returnUserEvent (id, ts) userid f = async {
             let! userResult = getUser userid
-            let user = function
+            let user2userInfo = function
                 | Some user -> mapUserToProtocol user
                 | _ -> makeBlankUserInfo "zz" "unknown"
-            return Protocol.UserEvent {id = id; ts = ts; user = user userResult; evt = evt}
+            return Protocol.ChannelEvent {id = id; ts = ts; evt = userResult |> (user2userInfo >> f)}
         }
         function
         | ChatMessage ((id, ts), UserId authorId, Message message) ->
             async.Return <| Protocol.ChanMsg {id = id; ts = ts; text = message; chan = channelId; author = authorId}
         | Joined (idts, userid, _) ->
-            returnUserEvent idts userid (Protocol.Joined channelId)
-        | Left (idts, userid, _) ->
-            returnUserEvent idts userid (Protocol.Left channelId)
+            returnUserEvent idts userid (fun u -> Protocol.Joined (channelId, u))
+        | Left ((id, ts), UserId userid, _) ->
+            async.Return <| Protocol.ChannelEvent {id = id; ts = ts; evt = Protocol.Left (channelId, userid)}
         | Updated (idts, userid) ->
-            returnUserEvent idts userid (Protocol.Updated channelId)
+            returnUserEvent idts userid (fun u -> Protocol.Updated (channelId, u))
 
     let userMessageFlow =
         Flow.empty<IncomingMessage, Akka.NotUsed>

@@ -47,7 +47,7 @@ module private Implementation =
         Ok (ChannelList Map.empty, ())
 
     let replyErrorProtocol requestId errtext =
-        Protocol.CannotProcess (requestId, errtext) |> Protocol.ClientMsg.Error
+        Protocol.ClientMsg.CmdResponse (requestId, Protocol.CannotProcess errtext |> Protocol.Error)
 
     let reply requestId = function
         | Ok response ->    response
@@ -62,7 +62,6 @@ module private Implementation =
     let isMember (ChannelList channels) channelId = channels |> Map.containsKey channelId
 
 open Implementation
-open Akka.Actor
 type Session(server, userStore: UserStore, meArg) =
 
     let (RegisteredUser (meUserId, meUserInit)) = meArg
@@ -128,7 +127,7 @@ type Session(server, userStore: UserStore, meArg) =
         | other -> other
 
     let updateUser requestId fn = function
-        | s when System.String.IsNullOrWhiteSpace s ->
+        | str when System.String.IsNullOrWhiteSpace str ->
             async.Return <| replyErrorProtocol requestId "Invalid (blank) value is not allowed"
         | newNick -> async {
             let meNew = meUser |> fn newNick
@@ -137,81 +136,85 @@ type Session(server, userStore: UserStore, meArg) =
             | Ok (RegisteredUser(_, updatedUser)) ->
                 meUser <- updatedUser
                 do! notifyChannels (ParticipantUpdate meUserId)
-                return Protocol.ClientMsg.UserUpdated (mapUserToProtocol <| getMe())
+                return Protocol.CmdResponse (requestId, Protocol.UserUpdated (mapUserToProtocol <| getMe()))
             | Result.Error e ->
                 return replyErrorProtocol requestId e
         }
 
-    let rec processControlMessage message =
-        async {
-            let requestId = "" // TODO take from server message
-            let replyJoinedChannel chaninfo =
-                chaninfo |> updateChannels requestId (fun ch -> Protocol.ClientMsg.JoinedChannel {ch with joined = true})
-            match message with
+    let replyJoinedChannel requestId chaninfo =
+        chaninfo |> updateChannels requestId (fun ch -> Protocol.CmdResponse (requestId, Protocol.JoinedChannel {ch with joined = true}))
 
-            | Protocol.ServerMsg.Greets ->
-                let makeChanInfo chanData =
-                    { mapChanInfo chanData with joined = isMember channels chanData.id}
+    let rec processControlCommand requestId command = async {
+        match command with
+        | Protocol.Join (IsChannelId channelId) when isMember channels channelId ->
+            return replyErrorProtocol requestId "User already joined channel"
 
-                let makeHello channels =
-                    Protocol.ClientMsg.Hello {me = mapUserToProtocol <| getMe(); channels = channels |> List.map makeChanInfo}
+        | Protocol.Join (IsChannelId channelId) ->
+            let! serverChannel = getChannel (byChanId channelId) server
+            let result = join serverChannel listenChannel channels meUserId
+            let! chaninfo = makeChannelInfoResult result
+            return replyJoinedChannel requestId chaninfo
 
-                let! serverChannels = server |> (listChannels (fun _ -> true))
-                return serverChannels |> (Result.map makeHello >> reply "")
+        | Protocol.Join _ ->
+            return replyErrorProtocol requestId "bad channel id"
 
-            | Protocol.ServerMsg.Join (IsChannelId channelId) when isMember channels channelId ->
+        | Protocol.JoinOrCreate channelName ->
+            // user channels are all created with autoRemove, system channels are not
+            let! channelResult = server |> getOrCreateChannel channelName "" { ChannelConfig.Default with autoRemove = true }
+            match channelResult with
+            | Ok channelData when isMember channels channelData.id ->
                 return replyErrorProtocol requestId "User already joined channel"
 
-            | Protocol.ServerMsg.Join (IsChannelId channelId) ->
-                let! serverChannel = getChannel (byChanId channelId) server
+            | Ok channelData ->
+                let! serverChannel = getChannel (byChanId channelData.id) server
                 let result = join serverChannel listenChannel channels meUserId
                 let! chaninfo = makeChannelInfoResult result
-                return replyJoinedChannel chaninfo
+                return replyJoinedChannel requestId chaninfo
+            | Result.Error err ->
+                return replyErrorProtocol requestId err
 
-            | Protocol.ServerMsg.Join _ ->
-                return replyErrorProtocol requestId "bad channel id"
-
-            | Protocol.ServerMsg.JoinOrCreate channelName ->
-                // user channels are all created with autoRemove, system channels are not
-                let! channelResult = server |> getOrCreateChannel channelName "" { ChannelConfig.Default with autoRemove = true }
-                match channelResult with
-                | Ok channelData when isMember channels channelData.id ->
-                    return replyErrorProtocol requestId "User already joined channel"
-
-                | Ok channelData ->
-                    let! serverChannel = getChannel (byChanId channelData.id) server
-                    let result = join serverChannel listenChannel channels meUserId
-                    let! chaninfo = makeChannelInfoResult result
-                    return replyJoinedChannel chaninfo
-                | Result.Error err ->
-                    return replyErrorProtocol requestId err
-
-            | Protocol.ServerMsg.Leave chanIdStr ->
-                return chanIdStr |> function
-                    | IsChannelId channelId ->
-                        let result = leave channels channelId
-                        result |> updateChannels requestId (fun _ -> Protocol.LeftChannel chanIdStr)
-                    | _ ->
-                        replyErrorProtocol requestId "bad channel id"
-
-            | Protocol.ServerMsg.ControlCommand {text = text; chan = chanIdStr } ->
-                match text with
-                | CommandPrefix "/leave" _ ->
-                    return! processControlMessage (Protocol.ServerMsg.Leave chanIdStr)
-                | CommandPrefix "/join" chanName ->
-                    return! processControlMessage (Protocol.ServerMsg.JoinOrCreate chanName)
-                | CommandPrefix "/nick" newNick ->
-                    return! updateUser requestId updateNick newNick
-                | CommandPrefix "/status" newStatus ->
-                    return! updateUser requestId updateStatus newStatus
-                | CommandPrefix "/avatar" newAvatarUrl ->
-                    return! updateUser requestId updateAvatar newAvatarUrl
+        | Protocol.Leave chanIdStr ->
+            return chanIdStr |> function
+                | IsChannelId channelId ->
+                    let result = leave channels channelId
+                    result |> updateChannels requestId (fun _ -> Protocol.CmdResponse (requestId, Protocol.LeftChannel chanIdStr))
                 | _ ->
-                    return replyErrorProtocol requestId "command was not processed"
+                    replyErrorProtocol requestId "bad channel id"
+        | Protocol.Ping ->
+            return Protocol.CmdResponse (requestId, Protocol.Pong)
 
+        | Protocol.UserCommand {command = text; chan = chanIdStr } ->
+            match text with
+            | CommandPrefix "/leave" _ ->
+                return! processControlCommand requestId (Protocol.Leave chanIdStr)
+            | CommandPrefix "/join" chanName ->
+                return! processControlCommand requestId (Protocol.JoinOrCreate chanName)
+            | CommandPrefix "/nick" newNick ->
+                return! updateUser requestId updateNick newNick
+            | CommandPrefix "/status" newStatus ->
+                return! updateUser requestId updateStatus newStatus
+            | CommandPrefix "/avatar" newAvatarUrl ->
+                return! updateUser requestId updateAvatar newAvatarUrl
             | _ ->
-                return replyErrorProtocol requestId "event was not processed"
-        }
+                return replyErrorProtocol requestId "command was not processed"
+    }
+
+    let processControlMessage = function
+        | Protocol.ServerMsg.Greets ->
+            let makeChanInfo chanData = { mapChanInfo chanData with joined = isMember channels chanData.id}
+            let makeHello channels =
+                Protocol.ClientMsg.Hello {me = mapUserToProtocol <| getMe(); channels = channels |> List.map makeChanInfo}
+
+            async {
+                let! serverChannels = server |> (listChannels (fun _ -> true))
+                return serverChannels |> (Result.map makeHello >> reply "")
+            }
+
+        | Protocol.ServerMsg.ServerCommand (requestId, command) ->
+            processControlCommand requestId command
+
+        | _ ->
+            async.Return <| replyErrorProtocol "-" "event was not processed"
 
     let controlMessageFlow = Flow.empty<_, Akka.NotUsed> |> Flow.asyncMap 1 processControlMessage
 

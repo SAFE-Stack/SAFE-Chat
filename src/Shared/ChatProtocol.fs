@@ -13,17 +13,20 @@ module Protocol =
         id: ChannelId; name: string; userCount: int; topic: string; joined: bool; users: ChanUserInfo list
     }
 
-    type UserMessageInfo = {
-        text: string; chan: ChannelId
-    }
+    type UserMessageInfo = {text: string; chan: ChannelId}
+    type UserCommandInfo = {command: string; chan: ChannelId}
+
+    type ServerCommand =
+        | UserCommand of UserCommandInfo
+        | Join of ChannelId
+        | JoinOrCreate of channelName: string
+        | Leave of ChannelId
+        | Ping
 
     type ServerMsg =
         | Greets
         | UserMessage of UserMessageInfo
-        | ControlCommand of UserMessageInfo
-        | Join of ChannelId    // TODO add req id (pass back in response message)
-        | JoinOrCreate of channelName: string
-        | Leave of ChannelId
+        | ServerCommand of reqId: string * message: ServerCommand
 
     type HelloInfo = {
         me: ChanUserInfo
@@ -32,33 +35,37 @@ module Protocol =
 
     type ClientErrMsg =
         | AuthFail of string
-        | CannotProcess of reqId: string * message: string
+        | CannotProcess of string
 
     type ChannelMsgInfo = {
         id: int; ts: System.DateTime; text: string; chan: ChannelId; author: UserId
     }
 
-    type UserEventKind =
-        | Joined of ChannelId
-        | Left of ChannelId
-        | Updated of ChannelId
+    type ChannelEventKind =
+        | Joined of ChannelId * ChanUserInfo
+        | Left of ChannelId * UserId
+        | Updated of ChannelId * ChanUserInfo
 
-    type UserEventInfo = {
-        id: int; ts: System.DateTime; user: ChanUserInfo
-        evt: UserEventKind
+    type ChannelEventInfo = {
+        id: int; ts: System.DateTime
+        evt: ChannelEventKind
     }
+
+    type CommandResponse =
+        | Error of ClientErrMsg
+        | UserUpdated of ChanUserInfo
+        | JoinedChannel of ChannelInfo  // client joined a channel
+        | LeftChannel of chanId: string
+        | Pong
 
     /// The messages from server to client
     type ClientMsg =
-        | Error of ClientErrMsg
         | Hello of HelloInfo
-        | UserUpdated of ChanUserInfo
-        | ChanMsg of ChannelMsgInfo
-        | JoinedChannel of ChannelInfo  // client joined a channel
-        | LeftChannel of chanId: string
+        | CmdResponse of reqId: string * reply: CommandResponse
 
-        // The following types are incomplete
-        | UserEvent of UserEventInfo
+        // external events
+        | ChanMsg of ChannelMsgInfo
+        | ChannelEvent of ChannelEventInfo
         | NewChannel of ChannelInfo
         | RemoveChannel of ChannelInfo
 

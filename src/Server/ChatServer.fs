@@ -131,7 +131,7 @@ let startServer (system: ActorSystem) : IActorRef<ServerControlMessage> =
 
                 let createChannel () =
                     let actor = createChannelActor ctx config
-                    do logger.debug (Message.eventX "Started watching {a}" >> Message.setFieldValue "a" ref)
+                    do logger.debug (Message.eventX "Started watching {a}" >> Message.setFieldValue "a" name)
                     monitor ctx actor |> ignore
                     actor
 
