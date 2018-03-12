@@ -64,7 +64,7 @@ FsChat backend is based on Akka.Streams. The entry point is a `ChannelFlow` modu
 
 ### Akkling
 
-Akkling is a great tool for F# developers. It does not support netcore yet so I hacked it in my own clone and I store hacked packages in the chat repository.
+Akkling is an unofficial Akka.NET API for F#. It's not just wrapper around Akka.NET API, but introduces some cool concepts such as Effects, typed actors and many more.
 
 ### Fable, Elmish
 
