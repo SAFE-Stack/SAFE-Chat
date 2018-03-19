@@ -1,0 +1,15 @@
+language: fsharp
+mono: none
+dotnet: 2.0.0
+node_js:
+  - "8.9.1"
+script:
+  - npm install yarn
+  - yarn
+  - cd src\Client
+  - dotnet restore
+  - dotnet fable webpack -p
+  - cd ..\Server
+  - dotnet restore
+  - dotnet build -c Release -o Server_Release
+ 
