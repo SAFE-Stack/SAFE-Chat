@@ -1,5 +1,6 @@
 language: csharp
-mono: none
+mono: 
+  - latest
 sudo: required
 dotnet: 2.0.0
 node_js:
