@@ -19,11 +19,9 @@ script:
   - dotnet build -c Release -o $TRAVIS_BUILD_DIR/src/Docker
   - cd $TRAVIS_BUILD_DIR/src/Docker
   - ls -l
-deploy:
-  provider: releases
-  api_key: $GITHUB_OAUTH_TOKEN
-  file_glob: true
-  file: $TRAVIS_BUILD_DIR/src/Docker/**
-  skip_cleanup: true
-  on:
-    branch: dev
+after_success:
+  - cd $TRAVIS_BUILD_DIR/src
+  - docker login -u="$DOCKER_USERNAME" -p="$DOCKER_PASSWORD"
+  - docker build -t safe-chat .
+  - docker tag safe-chat anridegod/safe-chat:latest
+  - docker push anridegod/safe-chat:latest
