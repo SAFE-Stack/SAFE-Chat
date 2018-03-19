@@ -6,6 +6,7 @@ dotnet: 2.0.0
 node_js:
   - "8.9.1"
 script:
+  - mkdir $TRAVIS_BUILD_DIR/src/Docker
   - mkdir $TRAVIS_BUILD_DIR/src/Docker/Client
   - npm install yarn -g
   - yarn
