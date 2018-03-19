@@ -5,12 +5,12 @@ dotnet: 2.0.0
 node_js:
   - "8.9.1"
 script:
-  - npm install yarn
+  - npm install yarn -g
   - yarn
-  - cd src\Client
+  - cd $TRAVIS_BUILD_DIR/src/Client
   - dotnet restore
   - dotnet fable webpack -p
-  - cd ..\Server
+  - cd $TRAVIS_BUILD_DIR/src/Server
   - dotnet restore
   - dotnet build -c Release -o Server_Release
  
