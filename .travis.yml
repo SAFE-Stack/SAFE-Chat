@@ -10,8 +10,7 @@ script:
   - yarn
   - cd $TRAVIS_BUILD_DIR/src/Client
   - dotnet restore
-  - dotnet fable webpack -p
+  - dotnet fable webpack --output-path $TRAVIS_BUILD_DIR/src/Docker/Client -p
   - cd $TRAVIS_BUILD_DIR/src/Server
   - dotnet restore
-  - dotnet build -c Release -o Server_Release
- 
+  - dotnet build -c Release -o $TRAVIS_BUILD_DIR/src/Docker
