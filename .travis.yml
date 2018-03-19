@@ -1,4 +1,4 @@
-language: csharp
+language: fsharp
 mono: 
   - latest
 sudo: required
@@ -10,7 +10,8 @@ script:
   - yarn
   - cd $TRAVIS_BUILD_DIR/src/Client
   - dotnet restore
-  - dotnet fable webpack --output-path $TRAVIS_BUILD_DIR/src/Docker/Client -p
+  - dotnet fable webpack -- -p
+  - cp -a $TRAVIS_BUILD_DIR/src/Client/public $TRAVIS_BUILD_DIR/src/Docker/Client
   - cd $TRAVIS_BUILD_DIR/src/Server
   - dotnet restore
   - dotnet build -c Release -o $TRAVIS_BUILD_DIR/src/Docker
@@ -22,5 +23,3 @@ deploy:
   file_glob: true
   file: $TRAVIS_BUILD_DIR/src/Docker/**
   skip_cleanup: true
-  on:
-    tags: true
