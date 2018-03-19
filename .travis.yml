@@ -14,3 +14,10 @@ script:
   - cd $TRAVIS_BUILD_DIR/src/Server
   - dotnet restore
   - dotnet build -c Release -o $TRAVIS_BUILD_DIR/src/Docker
+  - cd $TRAVIS_BUILD_DIR/src/Docker
+  - zip release.zip
+deploy:
+  provider: releases
+  api_key: $GITHUB_OAUTH_TOKEN
+  file: $TRAVIS_BUILD_DIR/src/Docker/release.zip
+  skip_cleanup: true
