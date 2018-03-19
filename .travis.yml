@@ -1,4 +1,4 @@
-language: fsharp
+language: csharp
 mono: 
   - latest
 sudo: required
