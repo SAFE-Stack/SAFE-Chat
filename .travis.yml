@@ -1,5 +1,6 @@
-language: fsharp
+language: csharp
 mono: none
+sudo: required
 dotnet: 2.0.0
 node_js:
   - "8.9.1"
