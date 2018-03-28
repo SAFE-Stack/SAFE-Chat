@@ -1,3 +1,5 @@
+[![Build Status](https://travis-ci.org/AndrewEgorov/SAFE-Chat.svg?branch=dev)](https://travis-ci.org/AndrewEgorov/SAFE-Chat)
+
 # F#chat
 
 Sample chat application built with netcore, F#, Akka.net and Fable.
