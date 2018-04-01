@@ -6,7 +6,6 @@
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="Prelude.fs" />
-    <Compile Include="FlowImpl.fs" />
     <Compile Include="ChannelFlow.fs" />
     <Compile Include="../Shared/ChatProtocol.fs" />
     <Compile Include="ChatUser.fs" />
