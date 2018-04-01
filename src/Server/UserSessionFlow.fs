@@ -2,6 +2,7 @@ module UserSessionFlow
 
 open System
 open Akkling.Streams
+open Akka.Streams
 open Akka.Streams.Dsl
 
 open Suave
@@ -39,12 +40,22 @@ let internal extractMessage message =
         do logger.error (Message.eventX "Failed to parse message '{msg}'. Reason: {e}" >> Message.setFieldValue "msg" message  >> Message.setFieldValue "e" e)
         Trash "exception"
 
+let internal partitionFlows (pfn: _ -> int) worker1 worker2 combine =
+    Akkling.Streams.Graph.create2 combine (fun b (w1: FlowShape<_,_>) (w2: FlowShape<_,_>) ->
+        let partition = Partition<'TIn>(2, System.Func<_,int>(pfn)) |> b.Add
+        let merge = Merge<'TOut> 2 |> b.Add
+
+        b.From(partition.Out 0).Via(w1).To(merge.In 0) |> ignore
+        b.From(partition.Out 1).Via(w2).To(merge.In 1) |> ignore
+
+        FlowShape(partition.In, merge.Out)
+    ) worker1 worker2
+    |> Flow.FromGraph
+
+
 let create (userStore: UserStore) messageFlow controlFlow =
 
-    let isChannelMessage = function |ChannelMessage _ -> true | _ -> false
     let extractChannelMessage (ChannelMessage (chan, message) | OtherwiseFail (chan, message)) = chan, message
-
-    let isControlMessage = function |ControlMessage _ -> true | _ -> false
     let extractControlMessage (ControlMessage message | OtherwiseFail message) = message
 
     let encodeChannelMessage (getUser: GetUser) channelId : ClientMessage<UserId, Message> -> Protocol.ClientMsg Async =
@@ -65,9 +76,10 @@ let create (userStore: UserStore) messageFlow controlFlow =
         | Updated (idts, userid) ->
             returnUserEvent idts userid (fun u -> Protocol.Updated (channelId, u))
 
+    let partition = function |ChannelMessage _ -> 0 | _ -> 1
+
     let userMessageFlow =
         Flow.empty<IncomingMessage, Akka.NotUsed>
-        |> Flow.filter isChannelMessage
         |> Flow.map extractChannelMessage
         // |> Flow.log "User flow"
         |> Flow.viaMat messageFlow Keep.right
@@ -75,13 +87,12 @@ let create (userStore: UserStore) messageFlow controlFlow =
 
     let controlFlow =
         Flow.empty<IncomingMessage, Akka.NotUsed>
-        |> Flow.filter isControlMessage
         |> Flow.map extractControlMessage
         // |> Flow.log "Control flow"
         |> Flow.via controlFlow
 
     let combinedFlow : Flow<IncomingMessage,Protocol.ClientMsg,_> =
-        FlowImpl.split2 userMessageFlow controlFlow Keep.left
+        partitionFlows partition userMessageFlow controlFlow Keep.left
 
     let socketFlow =
         Flow.empty<WsMessage, Akka.NotUsed>
