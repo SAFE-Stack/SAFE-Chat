@@ -107,9 +107,9 @@ let startChatServer () = async {
         debug {
             # receive = on
             # autoreceive = on
-            # lifecycle = on
+            lifecycle = on
             # event-stream = on
-            # unhandled = on
+            unhandled = on
         }
     }
     }"""
@@ -122,6 +122,7 @@ let startChatServer () = async {
     do! Diag.createDiagChannel userStore.GetUser actorSystem chatServer (UserStore.UserIds.echo, "Demo", "Channel for testing purposes. Notice the bots are always ready to keep conversation.")
 
     do! chatServer |> addChannel "Test" "empty channel" None |> Async.Ignore
+    do! chatServer |> getOrCreateChannel "a" "about chan" (AboutFlow.createActor Message) |> Async.Ignore
 
     appServerState <- Some (actorSystem, userStore, chatServer)
     return ()

@@ -160,7 +160,8 @@ type Session(server, userStore: UserStore, meArg) =
 
         | Protocol.JoinOrCreate channelName ->
             // user channels are all created with autoRemove, system channels are not
-            let! channelResult = server |> getOrCreateChannel channelName "" { ChannelConfig.Default with autoRemove = true }
+            let makeChan = createChannelActor >< { ChannelConfig.Default with autoRemove = true }
+            let! channelResult = server |> getOrCreateChannel channelName "" makeChan
             match channelResult with
             | Ok channelData when isMember channels channelData.id ->
                 return replyErrorProtocol requestId "User already joined channel"

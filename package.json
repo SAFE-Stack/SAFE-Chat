@@ -14,6 +14,7 @@
     "babel-runtime": "^6.26.0",
     "react": "^15.6.2",
     "react-dom": "^15.6.2",
+    "react-markdown": "^3.3.0",
     "remotedev": "0.2.4"
   },
   "devDependencies": {

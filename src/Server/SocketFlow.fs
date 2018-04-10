@@ -43,12 +43,10 @@ let handleWebsocketMessages (system: ActorSystem)
             // using pipeTo operator just to wait for async send operation to complete
             ws.send Opcode.Text (Encoding.UTF8.GetBytes(text) |> ByteSegment) true
                 |> asyncIgnore |!> ctx.Self
-            ignored()
         | Data bytes ->
             ws.send Binary (ByteSegment bytes) true |> asyncIgnore |!> ctx.Self
-            ignored()
-        | Ignore ->
-            ignored()
+        | Ignore -> ()
+        >> ignored
 
     let sinkActor =
         props <| actorOf2 (sinkBehavior ()) |> (spawn system null) |> retype

@@ -14,12 +14,14 @@ let private logger = Log.create "chatserver"
 type Message = Message of string
 type ChannelId = ChannelId of int
 
+type ChannelActor = ChannelMessage<UserId, Message> IActorRef
+
 /// Channel is a primary store for channel info and data
 type ChannelData = {
     id: ChannelId
     name: string
     topic: string
-    channelActor: ChannelMessage<UserId, Message> IActorRef
+    channelActor: ChannelActor
 }
 and UserSessionData = {
     notifySink: ServerNotifyMessage IActorRef
@@ -39,7 +41,7 @@ and ServerNotifyMessage =
 type ServerControlMessage =
     | UpdateState of (ServerData -> ServerData)
     | FindChannel of (ChannelData -> bool)
-    | GetOrCreateChannel of name: string * topic: string * config: ChannelConfig
+    | GetOrCreateChannel of name: string * topic: string * (IActorRefFactory -> ChannelActor)
     | ListChannels of (ChannelData -> bool)
 
     | StartSession of UserId * IActorRef<ServerNotifyMessage>
@@ -127,16 +129,14 @@ let startServer (system: ActorSystem) : IActorRef<ServerControlMessage> =
                 ctx.Sender() <! (found |> function |Some chan -> FoundChannel chan |_ -> RequestError "Not found")
                 ignored ()
 
-            | GetOrCreateChannel (name, topic, config) ->
-
-                let createChannel () =
-                    let actor = createChannelActor ctx config
+            | GetOrCreateChannel (name, topic, createChannel) ->
+                let createChannel1 () =
+                    let actor = createChannel (ctx)
                     do logger.debug (Message.eventX "Started watching {a}" >> Message.setFieldValue "a" name)
                     monitor ctx actor |> ignore
                     actor
-
                 state
-                    |> Implementation.addChannel createChannel name topic
+                    |> Implementation.addChannel createChannel1 name topic
                     |> replyAndUpdate FoundChannel
 
             | ListChannels criteria ->
@@ -165,8 +165,8 @@ let startServer (system: ActorSystem) : IActorRef<ServerControlMessage> =
 let getChannel criteria =
     Implementation.getChannelImpl (FindChannel criteria)
 
-let getOrCreateChannel name topic config =
-    Implementation.getChannelImpl (GetOrCreateChannel (name, topic, config))
+let getOrCreateChannel name topic makeChan =
+    Implementation.getChannelImpl (GetOrCreateChannel (name, topic, makeChan))
 
 let listChannels criteria (server: ServerT) =
     async {
@@ -179,8 +179,11 @@ let listChannels criteria (server: ServerT) =
 let startSession (server: ServerT) userId (actor: IActorRef<ServerNotifyMessage>) =
     server <! StartSession (userId, actor)
 
-let addChannel name topic (config: ChannelConfig option) server = async {
-    let! (reply: ServerReplyMessage) = server <? GetOrCreateChannel (name, topic, config |> Option.defaultValue ChannelConfig.Default)
+let addChannel name topic (config: ChannelConfig option) (server: ServerT) = async {
+
+    let createChannel = createChannelActor >< (config |> Option.defaultValue ChannelConfig.Default)
+
+    let! (reply: ServerReplyMessage) = server <? GetOrCreateChannel (name, topic, createChannel)
     return
         match reply with
         | FoundChannel channelData -> Ok channelData
