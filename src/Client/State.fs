@@ -17,7 +17,7 @@ let urlUpdate (result: Option<Route>) model =
 
 let init result =
     let (chinfo, chinfoCmd) = Chat.State.init()
-    let (model, cmd) = urlUpdate result { currentPage = About; chat = chinfo }
+    let (model, cmd) = urlUpdate result { currentPage = Overview; chat = chinfo }
     model, Cmd.batch [ cmd
                        Cmd.map (ChatDataMsg) chinfoCmd
                        ]

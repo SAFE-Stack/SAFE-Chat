@@ -13,21 +13,21 @@ let internal logger = Log.create "aboutflow"
 let private aboutMessage =
     [   """## Welcome to F# Chat
 
-> F# Chat application built with Fable, Elmish, React, Suave, Akka.Streams, Akkling"""
+F# Chat application built with Fable, Elmish, React, Suave, Akka.Streams, Akkling"""
 
         "Click on the channel name to join or click '+' and type in the name of the new channel."
 
         """Try the following commands in channel's input box:
 
-* */leave* - leaves the channel
-* */join <chan name>* - joins the channel, creates if it doesn't exist
-* */nick <newnick>* - changes your nickname
-* */status <newstatus>* - change status
-* */avatar <imageUrl>* - change user avatar
+* **/leave** - leaves the channel
+* **/join <chan name>** - joins the channel, creates if it doesn't exist
+* **/nick <newnick>** - changes your nickname
+* **/status <newstatus>** - change status
+* **/avatar <imageUrl>** - change user avatar
 """
 ]
 
-let createActor<'User, 'Message when 'User: comparison> (w: string -> 'Message) (system: IActorRefFactory) =
+let createActor<'User, 'Message when 'User: comparison> (systemUser: 'User) (w: string -> 'Message) (system: IActorRefFactory) =
 
     // TODO put user to map
     let mutable users = Map.empty
@@ -40,7 +40,7 @@ let createActor<'User, 'Message when 'User: comparison> (w: string -> 'Message) 
             let ts = (0, DateTime.Now)
 
             aboutMessage |> List.indexed |> List.iter (fun (i, m) ->
-                ctx.System.Scheduler.ScheduleTellOnce( System.TimeSpan.FromMilliseconds(1000. * float i), subscriber, ChatMessage (ts, user, w m))
+                ctx.System.Scheduler.ScheduleTellOnce( System.TimeSpan.FromMilliseconds(400. * float i), subscriber, ChatMessage (ts, systemUser, w m))
                 )
             // sending messages with some delay. Sending while flow is initialized causes intermittently dropped messages
             ignored ()
@@ -53,12 +53,11 @@ let createActor<'User, 'Message when 'User: comparison> (w: string -> 'Message) 
         | NewMessage (user, _) ->
             let ts = (0, DateTime.Now)
             let sub = users |> Map.find user
-            do sub <! ChatMessage (ts, user, w "Sorry, no messages are handled here")
+            do sub <! ChatMessage (ts, systemUser, w "> Sorry, this feature is not implemented yet.")
             ignored ()
 
         | ListUsers ->
-            let users: 'User list = []
-            do ctx.Sender() <! users
+            do ctx.Sender() <! [systemUser]
             ignored ()
 
         | _ ->

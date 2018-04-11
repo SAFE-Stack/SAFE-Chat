@@ -3,7 +3,6 @@ module UserStore
 
 open Akkling
 open Akkling.Persistence
-open Suave.Logging
 
 open ChatUser
 open Akka.Persistence
@@ -12,8 +11,6 @@ module UserIds =
 
     let system = UserId "sys"
     let echo = UserId "echo"
-
-let private logger = Log.create "userstore"
 
 module public Implementation =
 

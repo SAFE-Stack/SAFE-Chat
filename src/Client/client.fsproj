@@ -18,7 +18,7 @@
     <Compile Include="Chat/Types.fs" />
     <Compile Include="Chat/State.fs" />
 
-    <Compile Include="Info/View.fs" />
+    <Compile Include="Overview/View.fs" />
 
     <Compile Include="NavMenu/View.fs" />
 

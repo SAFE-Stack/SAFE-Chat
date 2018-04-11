@@ -121,8 +121,10 @@ let startChatServer () = async {
     let chatServer = ChatServer.startServer actorSystem
     do! Diag.createDiagChannel userStore.GetUser actorSystem chatServer (UserStore.UserIds.echo, "Demo", "Channel for testing purposes. Notice the bots are always ready to keep conversation.")
 
+    // UserStore.
+
     do! chatServer |> addChannel "Test" "empty channel" None |> Async.Ignore
-    do! chatServer |> getOrCreateChannel "a" "about chan" (AboutFlow.createActor Message) |> Async.Ignore
+    do! chatServer |> getOrCreateChannel "About" "interactive help" (AboutFlow.createActor UserStore.UserIds.system Message) |> Async.Ignore
 
     appServerState <- Some (actorSystem, userStore, chatServer)
     return ()
