@@ -15,11 +15,6 @@ let all() =
         Routines.logout ()
     )
 
-    "About link" &&& fun _ ->
-
-        click ".fs-menu a:contains('about')"
-        on "http://localhost:8083/#about"
-
     "Join channel" &&& fun _ ->
 
         click <| Selectors.switchChannel "Demo"

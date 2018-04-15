@@ -6,6 +6,8 @@ open Fable.Helpers.React
 open Props
 open Types
 
+open Fable.ReactMarkdownImport
+
 let private formatTs (ts: System.DateTime) =
   match (System.DateTime.Now - ts) with
   | diff when diff.TotalMinutes < 1.0 -> "a few seconds ago"
@@ -58,6 +60,9 @@ let chatInfo dispatch (model: ChannelData) =
         [ i [ ClassName "mdi mdi-door-closed mdi-18px" ] []]
     ]
 
+let message (text: string) =
+    [ reactMarkdown [Source text] ]
+
 let messageList (messages: Message Envelope list) =
     div
       [ ClassName "fs-messages" ]
@@ -69,8 +74,8 @@ let messageList (messages: Message Envelope list) =
                 [ classList ["fs-message", true; "user", user.isMe ] ]
                 [ div
                     []
-                    [ p [] [ str text ]
-                      h5  []
+                    [ yield! message text
+                      yield h5  []
                           [ span [ClassName "user"] [str user.Nick]
                             span [ClassName "time"] [str <| formatTs m.Ts ]] ]
                   UserAvatar.View.root user.ImageUrl

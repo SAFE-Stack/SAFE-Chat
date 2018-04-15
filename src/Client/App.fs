@@ -19,7 +19,7 @@ importAll "./sass/app.scss"
 let root model dispatch =
 
     let mainAreaView = function
-        | Route.About -> [Info.View.root]
+        | Route.Overview -> [Overview.View.root]
         | Channel chan ->
             let toChannelMessage m = ChannelMsg (chan, m)
 

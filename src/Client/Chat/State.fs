@@ -166,7 +166,7 @@ module private Implementation =
                     |> function
                     | Some _ ->
                         Connected (me, {chat with Channels = chat.Channels |> Map.remove channelId}),
-                            About |> toHash |> Navigation.newUrl
+                            Overview |> toHash |> Navigation.newUrl
                     | _ ->
                         printfn "Channel not found %s" channelId
                         state, Cmd.none

@@ -10,7 +10,7 @@ open Akka.Streams.Dsl
 open Suave.Logging
 
 open ChatUser
-open ChannelFlow
+open ChatTypes
 open UserStore
 open ChatServer
 
@@ -23,6 +23,25 @@ let private logger = Log.create "usersession"
 
 module private Implementation =
     let byChanId cid c = (c:ChannelData).id = cid
+
+    // Creates a Flow instance for user in channel.
+    // When materialized flow connects user to channel and starts bidirectional communication.
+    let createChannelFlow (channelActor: IActorRef<_>) (user: 'User) =
+        let chatInSink = Sink.toActorRef (ParticipantLeft user) channelActor
+
+        let fin =
+            (Flow.empty<'Message, Akka.NotUsed>
+                |> Flow.map (fun msg -> NewMessage(user, msg))
+            ).To(chatInSink)
+
+        // The counter-part which is a source that will create a target ActorRef per
+        // materialization where the chatActor will send its messages to.
+        // This source will only buffer one element and will fail if the client doesn't read
+        // messages fast enough.
+        let notifyNew sub = channelActor <! NewParticipant (user, sub); Akka.NotUsed.Instance
+        let fout = Source.actorRef OverflowStrategy.DropHead 100 |> Source.mapMaterializedValue notifyNew
+
+        Flow.ofSinkAndSource fin fout
 
     let join serverChannelResult listenChannel (ChannelList channels) meUserId =
         match serverChannelResult, listenChannel with
@@ -160,7 +179,8 @@ type Session(server, userStore: UserStore, meArg) =
 
         | Protocol.JoinOrCreate channelName ->
             // user channels are all created with autoRemove, system channels are not
-            let! channelResult = server |> getOrCreateChannel channelName "" { ChannelConfig.Default with autoRemove = true }
+            let makeChan = GroupChatFlow.createActor >< { GroupChatFlow.ChannelConfig.Default with autoRemove = true }
+            let! channelResult = server |> getOrCreateChannel channelName "" makeChan
             match channelResult with
             | Ok channelData when isMember channels channelData.id ->
                 return replyErrorProtocol requestId "User already joined channel"

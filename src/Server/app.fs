@@ -18,12 +18,13 @@ open Akka.Actor
 open Akkling
 open Akkling.Streams
 
+open ChatTypes
 open ChatUser
 open UserStore
 open ChatServer
 open Logon
 open Suave.Html
-open ChatServer
+open UserSessionFlow
 
 // ---------------------------------
 // Web app
@@ -109,7 +110,7 @@ let startChatServer () = async {
             # autoreceive = on
             # lifecycle = on
             # event-stream = on
-            # unhandled = on
+            unhandled = on
         }
     }
     }"""
@@ -121,7 +122,10 @@ let startChatServer () = async {
     let chatServer = ChatServer.startServer actorSystem
     do! Diag.createDiagChannel userStore.GetUser actorSystem chatServer (UserStore.UserIds.echo, "Demo", "Channel for testing purposes. Notice the bots are always ready to keep conversation.")
 
+    // UserStore.
+
     do! chatServer |> addChannel "Test" "empty channel" None |> Async.Ignore
+    do! chatServer |> getOrCreateChannel "About" "interactive help" (AboutFlow.createActor UserStore.UserIds.system) |> Async.Ignore
 
     appServerState <- Some (actorSystem, userStore, chatServer)
     return ()
@@ -261,8 +265,8 @@ let root: WebPart =
                             let session = UserSession.Session(server, userStore, user)
                             let materializer = actorSystem.Materializer()
 
-                            let messageFlow = ChannelFlow.createChannelMuxFlow<UserId,Message,ChannelId> materializer
-                            let socketFlow = UserSessionFlow.create userStore messageFlow session.ControlFlow
+                            let messageFlow = createMessageFlow materializer
+                            let socketFlow = createSessionFlow userStore messageFlow session.ControlFlow
 
                             let materialize materializer source sink =
                                 session.SetListenChannel(

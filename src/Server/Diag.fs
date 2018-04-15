@@ -4,7 +4,7 @@ open Akka.Actor
 open Akkling
 
 open ChatUser
-open ChannelFlow
+open ChatTypes
 open ChatServer
 
 /// Creates an actor for echo bot.
@@ -51,7 +51,7 @@ let createDiagChannel (getUser: GetUser) (system: ActorSystem) (server: IActorRe
         match result with
         | Ok chan ->
             chan.channelActor <! (NewParticipant (echoUserId, bot))
-        | Error e ->
+        | Error _ ->
             () // FIXME log error
 
     }

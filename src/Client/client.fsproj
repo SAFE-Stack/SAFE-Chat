@@ -3,6 +3,8 @@
     <TargetFramework>netstandard2.0</TargetFramework>
   </PropertyGroup>
   <ItemGroup>
+    <Compile Include="fable.react.markdown.fs" />
+
     <!-- Global to the app -->
     <Compile Include="../Shared/ChatProtocol.fs" />
     <Compile Include="Router.fs" />
@@ -16,7 +18,7 @@
     <Compile Include="Chat/Types.fs" />
     <Compile Include="Chat/State.fs" />
 
-    <Compile Include="Info/View.fs" />
+    <Compile Include="Overview/View.fs" />
 
     <Compile Include="NavMenu/View.fs" />
 

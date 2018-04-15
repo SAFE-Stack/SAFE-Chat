@@ -1,6 +1,7 @@
 module ProtocolConv
 
 open System
+open ChatTypes
 open ChatUser
 open ChatServer
 
@@ -23,7 +24,7 @@ let mapUserToProtocol (RegisteredUser (UserId userid, user)) :Protocol.ChanUserI
     | Anonymous info ->
         {makeBlankUserInfo userid info.nick with isbot = false; status = info.status; imageUrl = tostr info.imageUrl}
     | System ->
-        makeBlankUserInfo userid "system"
+        {makeBlankUserInfo userid "system" with imageUrl = "/system.png" }
 
 let mapChanInfo ({name = name; topic = topic; id = (ChannelId id)}: ChannelData) : Protocol.ChannelInfo =
     {id = id.ToString(); name = name; topic = topic; userCount = 0; users = []; joined = false}
