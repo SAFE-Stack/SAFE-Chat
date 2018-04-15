@@ -18,6 +18,7 @@ open Akka.Actor
 open Akkling
 open Akkling.Streams
 
+open ChatTypes
 open ChatUser
 open UserStore
 open ChatServer
@@ -124,7 +125,7 @@ let startChatServer () = async {
     // UserStore.
 
     do! chatServer |> addChannel "Test" "empty channel" None |> Async.Ignore
-    do! chatServer |> getOrCreateChannel "About" "interactive help" (AboutFlow.createActor UserStore.UserIds.system Message) |> Async.Ignore
+    do! chatServer |> getOrCreateChannel "About" "interactive help" (AboutFlow.createActor UserStore.UserIds.system) |> Async.Ignore
 
     appServerState <- Some (actorSystem, userStore, chatServer)
     return ()
@@ -264,7 +265,7 @@ let root: WebPart =
                             let session = UserSession.Session(server, userStore, user)
                             let materializer = actorSystem.Materializer()
 
-                            let messageFlow = createMessageFlow<UserId,Message,ChannelId> materializer
+                            let messageFlow = createMessageFlow materializer
                             let socketFlow = createSessionFlow userStore messageFlow session.ControlFlow
 
                             let materialize materializer source sink =

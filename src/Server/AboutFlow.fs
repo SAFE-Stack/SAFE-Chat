@@ -5,8 +5,7 @@ open Akkling
 
 open Suave.Logging
 
-open GroupChatFlow
-open System
+open ChatTypes
 
 let internal logger = Log.create "aboutflow"
 
@@ -27,20 +26,20 @@ F# Chat application built with Fable, Elmish, React, Suave, Akka.Streams, Akklin
 """
 ]
 
-let createActor<'User, 'Message when 'User: comparison> (systemUser: 'User) (w: string -> 'Message) (system: IActorRefFactory) =
+let createActor systemUser (system: IActorRefFactory) =
 
     // TODO put user to map
     let mutable users = Map.empty
 
     let rec behavior (ctx: Actor<_>) =
         function
-        | NewParticipant (user: 'User, subscriber) ->
+        | NewParticipant (user, subscriber) ->
             users <- users |> Map.add user subscriber
             logger.debug (Message.eventX "Sending about to {user}" >> Message.setFieldValue "user" user)
-            let ts = (0, DateTime.Now)
+            let ts = (0, System.DateTime.Now)
 
             aboutMessage |> List.indexed |> List.iter (fun (i, m) ->
-                ctx.System.Scheduler.ScheduleTellOnce( System.TimeSpan.FromMilliseconds(400. * float i), subscriber, ChatMessage (ts, systemUser, w m))
+                ctx.System.Scheduler.ScheduleTellOnce( System.TimeSpan.FromMilliseconds(400. * float i), subscriber, ChatMessage (ts, systemUser, Message m))
                 )
             // sending messages with some delay. Sending while flow is initialized causes intermittently dropped messages
             ignored ()
@@ -51,9 +50,9 @@ let createActor<'User, 'Message when 'User: comparison> (systemUser: 'User) (w: 
             ignored ()
 
         | NewMessage (user, _) ->
-            let ts = (0, DateTime.Now)
+            let ts = (0, System.DateTime.Now)
             let sub = users |> Map.find user
-            do sub <! ChatMessage (ts, systemUser, w "> Sorry, this feature is not implemented yet.")
+            do sub <! ChatMessage (ts, systemUser, Message "> Sorry, this feature is not implemented yet.")
             ignored ()
 
         | ListUsers ->

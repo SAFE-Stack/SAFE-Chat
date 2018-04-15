@@ -1,6 +1,5 @@
 module SocketFlow
 
-open System
 open System.Text
 
 open Akka.Actor
@@ -24,7 +23,7 @@ let private logger = Log.create "socketflow"
 // Provides websocket handshaking. Connects web socket to a pair of Source and Sync.
 // 'materialize'
 let handleWebsocketMessages (system: ActorSystem)
-    (materialize: IMaterializer -> Source<WsMessage, Akka.NotUsed> -> Sink<WsMessage, _> -> unit) (ws : WebSocket) ctx
+    (materialize: IMaterializer -> Source<WsMessage, Akka.NotUsed> -> Sink<WsMessage, _> -> unit) (ws : WebSocket) _
     =
     let materializer = system.Materializer()
     let sourceActor, inputSource =

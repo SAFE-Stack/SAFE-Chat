@@ -9,9 +9,8 @@ open Suave
 open Suave.Logging
 
 open ChatUser
-open GroupChatFlow
+open ChatTypes
 open UserStore
-open ChatServer
 open SocketFlow
 
 open FsChat
@@ -55,21 +54,21 @@ let internal partitionFlows (pfn: _ -> int) worker1 worker2 combine =
 /// User session multiplexer. Creates a flow that receives user messages for multiple channels, binds each stream to channel flow
 /// and finally collects the messages from multiple channels into single stream.
 /// When materialized return a "connect" function which, given channel and channel flow, adds it to session. "Connect" returns a killswitch to remove the channel.
-let createMessageFlow<'User, 'Message, 'ChanId when 'ChanId: equality>
+let createMessageFlow
     (materializer: Akka.Streams.IMaterializer) =
 
-    let inhub = BroadcastHub.Sink<'ChanId * 'Message>(bufferSize = 256)
-    let outhub = MergeHub.Source<'ChanId * ClientMessage<'User, 'Message>>(perProducerBufferSize = 16)
+    let inhub = BroadcastHub.Sink<ChannelId * Message>(bufferSize = 256)
+    let outhub = MergeHub.Source<ChannelId * ClientMessage>(perProducerBufferSize = 16)
 
     let sourceTo (sink) (source: Source<'TOut, 'TMat>) = source.To(sink)
 
     let combine
-            (producer: Source<'ChanId * 'Message, Akka.NotUsed>)
-            (consumer: Sink<'ChanId * ClientMessage<'User, 'Message>, Akka.NotUsed>)
-            (chanId: 'ChanId) (chanFlow: Flow<'Message, ClientMessage<'User, 'Message>, Akka.NotUsed>) =
+            (producer: Source<ChannelId * Message, Akka.NotUsed>)
+            (consumer: Sink<ChannelId * ClientMessage, Akka.NotUsed>)
+            (chanId: ChannelId) (chanFlow: Flow<Message, ClientMessage, Akka.NotUsed>) =
 
         let infilter =
-            Flow.empty<'ChanId * 'Message, Akka.NotUsed>
+            Flow.empty<ChannelId * Message, Akka.NotUsed>
             |> Flow.filter (fst >> (=) chanId)
             |> Flow.map snd
 
@@ -90,7 +89,7 @@ let createSessionFlow (userStore: UserStore) messageFlow controlFlow =
     let extractChannelMessage (ChannelMessage (chan, message) | OtherwiseFail (chan, message)) = chan, message
     let extractControlMessage (ControlMessage message | OtherwiseFail message) = message
 
-    let encodeChannelMessage (getUser: GetUser) channelId : ClientMessage<UserId, Message> -> Protocol.ClientMsg Async =
+    let encodeChannelMessage (getUser: GetUser) channelId : ClientMessage -> Protocol.ClientMsg Async =
         let returnUserEvent (id, ts) userid f = async {
             let! userResult = getUser userid
             let user2userInfo = function

@@ -6,15 +6,10 @@ open Akka.Actor
 open Akkling
 open Suave.Logging
 
-open ChatUser
-open GroupChatFlow
+open ChatTypes
 
 let private logger = Log.create "chatserver"
-
-type Message = Message of string
-type ChannelId = ChannelId of int
-
-type ChannelActor = ChannelMessage<UserId, Message> IActorRef
+type ChannelActor = ChannelMessage IActorRef
 
 /// Channel is a primary store for channel info and data
 type ChannelData = {
@@ -179,9 +174,11 @@ let listChannels criteria (server: ServerT) =
 let startSession (server: ServerT) userId (actor: IActorRef<ServerNotifyMessage>) =
     server <! StartSession (userId, actor)
 
+open GroupChatFlow  // TODO BAD dependency
+
 let addChannel name topic (config: ChannelConfig option) (server: ServerT) = async {
 
-    let createChannel = createChannelActor >< (config |> Option.defaultValue ChannelConfig.Default)
+    let createChannel = createActor >< (config |> Option.defaultValue ChannelConfig.Default)
 
     let! (reply: ServerReplyMessage) = server <? GetOrCreateChannel (name, topic, createChannel)
     return

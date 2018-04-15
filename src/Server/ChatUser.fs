@@ -1,6 +1,6 @@
 module ChatUser
 
-type UserId = UserId of string
+open ChatTypes
 
 type PersonalInfo = {oauthId: string option; nick: string; status: string; email: string option; imageUrl: string option}
 type AnonymousUserInfo = {nick: string; status: string; imageUrl: string option}

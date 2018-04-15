@@ -10,7 +10,7 @@ open Akka.Streams.Dsl
 open Suave.Logging
 
 open ChatUser
-open GroupChatFlow
+open ChatTypes
 open UserStore
 open ChatServer
 
@@ -26,7 +26,7 @@ module private Implementation =
 
     // Creates a Flow instance for user in channel.
     // When materialized flow connects user to channel and starts bidirectional communication.
-    let createChannelFlow<'User, 'Message> (channelActor: IActorRef<_>) (user: 'User) =
+    let createChannelFlow (channelActor: IActorRef<_>) (user: 'User) =
         let chatInSink = Sink.toActorRef (ParticipantLeft user) channelActor
 
         let fin =
@@ -179,7 +179,7 @@ type Session(server, userStore: UserStore, meArg) =
 
         | Protocol.JoinOrCreate channelName ->
             // user channels are all created with autoRemove, system channels are not
-            let makeChan = createChannelActor >< { ChannelConfig.Default with autoRemove = true }
+            let makeChan = GroupChatFlow.createActor >< { GroupChatFlow.ChannelConfig.Default with autoRemove = true }
             let! channelResult = server |> getOrCreateChannel channelName "" makeChan
             match channelResult with
             | Ok channelData when isMember channels channelData.id ->

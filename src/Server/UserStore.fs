@@ -4,8 +4,8 @@ module UserStore
 open Akkling
 open Akkling.Persistence
 
+open ChatTypes
 open ChatUser
-open Akka.Persistence
 
 module UserIds =
 

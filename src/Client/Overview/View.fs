@@ -1,12 +1,13 @@
 module Overview.View
 
 open Fable.Helpers.React
-open Fable.Helpers.React.Props
 
 let root =
   div [] []
 
   (*
+  open Fable.Helpers.React.Props
+
   div
     [ ClassName "content"; Style [ Margin "2em"] ]
     [ h1 []

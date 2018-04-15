@@ -1,6 +1,7 @@
 module ProtocolConv
 
 open System
+open ChatTypes
 open ChatUser
 open ChatServer
 

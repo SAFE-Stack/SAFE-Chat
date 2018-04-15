@@ -5,36 +5,20 @@ open Akkling
 
 open Suave.Logging
 
-// message timestamp
-type Timestamp = int * System.DateTime
+open ChatTypes
 
 type ChannelConfig = {
     // instructs channel actor to shutdown channel after last member exited
     autoRemove: bool
 } with static member Default = {autoRemove = false}
 
-/// Client protocol message (messages sent from channel to client actor)
-type ClientMessage<'User, 'Message> =
-    | ChatMessage of ts: Timestamp * author: 'User * 'Message
-    | Joined of ts: Timestamp * user: 'User * all: 'User seq
-    | Left of ts: Timestamp * user: 'User * all: 'User seq
-    | Updated of ts: Timestamp * user: 'User
-
-/// Channel actor protocol (server side protocol)
-type ChannelMessage<'User, 'Message> =
-    | NewParticipant of user: 'User * subscriber: ClientMessage<'User, 'Message> IActorRef
-    | ParticipantLeft of 'User
-    | ParticipantUpdate of 'User
-    | NewMessage of 'User * 'Message
-    | ListUsers
-
 module internal Internals =
     // maps user login
-    type ChannelParties<'User, 'Message> when 'User: comparison = Map<'User, ClientMessage<'User, 'Message> IActorRef>
+    type ChannelParties = Map<UserId, ClientMessage IActorRef>
 
-    type ChannelState<'User, 'Message> when 'User: comparison = {
+    type ChannelState = {
         Config: ChannelConfig
-        Parties: ChannelParties<'User, 'Message>
+        Parties: ChannelParties
         LastEventId: int
     }
 
@@ -42,10 +26,10 @@ module internal Internals =
 
 open Internals
 
-let createChannelActor<'User, 'Message when 'User: comparison> (system: IActorRefFactory) (config: ChannelConfig) =
+let createActor<'User, 'Message when 'User: comparison> (system: IActorRefFactory) (config: ChannelConfig) =
 
     let incId chan = { chan with LastEventId = chan.LastEventId + 1}
-    let dispatch (parties: ChannelParties<'User, 'Message>) (msg: ClientMessage<'User, 'Message>): unit =
+    let dispatch (parties: ChannelParties) (msg: ClientMessage): unit =
         parties |> Map.iter (fun _ subscriber -> subscriber <! msg)
     let allMembers = Map.toSeq >> Seq.map fst
 
