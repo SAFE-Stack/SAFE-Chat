@@ -108,7 +108,7 @@ let startChatServer () = async {
         debug {
             # receive = on
             # autoreceive = on
-            lifecycle = on
+            # lifecycle = on
             # event-stream = on
             unhandled = on
         }
