@@ -7,7 +7,7 @@ open Akkling
 open Suave.Logging
 
 open ChatUser
-open ChannelFlow
+open GroupChatFlow
 
 let private logger = Log.create "chatserver"
 

@@ -4,7 +4,7 @@ open Akka.Actor
 open Akkling
 
 open ChatUser
-open ChannelFlow
+open GroupChatFlow
 open ChatServer
 
 /// Creates an actor for echo bot.

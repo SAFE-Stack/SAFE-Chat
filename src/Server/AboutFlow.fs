@@ -5,7 +5,7 @@ open Akkling
 
 open Suave.Logging
 
-open ChannelFlow
+open GroupChatFlow
 open System
 
 let internal logger = Log.create "aboutflow"

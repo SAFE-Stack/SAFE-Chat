@@ -1,11 +1,7 @@
-﻿module ChannelFlow
+﻿module GroupChatFlow
 
 open Akka.Actor
-open Akka.Streams
-open Akka.Streams.Dsl
-
 open Akkling
-open Akkling.Streams
 
 open Suave.Logging
 
@@ -91,56 +87,3 @@ let createChannelActor<'User, 'Message when 'User: comparison> (system: IActorRe
 
     in
     props <| actorOf2 (behavior { Parties = Map.empty; LastEventId = 1000; Config = config }) |> (spawn system null)
-
-// Creates a Flow instance for user in channel.
-// When materialized flow connects user to channel and starts bidirectional communication.
-let createChannelFlow<'User, 'Message> (channelActor: IActorRef<_>) (user: 'User) =
-    let chatInSink = Sink.toActorRef (ParticipantLeft user) channelActor
-
-    let fin =
-        (Flow.empty<'Message, Akka.NotUsed>
-            |> Flow.map (fun msg -> NewMessage(user, msg))
-        ).To(chatInSink)
-
-    // The counter-part which is a source that will create a target ActorRef per
-    // materialization where the chatActor will send its messages to.
-    // This source will only buffer one element and will fail if the client doesn't read
-    // messages fast enough.
-    let notifyNew sub = channelActor <! NewParticipant (user, sub); Akka.NotUsed.Instance
-    let fout = Source.actorRef OverflowStrategy.DropHead 100 |> Source.mapMaterializedValue notifyNew
-
-    Flow.ofSinkAndSource fin fout
-
-
-/// User session multiplexer. Creates a flow that receives user messages for multiple channels, binds each stream to channel flow
-/// and finally collects the messages from multiple channels into single stream.
-/// When materialized return a "connect" function which, given channel and channel flow, adds it to session. "Connect" returns a killswitch to remove the channel.
-let createChannelMuxFlow<'User, 'Message, 'ChanId when 'ChanId: equality>
-    (materializer: Akka.Streams.IMaterializer) =
-
-    let inhub = BroadcastHub.Sink<'ChanId * 'Message>(bufferSize = 256)
-    let outhub = MergeHub.Source<'ChanId * ClientMessage<'User, 'Message>>(perProducerBufferSize = 16)
-
-    let sourceTo (sink) (source: Source<'TOut, 'TMat>) = source.To(sink)
-
-    let combine
-            (producer: Source<'ChanId * 'Message, Akka.NotUsed>)
-            (consumer: Sink<'ChanId * ClientMessage<'User, 'Message>, Akka.NotUsed>)
-            (chanId: 'ChanId) (chanFlow: Flow<'Message, ClientMessage<'User, 'Message>, Akka.NotUsed>) =
-
-        let infilter =
-            Flow.empty<'ChanId * 'Message, Akka.NotUsed>
-            |> Flow.filter (fst >> (=) chanId)
-            |> Flow.map snd
-
-        let graph =
-            producer
-            |> Source.viaMat (KillSwitches.Single()) Keep.right
-            |> Source.via infilter
-            |> Source.via chanFlow
-            |> Source.map (fun message -> chanId, message)
-            |> sourceTo consumer
-
-        graph |> Graph.run materializer
-
-    Flow.ofSinkAndSourceMat inhub combine outhub

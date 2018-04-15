@@ -23,7 +23,7 @@ open UserStore
 open ChatServer
 open Logon
 open Suave.Html
-open ChatServer
+open UserSessionFlow
 
 // ---------------------------------
 // Web app
@@ -264,8 +264,8 @@ let root: WebPart =
                             let session = UserSession.Session(server, userStore, user)
                             let materializer = actorSystem.Materializer()
 
-                            let messageFlow = ChannelFlow.createChannelMuxFlow<UserId,Message,ChannelId> materializer
-                            let socketFlow = UserSessionFlow.create userStore messageFlow session.ControlFlow
+                            let messageFlow = createMessageFlow<UserId,Message,ChannelId> materializer
+                            let socketFlow = createSessionFlow userStore messageFlow session.ControlFlow
 
                             let materialize materializer source sink =
                                 session.SetListenChannel(

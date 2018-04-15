@@ -54,9 +54,11 @@ In order to support the google/fb authentication scenario, fill in the client/se
 
 ### Akka streams
 
-FsChat backend is based on Akka.Streams. The entry point is a `ChannelFlow` module which implements the channel actor, the flow for user participating in particular channel, and the flow for all channels the user is participating in.
+FsChat backend is based on Akka.Streams. The entry point is a `GroupChatFlow` module which implements the actor, serving group chat.
 
-`UserSessionFlow` brings everything together and implements the flow for the user browser session.
+`UserSessionFlow` defines the flows for user and control messages, brings everything together and exposes flow for user session.
+
+`AboutFlow` is an example of implementing channel with specific purpose, other than chatting
 
 `ChatServer` is an actor which purpose is to keep the channel list. It's responsible for creating/dropping the channels.
 
@@ -70,7 +72,7 @@ Akkling is an unofficial Akka.NET API for F#. It's not just wrapper around Akka.
 
 ### Fable, Elmish
 
-Client is written on F# with the help of Fable and Elmish (library?, framework?). Fable is great, Elmish is great.
+Client is written on F# with the help of Fable and Elmish (library?, framework?). Fable is absolutely mature technology, Elmish is just great.
 
 ### Communication protocol
 
