@@ -1,18 +1,17 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
-
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <OutputType>Exe</OutputType>
     <TargetFramework>net461</TargetFramework>
     <DebugType>portable</DebugType>
+    <AutoGenerateBindingRedirects>true</AutoGenerateBindingRedirects>
   </PropertyGroup>
-
   <ItemGroup>
     <Compile Include="Selectors.fs" />
     <Compile Include="Routines.fs" />
     <Compile Include="tests/*.fs" />
     <Compile Include="Program.fs" />
   </ItemGroup>
-
   <ItemGroup>
     <Content Include="App.config">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
@@ -21,7 +20,5 @@
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
   </ItemGroup>
-
   <Import Project="..\..\.paket\Paket.Restore.targets" />
-
 </Project>

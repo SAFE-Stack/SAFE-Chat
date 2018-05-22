@@ -84,22 +84,22 @@ let startChatServer () = async {
     loglevel = DEBUG
     persistence {
         journal {
-            # plugin = "akka.persistence.journal.sqlite"
+            plugin = "akka.persistence.journal.sqlite"
             sqlite {
                 class = "Akka.Persistence.Sqlite.Journal.SqliteJournal, Akka.Persistence.Sqlite"
-                plugin-dispatcher = "akka.actor.default-dispatcher"
                 connection-string = "Data Source=CHAT_DATA\\journal.db;cache=shared;"
                 connection-timeout = 30s
-                schema-name = dbo
-                table-name = event_journal
                 auto-initialize = on
-                timestamp-provider = "Akka.Persistence.Sql.Common.Journal.DefaultTimestampProvider, Akka.Persistence.Sql.Common"
-            }
-            sql-server {
-                class = "Akka.Persistence.SqlServer.Journal.SqlServerJournal, Akka.Persistence.SqlServer"
-                connection-string = "Data Source=localhost\\SQLEXPRESS;Initial Catalog=journal;Integrated Security=True;"
-                schema-name = dbo
-                auto-initialize = on
+
+                event-adapters {
+                  json-adapter = "AkkaStuff+EventAdapter, fschathost"
+                }            
+                event-adapter-bindings {
+                  # to journal
+                  "System.Object, mscorlib" = json-adapter
+                  # from journal
+                  "Newtonsoft.Json.Linq.JObject, Newtonsoft.Json" = [json-adapter]
+                }
             }
         }
     }
@@ -116,13 +116,11 @@ let startChatServer () = async {
     }"""
     let actorSystem = ActorSystem.Create("chatapp", config)
     let userStore = UserStore.UserStore actorSystem
-    // let _ = SqlitePersistence.Get actorSystem
+
     do! Async.Sleep(1000)
 
     let chatServer = ChatServer.startServer actorSystem
     do! Diag.createDiagChannel userStore.GetUser actorSystem chatServer (UserStore.UserIds.echo, "Demo", "Channel for testing purposes. Notice the bots are always ready to keep conversation.")
-
-    // UserStore.
 
     do! chatServer |> addChannel "Test" "empty channel" None |> Async.Ignore
     do! chatServer |> getOrCreateChannel "About" "interactive help" (AboutFlow.createActor UserStore.UserIds.system) |> Async.Ignore

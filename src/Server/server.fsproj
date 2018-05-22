@@ -6,6 +6,7 @@
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="Prelude.fs" />
+    <Compile Include="AkkaStuff.fs" />
     <Compile Include="ChatTypes.fs" />
     <Compile Include="ChatUser.fs" />
     <Compile Include="AboutFlow.fs" />

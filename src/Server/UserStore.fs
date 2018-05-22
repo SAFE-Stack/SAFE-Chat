@@ -94,19 +94,25 @@ module public Implementation =
     let update (state: State) = function
         | AddUser user ->
             let (RegisteredUser (userId, _)) = user
-            // FIXME nextId should be compared to userId
-            {state with nextId = state.nextId + 1; users = state.users |> Map.add userId user}
+            let (UserId uidstr) = userId
+            let lastId =
+                match System.Int32.TryParse uidstr with
+                | true, num -> num
+                | _ -> 0
+            {state with nextId = (max state.nextId lastId) + 1; users = state.users |> Map.add userId user}
+
         | DropUser userid ->
             {state with users = state.users |> Map.remove userid}
+
         | UpdateUser user ->
             let (RegisteredUser (userId, _)) = user
             {state with users = state.users |> Map.add userId user}
 
     let handler (ctx: Eventsourced<_>) =
+        let reply m = ctx.Sender() <! m
+
         let rec loop (state: State) = actor {
             let! msg = ctx.Receive()
-            let reply = (<!) (ctx.Sender())
-
             match msg with
             | Event e ->
                 return! loop (update state e)
@@ -124,7 +130,7 @@ module public Implementation =
                     | _ ->
                         let userId = UserId <| state.nextId.ToString()
                         userId |> (Ok >> RegisterResult >> reply)
-                        return Persist (Event <| AddUser (RegisteredUser (userId, user)))
+                        return RegisteredUser (userId, user) |> (AddUser>>Event>>Persist)
 
                 | Unregister userid ->
                     return Persist (Event <| DropUser userid)
@@ -150,28 +156,28 @@ type UserStore(system: Akka.Actor.ActorSystem) =
 
     let storeActor = spawn system "userstore" <| propsPersist(handler)
 
-    member _this.Register(user: UserKind) : Result<UserId,string> Async =
+    member __.Register(user: UserKind) : Result<UserId,string> Async =
         async {
-            let! (RegisterResult result | OtherwiseFail result) = storeActor <? (Command <| Register user)
+            let! (RegisterResult result | OtherwiseFail result) = storeActor <? Command(Register user)
             return result |> Result.mapError (fun (ErrorInfo error) -> error)
         }
 
-    member _this.Unregister (userid: UserId) : unit =
+    member __.Unregister (userid: UserId) : unit =
         storeActor <! (Command <| Unregister userid)
 
-    member _this.Update(user: RegisteredUser) : Result<RegisteredUser,string> Async =
+    member __.Update(user: RegisteredUser) : Result<RegisteredUser,string> Async =
         async {
             let! (UpdateResult result | OtherwiseFail result) = storeActor <? (Command <| Update user)
             return result |> Result.mapError (fun (ErrorInfo error) -> error)
         }
 
-    member _this.GetUser userid : RegisteredUser option Async =
+    member __.GetUser userid : RegisteredUser option Async =
         async {
             let! (GetUsersResult result | OtherwiseFail result) = storeActor <? (Command <| GetUsers [userid])
             return result |> function | [] -> None | x::_ -> Some x
         }
 
-    member _this.GetUsers (userids: UserId list) : RegisteredUser list Async =
+    member __.GetUsers (userids: UserId list) : RegisteredUser list Async =
         async {
             let! (GetUsersResult result | OtherwiseFailErr "no choice" result) = storeActor <? (Command <| GetUsers userids)
             return result

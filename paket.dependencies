@@ -7,7 +7,6 @@ nuget Suave.Experimental
 nuget Akkling
 nuget Akkling.Streams
 nuget Akkling.Persistence
-nuget Akka.Persistence.SqlServer
 nuget Akka.Persistence.Sqlite
 
 nuget Newtonsoft.Json
