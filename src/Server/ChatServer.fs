@@ -9,14 +9,13 @@ open Suave.Logging
 open ChatTypes
 
 let private logger = Log.create "chatserver"
-type ChannelActor = ChannelMessage IActorRef
 
 /// Channel is a primary store for channel info and data
 type ChannelData = {
     id: ChannelId
     name: string
     topic: string
-    channelActor: ChannelActor
+    channelActor: IActorRef<ChannelMessage>
 }
 and UserSessionData = {
     notifySink: ServerNotifyMessage IActorRef
@@ -32,11 +31,14 @@ and ServerNotifyMessage =
     | AddChannel of ChannelData
     | DropChannel of ChannelData
 
+type ServerEvent =
+    | ChannelCreated of ChannelData
+    | ChannelDeleted of ChannelId
+
 /// Server protocol
 type ServerControlMessage =
-    | UpdateState of (ServerData -> ServerData)
     | FindChannel of (ChannelData -> bool)
-    | GetOrCreateChannel of name: string * topic: string * (IActorRefFactory -> ChannelActor)
+    | GetOrCreateChannel of name: string * topic: string * (ChannelMessage Props)
     | ListChannels of (ChannelData -> bool)
 
     | StartSession of UserId * IActorRef<ServerNotifyMessage>
@@ -85,9 +87,6 @@ module private Implementation =
         | _ ->
             Result.Error "Invalid channel name"
 
-    let setTopic chanId newTopic state =
-        Ok (state |> updateChannel (fun chan -> {chan with topic = newTopic}) chanId)
-
     let getChannelImpl message (server: ServerT) =
         async {
             let! (reply: ServerReplyMessage) = server <? message
@@ -110,6 +109,7 @@ let startServer (system: ActorSystem) : IActorRef<ServerControlMessage> =
             function
             | Some channel ->
                 do state.sessions |> Map.iter(fun _ session -> session.notifySink <! DropChannel channel)
+                // TODO removing channel, make an event
                 become (serverBehavior { state with channels = state.channels |> List.except [channel]} ctx)
             | _ ->
                 do logger.error (Message.eventX "Failed to locate terminated object: {a}" >> Message.setFieldValue "a" ref)
@@ -117,16 +117,14 @@ let startServer (system: ActorSystem) : IActorRef<ServerControlMessage> =
 
         | :? ServerControlMessage as msg ->
             match msg with
-            | UpdateState updater ->
-                become (serverBehavior (updater state) ctx)
             | FindChannel criteria ->
                 let found = state.channels |> List.tryFind criteria
                 ctx.Sender() <! (found |> function |Some chan -> FoundChannel chan |_ -> RequestError "Not found")
                 ignored ()
 
-            | GetOrCreateChannel (name, topic, createChannel) ->
+            | GetOrCreateChannel (name, topic, props) ->
                 let createChannel1 () =
-                    let actor = createChannel (ctx)
+                    let actor = spawn ctx null props    // TODO use channel id as a name
                     do logger.debug (Message.eventX "Started watching {a}" >> Message.setFieldValue "a" name)
                     monitor ctx actor |> ignore
                     actor
@@ -160,8 +158,8 @@ let startServer (system: ActorSystem) : IActorRef<ServerControlMessage> =
 let getChannel criteria =
     Implementation.getChannelImpl (FindChannel criteria)
 
-let getOrCreateChannel name topic makeChan =
-    Implementation.getChannelImpl (GetOrCreateChannel (name, topic, makeChan))
+let getOrCreateChannel name topic props =
+    Implementation.getChannelImpl (GetOrCreateChannel (name, topic, props))
 
 let listChannels criteria (server: ServerT) =
     async {
@@ -173,17 +171,3 @@ let listChannels criteria (server: ServerT) =
 
 let startSession (server: ServerT) userId (actor: IActorRef<ServerNotifyMessage>) =
     server <! StartSession (userId, actor)
-
-open GroupChatFlow  // TODO BAD dependency
-
-let addChannel name topic (config: ChannelConfig option) (server: ServerT) = async {
-
-    let createChannel = createActor >< (config |> Option.defaultValue ChannelConfig.Default)
-
-    let! (reply: ServerReplyMessage) = server <? GetOrCreateChannel (name, topic, createChannel)
-    return
-        match reply with
-        | FoundChannel channelData -> Ok channelData
-        | RequestError message -> Result.Error message
-        | _ -> Result.Error "Unknown reply"
-}

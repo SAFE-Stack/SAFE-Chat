@@ -1,10 +1,7 @@
 ﻿module GroupChatFlow
 
-open Akka.Actor
 open Akkling
-
 open Suave.Logging
-
 open ChatTypes
 
 type ChannelConfig = {
@@ -26,7 +23,7 @@ module internal Internals =
 
 open Internals
 
-let createActor<'User, 'Message when 'User: comparison> (system: IActorRefFactory) (config: ChannelConfig) =
+let createActorProps<'User, 'Message when 'User: comparison> (config: ChannelConfig) =
 
     let incId chan = { chan with LastEventId = chan.LastEventId + 1}
     let dispatch (parties: ChannelParties) (msg: ClientMessage): unit =
@@ -70,4 +67,4 @@ let createActor<'User, 'Message when 'User: comparison> (system: IActorRefFactor
             ignored state
 
     in
-    props <| actorOf2 (behavior { Parties = Map.empty; LastEventId = 1000; Config = config }) |> (spawn system null)
+    props <| actorOf2 (behavior { Parties = Map.empty; LastEventId = 1000; Config = config })

@@ -1,8 +1,6 @@
 module AboutFlow
 
-open Akka.Actor
 open Akkling
-
 open Suave.Logging
 
 open ChatTypes
@@ -26,9 +24,9 @@ F# Chat application built with Fable, Elmish, React, Suave, Akka.Streams, Akklin
 """
 ]
 
-let createActor systemUser (system: IActorRefFactory) =
+let createActorProps systemUser =
 
-    // TODO put user to map
+    // TODO put to actor state, otherwise only one instance would be supported
     let mutable users = Map.empty
 
     let rec behavior (ctx: Actor<_>) =
@@ -63,5 +61,5 @@ let createActor systemUser (system: IActorRefFactory) =
             ignored ()
 
     in
-    props <| actorOf2 behavior |> (spawn system null)
+    props <| actorOf2 behavior
 
