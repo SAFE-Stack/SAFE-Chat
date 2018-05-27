@@ -45,7 +45,7 @@ module private Implementation =
 
     let join serverChannelResult listenChannel (ChannelList channels) meUserId =
         match serverChannelResult, listenChannel with
-        | Ok chan, Some listen ->
+        | Ok (chan: ChannelData), Some listen ->
             let ks = listen chan.id (createChannelFlow chan.channelActor meUserId)
             Ok (channels |> Map.add chan.id ks |> ChannelList, chan)
         | Result.Error err, _ ->
@@ -179,8 +179,8 @@ type Session(server, userStore: UserStore, meArg) =
 
         | Protocol.JoinOrCreate channelName ->
             // user channels are all created with autoRemove, system channels are not
-            let props = GroupChatFlow.createActorProps { GroupChatFlow.ChannelConfig.Default with autoRemove = true }
-            let! channelResult = server |> getOrCreateChannel channelName "" props
+            let config = { GroupChatFlow.ChannelConfig.Default with autoRemove = true }
+            let! channelResult = server |> getOrCreateChannel channelName "" (GroupChatChannel config)
             match channelResult with
             | Ok channelData when isMember channels channelData.id ->
                 return replyErrorProtocol requestId "User already joined channel"

@@ -75,7 +75,7 @@ module Secrets =
         )
         // |> dump "oauth configs"
 
-type ServerActor = IActorRef<ChatServer.ServerControlMessage>
+type ServerActor = IActorRef<ChatServer.ServerCommand>
 let mutable private appServerState = None
 
 let startChatServer () = async {
@@ -122,8 +122,8 @@ let startChatServer () = async {
     let chatServer = ChatServer.startServer actorSystem
     do! Diag.createDiagChannel userStore.GetUser actorSystem chatServer (UserStore.UserIds.echo, "Demo", "Channel for testing purposes. Notice the bots are always ready to keep conversation.")
 
-    do! chatServer |> getOrCreateChannel "Test" "empty channel" (GroupChatFlow.createActorProps GroupChatFlow.ChannelConfig.Default) |> Async.Ignore
-    do! chatServer |> getOrCreateChannel "About" "interactive help" (AboutFlow.createActorProps UserStore.UserIds.system) |> Async.Ignore
+    do! chatServer |> getOrCreateChannel "Test" "empty channel" (GroupChatChannel GroupChatFlow.ChannelConfig.Default) |> Async.Ignore
+    do! chatServer |> getOrCreateChannel "About" "interactive help" (OtherChannel <| AboutFlow.createActorProps UserStore.UserIds.system) |> Async.Ignore
 
     appServerState <- Some (actorSystem, userStore, chatServer)
     return ()
