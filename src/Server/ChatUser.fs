@@ -13,6 +13,13 @@ type UserKind =
 
 type RegisteredUser = RegisteredUser of UserId * UserKind
 
+type UserInfo = {
+    user: RegisteredUser
+    status: string
+    imageUrl: string option
+    channelList: ChannelId list
+}
+
 let empty = {nick = ""; status = ""; email = None; imageUrl = None; oauthId = None}
 
 let makeUserImageUrl deflt = // FIXME find the place for the method
@@ -32,4 +39,8 @@ let getUserNick (RegisteredUser (_, user)) =
     | Person {nick = nick} -> nick
     | System -> "system"
 
-type GetUser = UserId -> RegisteredUser option Async
+// TODO remove
+let getUserInfoNick {user = u} =
+    getUserNick u
+
+type GetUser = UserId -> UserInfo option Async

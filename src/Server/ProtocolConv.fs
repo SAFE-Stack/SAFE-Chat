@@ -3,6 +3,7 @@ module ProtocolConv
 open System
 open ChatTypes
 open ChatUser
+open UserStore
 open ChatServer
 
 open FsChat
@@ -13,7 +14,7 @@ let (|IsChannelId|_|) s =
 
 let makeBlankUserInfo userid nick :Protocol.ChanUserInfo =
     {id = userid; nick = nick; isbot = false; status = ""; email = null; imageUrl = null}
-let mapUserToProtocol (RegisteredUser (UserId userid, user)) :Protocol.ChanUserInfo =
+let mapUserToProtocol ({user = RegisteredUser (UserId userid, user)}: UserInfo) :Protocol.ChanUserInfo =
     let tostr = Option.toObj
 
     match user with
@@ -26,5 +27,5 @@ let mapUserToProtocol (RegisteredUser (UserId userid, user)) :Protocol.ChanUserI
     | System ->
         {makeBlankUserInfo userid "system" with imageUrl = "/system.png" }
 
-let mapChanInfo ({name = name; topic = topic; id = (ChannelId id)}: ChannelData) : Protocol.ChannelInfo =
+let mapChanInfo ({name = name; topic = topic; cid = (ChannelId id)}: ChannelData) : Protocol.ChannelInfo =
     {id = id.ToString(); name = name; topic = topic; userCount = 0; users = []; joined = false}

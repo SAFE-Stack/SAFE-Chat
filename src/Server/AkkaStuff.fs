@@ -1,6 +1,7 @@
 module AkkaStuff
 
 open System
+open Newtonsoft.Json
 open Newtonsoft.Json.Linq
 
 type EventAdapter(__ : Akka.Actor.ExtendedActorSystem) =
@@ -14,7 +15,7 @@ type EventAdapter(__ : Akka.Actor.ExtendedActorSystem) =
         member __.ToJournal(evt : obj) : obj = 
             new JObject(
                 new JProperty("evtype", evt.GetType().FullName),
-                new JProperty("value", JObject.FromObject(evt))
+                new JProperty("value", JsonConvert.SerializeObject(evt))
             )
             :> obj
 
@@ -25,7 +26,8 @@ type EventAdapter(__ : Akka.Actor.ExtendedActorSystem) =
                     | false, _ -> box jobj
                     | _, typ ->
                         let t = Type.GetType(typ.ToString())
-                        jobj.["value"].ToObject(t)
+                        let value = jobj.["value"].ToString()
+                        JsonConvert.DeserializeObject(value, t)
                 |> Akka.Persistence.Journal.EventSequence.Single
 
             | _ ->

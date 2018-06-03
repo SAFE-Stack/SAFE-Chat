@@ -22,15 +22,15 @@ type ChannelList = ChannelList of Map<ChannelId, UniqueKillSwitch>
 let private logger = Log.create "usersession"
 
 module private Implementation =
-    let byChanId cid c = (c:ChannelData).id = cid
+    let byChanId cid c = (c:ChannelData).cid = cid
 
     // Creates a Flow instance for user in channel.
     // When materialized flow connects user to channel and starts bidirectional communication.
-    let createChannelFlow (channelActor: IActorRef<_>) (user: 'User) =
+    let createChannelFlow (channelActor: IActorRef<_>) user =
         let chatInSink = Sink.toActorRef (ParticipantLeft user) channelActor
 
         let fin =
-            (Flow.empty<'Message, Akka.NotUsed>
+            (Flow.empty<_, Akka.NotUsed>
                 |> Flow.map (fun msg -> NewMessage(user, msg))
             ).To(chatInSink)
 
@@ -46,8 +46,8 @@ module private Implementation =
     let join serverChannelResult listenChannel (ChannelList channels) meUserId =
         match serverChannelResult, listenChannel with
         | Ok (chan: ChannelData), Some listen ->
-            let ks = listen chan.id (createChannelFlow chan.channelActor meUserId)
-            Ok (channels |> Map.add chan.id ks |> ChannelList, chan)
+            let ks = listen chan.cid (createChannelFlow chan.channelActor meUserId)
+            Ok (channels |> Map.add chan.cid ks |> ChannelList, chan)
         | Result.Error err, _ ->
             Result.Error ("getChannel failed: " + err)
         | _, None ->
@@ -81,16 +81,18 @@ module private Implementation =
     let isMember (ChannelList channels) channelId = channels |> Map.containsKey channelId
 
 open Implementation
-type Session(server, userStore: UserStore, meArg) =
+type Session(server, userStore: UserStore, meArg: UserInfo) =
 
-    let (RegisteredUser (meUserId, meUserInit)) = meArg
+    let {user = (RegisteredUser (meUserId, meUserInit))} = meArg
     let mutable meUser = meUserInit
+
+    // TODO refine this me
 
     // session data
     let mutable channels = ChannelList Map.empty
     let mutable listenChannel = None
 
-    let getMe () = RegisteredUser (meUserId, meUser)
+    let getMe () = { meArg with user = RegisteredUser (meUserId, meUser) }
 
     let updateChannels requestId f = function
         | Ok (newChannels, response) -> channels <- newChannels; f response
@@ -113,7 +115,7 @@ type Session(server, userStore: UserStore, meArg) =
     let notifyChannels message = async {
         do logger.debug (Message.eventX "notifyChannels")
         let (ChannelList channelList) = channels
-        let! serverChannels = server |> (listChannels (fun {id = chid} -> Map.containsKey chid channelList))
+        let! serverChannels = server |> (listChannels (fun {cid = chid} -> Map.containsKey chid channelList))
         match serverChannels with
         | Ok list ->
             do logger.debug (Message.eventX "notifyChannels: {list}" >> Message.setFieldValue "list" list)
@@ -182,13 +184,14 @@ type Session(server, userStore: UserStore, meArg) =
             let config = { GroupChatFlow.ChannelConfig.Default with autoRemove = true }
             let! channelResult = server |> getOrCreateChannel channelName "" (GroupChatChannel config)
             match channelResult with
-            | Ok channelData when isMember channels channelData.id ->
+            | Ok channelData when isMember channels channelData.cid ->
                 return replyErrorProtocol requestId "User already joined channel"
 
             | Ok channelData ->
-                let! serverChannel = getChannel (byChanId channelData.id) server
+                let! serverChannel = getChannel (byChanId channelData.cid) server
                 let result = join serverChannel listenChannel channels meUserId
                 let! chaninfo = makeChannelInfoResult result
+                do userStore.UpdateUserChannel(meUserId, Joined channelData.cid)
                 return replyJoinedChannel requestId chaninfo
             | Result.Error err ->
                 return replyErrorProtocol requestId err
@@ -197,6 +200,7 @@ type Session(server, userStore: UserStore, meArg) =
             return chanIdStr |> function
                 | IsChannelId channelId ->
                     let result = leave channels channelId
+                    do userStore.UpdateUserChannel(meUserId, Left channelId)
                     result |> updateChannels requestId (fun _ -> Protocol.CmdResponse (requestId, Protocol.LeftChannel chanIdStr))
                 | _ ->
                     replyErrorProtocol requestId "bad channel id"
@@ -221,12 +225,29 @@ type Session(server, userStore: UserStore, meArg) =
 
     let processControlMessage = function
         | Protocol.ServerMsg.Greets ->
-            let makeChanInfo chanData = { mapChanInfo chanData with joined = isMember channels chanData.id}
+            let makeChanInfo chanData = { mapChanInfo chanData with joined = isMember channels chanData.cid}
             let makeHello channels =
                 Protocol.ClientMsg.Hello {me = mapUserToProtocol <| getMe(); channels = channels |> List.map makeChanInfo}
 
             async {
                 let! serverChannels = server |> (listChannels (fun _ -> true))
+
+                // restore connected channels
+                match serverChannels with
+                | Ok serverChannels ->
+
+                    let connectChannels = serverChannels |> List.filter(fun c -> meArg.channelList |> List.contains c.cid)
+                    let mutable chans = Map.empty
+
+                    for channel in connectChannels do
+                        chans <-
+                            let listen = listenChannel |> Option.get    // TODO fixme
+                            let ks = listen channel.cid (createChannelFlow channel.channelActor meUserId)
+                            (chans |> Map.add channel.cid ks)
+                    channels <- ChannelList chans
+
+                | _ -> ()
+
                 return serverChannels |> (Result.map makeHello >> reply "")
             }
 

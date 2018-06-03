@@ -249,7 +249,7 @@ let root: WebPart =
                     GET >=> path "/logoff" >=> noCache >=>
                         deauthenticate >=> (warbler(fun _ ->
                             match session with
-                            | UserLoggedOn (RegisteredUser (userid, Anonymous { nick = nick})) ->
+                            | UserLoggedOn {user = RegisteredUser (userid, Anonymous { nick = nick})} ->
                                 logger.info (Message.eventX "LOGOFF: Unregistering anonymous {nick}"
                                     >> Message.setFieldValue "nick" nick)
                                 do userStore.Unregister userid
@@ -274,9 +274,9 @@ let root: WebPart =
                                     |> Graph.run materializer |> Some)
                                 ()
 
-                            logger.debug (Message.eventX "Opening socket for {user}" >> Message.setField "user" (getUserNick user))
+                            logger.debug (Message.eventX "Opening socket for {user}" >> Message.setField "user" (getUserInfoNick user))
                             let! result = WebSocket.handShake (SocketFlow.handleWebsocketMessages actorSystem materialize) ctx
-                            logger.debug (Message.eventX "Closing socket for {user}" >> Message.setField "user" (getUserNick user))
+                            logger.debug (Message.eventX "Closing socket for {user}" >> Message.setField "user" (getUserInfoNick user))
 
                             return result
                             }
