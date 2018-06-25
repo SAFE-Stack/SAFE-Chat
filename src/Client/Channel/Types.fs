@@ -19,7 +19,7 @@ type 't Envelope = {
 
 type ChannelId = string // I do know it should be single case type
 type ChannelInfo = {
-    Id: string
+    Id: ChannelId
     Name: string
     Topic: string
     UserCount: int

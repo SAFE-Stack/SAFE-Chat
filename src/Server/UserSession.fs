@@ -81,18 +81,14 @@ module private Implementation =
     let isMember (ChannelList channels) channelId = channels |> Map.containsKey channelId
 
 open Implementation
-type Session(server, userStore: UserStore, meArg: UserInfo) =
+type Session(server, userStore: UserStore, userArg: RegisteredUser) =
 
-    let {user = (RegisteredUser (meUserId, meUserInit))} = meArg
-    let mutable meUser = meUserInit
-
-    // TODO refine this me
+    let (RegisteredUser (meUserId, _)) = userArg
+    let mutable (RegisteredUser (_, meUser)) = userArg
 
     // session data
     let mutable channels = ChannelList Map.empty
     let mutable listenChannel = None
-
-    let getMe () = { meArg with user = RegisteredUser (meUserId, meUser) }
 
     let updateChannels requestId f = function
         | Ok (newChannels, response) -> channels <- newChannels; f response
@@ -126,38 +122,17 @@ type Session(server, userStore: UserStore, meArg: UserInfo) =
         return ()
     }
 
-    let updateStatus status = function
-        | Anonymous person -> Anonymous {person with status = status}
-        | Person person -> Person {person with status = status}
-        | Bot bot -> Bot {bot with status = status}
-        | other -> other
-
-    let updateNick nick = function
-        | Anonymous person -> Anonymous {person with nick = nick}
-        | Person person -> Person {person with nick = nick}
-        | Bot bot -> Bot {bot with nick = nick}
-        | other -> other
-
-    let updateAvatar ava =
-        let imageUrl = if System.String.IsNullOrWhiteSpace ava then None else Some ava
-        in
-        function
-        | Anonymous person -> Anonymous {person with imageUrl = imageUrl}
-        | Person person -> Person {person with imageUrl = imageUrl}
-        | Bot bot -> Bot {bot with imageUrl = imageUrl}
-        | other -> other
-
     let updateUser requestId fn = function
         | str when System.String.IsNullOrWhiteSpace str ->
             async.Return <| replyErrorProtocol requestId "Invalid (blank) value is not allowed"
-        | newNick -> async {
-            let meNew = meUser |> fn newNick
-            let! updateResult = userStore.Update (RegisteredUser (meUserId, meNew))
+        | newValue -> async {
+            let meNew = meUser |> fn newValue
+            let! updateResult = userStore.Update (meUserId, meNew) // TODO add user id as separate field
             match updateResult with
-            | Ok (RegisteredUser(_, updatedUser)) ->
+            | Ok (RegisteredUser (_, updatedUser)) ->
                 meUser <- updatedUser
                 do! notifyChannels (ParticipantUpdate meUserId)
-                return Protocol.CmdResponse (requestId, Protocol.UserUpdated (mapUserToProtocol <| getMe()))
+                return Protocol.CmdResponse (requestId, Protocol.UserUpdated (mapUserToProtocol <| RegisteredUser (meUserId, meUser)))
             | Result.Error e ->
                 return replyErrorProtocol requestId e
         }
@@ -208,17 +183,23 @@ type Session(server, userStore: UserStore, meArg: UserInfo) =
             return Protocol.CmdResponse (requestId, Protocol.Pong)
 
         | Protocol.UserCommand {command = text; chan = chanIdStr } ->
+            let optionOfStr s =
+                if System.String.IsNullOrWhiteSpace s then None else Some s
+
             match text with
             | CommandPrefix "/leave" _ ->
                 return! processControlCommand requestId (Protocol.Leave chanIdStr)
             | CommandPrefix "/join" chanName ->
                 return! processControlCommand requestId (Protocol.JoinOrCreate chanName)
             | CommandPrefix "/nick" newNick ->
-                return! updateUser requestId updateNick newNick
+                let update nick u = {u with nick = nick }
+                return! updateUser requestId update newNick
             | CommandPrefix "/status" newStatus ->
-                return! updateUser requestId updateStatus newStatus
+                let update status u = {u with status = optionOfStr status }
+                return! updateUser requestId update newStatus
             | CommandPrefix "/avatar" newAvatarUrl ->
-                return! updateUser requestId updateAvatar newAvatarUrl
+                let update ava u = {u with imageUrl = optionOfStr ava }: UserInfo
+                return! updateUser requestId update newAvatarUrl
             | _ ->
                 return replyErrorProtocol requestId "command was not processed"
     }
@@ -227,7 +208,7 @@ type Session(server, userStore: UserStore, meArg: UserInfo) =
         | Protocol.ServerMsg.Greets ->
             let makeChanInfo chanData = { mapChanInfo chanData with joined = isMember channels chanData.cid}
             let makeHello channels =
-                Protocol.ClientMsg.Hello {me = mapUserToProtocol <| getMe(); channels = channels |> List.map makeChanInfo}
+                Protocol.ClientMsg.Hello {me = mapUserToProtocol <| RegisteredUser(meUserId, meUser); channels = channels |> List.map makeChanInfo}
 
             async {
                 let! serverChannels = server |> (listChannels (fun _ -> true))
@@ -236,7 +217,7 @@ type Session(server, userStore: UserStore, meArg: UserInfo) =
                 match serverChannels with
                 | Ok serverChannels ->
 
-                    let connectChannels = serverChannels |> List.filter(fun c -> meArg.channelList |> List.contains c.cid)
+                    let connectChannels = serverChannels |> List.filter(fun c -> meUser.channelList |> List.contains c.cid)
                     let mutable chans = Map.empty
 
                     for channel in connectChannels do

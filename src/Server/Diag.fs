@@ -11,11 +11,11 @@ open GroupChatFlow
 /// Creates an actor for echo bot.
 let createEchoActor (getUser: GetUser) (system: ActorSystem) (botUserId: UserId) =
 
-    let getPersonNick {user = RegisteredUser (_, user)} =
-        match user with
-        |Person { nick = nickName }
-        |Anonymous { nick = nickName }
-            -> Some nickName
+    let getPersonNick {identity = identity; nick = nick} =
+        match identity with
+        |Person _
+        |Anonymous _
+            -> Some nick
         | _ -> None        
 
     let forUser userid fn = async {

@@ -92,10 +92,12 @@ let createSessionFlow (userStore: UserStore) messageFlow controlFlow =
     let encodeChannelMessage (getUser: GetUser) channelId : ClientMessage -> Protocol.ClientMsg Async =
         let returnUserEvent (id, ts) userid f = async {
             let! userResult = getUser userid
-            let user2userInfo = function
-                | Some user -> mapUserToProtocol user
-                | _ -> makeBlankUserInfo "zz" "unknown"
-            return Protocol.ChannelEvent {id = id; ts = ts; evt = userResult |> (user2userInfo >> f)}
+            let registeredUserResult =
+                    Option.map (fun u -> RegisteredUser (userid, u))
+                    >> function
+                        | Some user -> mapUserToProtocol user
+                        | _ -> makeBlankUserInfo "zz" "unknown"
+            return Protocol.ChannelEvent {id = id; ts = ts; evt = userResult |> (registeredUserResult >> f)}
         }
         function
         | ChatMessage ((id, ts), UserId authorId, Message message) ->

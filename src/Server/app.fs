@@ -155,7 +155,7 @@ let session (userStore: UserStore) (f: ClientSession -> WebPart) =
                     let! result = userStore.GetUser (UserId userid)
                     match result with
                     | Some me ->
-                        return! f (UserLoggedOn me) ctx
+                        return! f (UserLoggedOn (RegisteredUser (UserId userid, me))) ctx
                     | None ->
                         logger.error (Message.eventX "Failed to get user from user store {id}" >> Message.setField "id" userid)
                         return! f NoSession ctx
@@ -193,13 +193,12 @@ let root: WebPart =
                             getUserImageUrl loginData.ProviderData
                             |> Option.orElseWith (fun () -> makeUserImageUrl "wavatar" loginData.Name)
 
-                        let user = Person {
-                            oauthId = Some loginData.Id
-                            nick = loginData.Name; status = ""; email = None; imageUrl = imageUrl}
+                        let identity = Person {oauthId = Some loginData.Id; email = None; name = None}
+                        let user = {ChatUser.makeNew identity loginData.Name with imageUrl = imageUrl}
 
                         let! registerResult = userStore.Register user
                         match registerResult with
-                        | Ok (UserId userid) ->
+                        | Ok (RegisteredUser(UserId userid, _)) ->
                             
                             logger.info (Message.eventX "User registered via oauth \"{name}\""
                                 >> Message.setFieldValue "name" loginData.Name)
@@ -230,11 +229,10 @@ let root: WebPart =
                             fun ctx -> async {
                                 let nick = (getPayloadString ctx.request).Substring 5
                                            |> WebUtility.UrlDecode  |> WebUtility.HtmlDecode
-                                let imageUrl = makeUserImageUrl "monsterid" nick
-                                let user = Anonymous {nick = nick; status = ""; imageUrl = imageUrl}
+                                let user = {ChatUser.makeNew (Anonymous nick) nick with imageUrl = makeUserImageUrl "monsterid" nick}
                                 let! registerResult = userStore.Register user
                                 match registerResult with
-                                | Ok (UserId userid) ->
+                                | Ok (RegisteredUser(UserId userid, _)) ->
                                     logger.info (Message.eventX "Anonymous login by nick {nick}"
                                         >> Message.setFieldValue "nick" nick)
 
@@ -249,10 +247,10 @@ let root: WebPart =
                     GET >=> path "/logoff" >=> noCache >=>
                         deauthenticate >=> (warbler(fun _ ->
                             match session with
-                            | UserLoggedOn {user = RegisteredUser (userid, Anonymous { nick = nick})} ->
-                                logger.info (Message.eventX "LOGOFF: Unregistering anonymous {nick}"
-                                    >> Message.setFieldValue "nick" nick)
-                                do userStore.Unregister userid
+                            | UserLoggedOn user ->
+                                logger.info (Message.eventX "LOGOFF: Unregistering {nick}"
+                                    >> Message.setFieldValue "nick" (getUserNick user))
+                                do userStore.Unregister (getUserId user)
                             | _ -> ()
                             FOUND "/logon"
                         ))
@@ -274,9 +272,9 @@ let root: WebPart =
                                     |> Graph.run materializer |> Some)
                                 ()
 
-                            logger.debug (Message.eventX "Opening socket for {user}" >> Message.setField "user" (getUserInfoNick user))
+                            logger.debug (Message.eventX "Opening socket for {user}" >> Message.setField "user" (getUserNick user))
                             let! result = WebSocket.handShake (SocketFlow.handleWebsocketMessages actorSystem materialize) ctx
-                            logger.debug (Message.eventX "Closing socket for {user}" >> Message.setField "user" (getUserInfoNick user))
+                            logger.debug (Message.eventX "Closing socket for {user}" >> Message.setField "user" (getUserNick user))
 
                             return result
                             }
