@@ -7,6 +7,10 @@ open Akkling.Persistence
 open ChatTypes
 open ChatUser
 
+open Suave.Logging
+
+let private logger = Log.create "userstore"
+
 module UserIds =
 
     let system = UserId "sys"
@@ -26,6 +30,7 @@ module public Implementation =
         | Update of UserId * UserInfo
         | UpdateUserChannels of UserId * UpdateChannelInfo
         | GetUsers of UserId list
+        | DumpUsers // dumps user list to a logger (debugging)
 
     type StoreEvent =
         | AddUser of RegisteredUser
@@ -80,15 +85,12 @@ module public Implementation =
         | _ -> None
 
     let (|AlreadyRegisteredOAuth|_|) (users: Map<UserId, UserInfo>) =
-        let lookup oauthIdArg _ value =
-            match value with
-            | {identity = Person {oauthId = Some probe}} -> probe = oauthIdArg
-            | _ -> false
-
         function
         | Person {oauthId = Some oauthId} ->
-            users |> Map.tryFindKey (lookup oauthId)
-            |> Option.map (fun userId -> RegisteredUser (userId, users.[userId]))
+            users |> Map.tryPick (fun userId ->
+                function
+                | {identity = Person {oauthId = Some probe}} as userInfo when probe = oauthId -> RegisteredUser (userId, userInfo) |> Some
+                | _ -> None )
         | _ -> None
 
     let updateUserInfo userId f (state: State) =
@@ -124,6 +126,8 @@ module public Implementation =
 
     let handler (ctx: Eventsourced<_>) =
         let reply m = ctx.Sender() <! m
+        let replyRegisterResult m = ctx.Sender() <! (RegisterResult m)
+        let persist = Event >> Persist
 
         let rec loop (state: State) = actor {
             let! msg = ctx.Receive()
@@ -136,41 +140,43 @@ module public Implementation =
                     match user.identity with
                     | AnonymousBusyNick state.users (UserId uid, nickname) ->
                         let errorMessage = sprintf "The nickname %s is already taken by user %s" nickname uid
-                        ErrorInfo errorMessage |> (Result.Error >> RegisterResult >> reply)
+                        replyRegisterResult (ErrorInfo errorMessage |> Result.Error)
                         return loop state
                     | AlreadyRegisteredOAuth state.users user ->
-                        user |> (Ok >> RegisterResult >> reply)
+                        replyRegisterResult (Ok user)
                         return loop state
                     | _ ->
                         let userId = UserId <| state.nextId.ToString()
                         let newUser = RegisteredUser (userId, user)
-                        newUser |> (Ok >> RegisterResult >> reply)
-                        return newUser |> (AddUser >> Event >> Persist)
+                        replyRegisterResult (Ok newUser)
+                        return persist (AddUser newUser)
 
                 | Unregister userid ->
-                    return Persist (Event <| DropUser userid)
+                    return persist (DropUser userid)
 
                 | Update (userId, user) ->
                     match state.users |> updateUser userId user with
                     | Ok newUser ->
                         newUser |> (Ok >> UpdateResult >> reply)
-                        return Persist (Event <| UpdateUser newUser)
+                        return persist (UpdateUser newUser)
                     | Result.Error e ->
                         e |> (Result.Error >> UpdateResult >> reply)
                         return loop state
                 | UpdateUserChannels (userId, update) ->
-                    return update |> (
-                        function
-                        | UpdateChannelInfo.Joined chanId ->
-                            JoinedChannel (userId, chanId)
-                        | UpdateChannelInfo.Left chanId ->
-                            LeftChannel (userId, chanId)
-                        >> Event >> Persist)
+                    return update |> function
+                        | Joined chanId -> JoinedChannel (userId, chanId) |> persist
+                        | Left chanId ->   LeftChannel (userId, chanId) |> persist
 
                 | GetUsers (userids) ->
                     let findUser userId = Map.tryFind userId state.users |> Option.map (fun u -> RegisteredUser (userId, u))
                     userids |> List.collect (findUser >> Option.toList)
                             |> (GetUsersResult >> reply)
+                    return loop state
+                | DumpUsers ->
+                    
+                    do logger.debug (Message.eventX "DumpUsers ({count} users)" >> Message.setFieldValue "count" (Map.count state.users))
+                    for (UserId uid, user) in state.users |> Map.toList do
+                        do logger.debug (Message.eventX "   {userId}: \"{nick}\"" >> Message.setFieldValue "userId" uid >> Message.setFieldValue "nick" user.nick)
                     return loop state
         }
         loop initialState
@@ -179,7 +185,8 @@ open Implementation
 
 type UserStore(system: Akka.Actor.ActorSystem) =
 
-    let storeActor = spawn system "userstore" <| propsPersist(handler)
+    let storeActor = spawn system "userstore" <| propsPersist handler
+    do storeActor <! (Command DumpUsers)
 
     member __.Register(user: UserInfo) : Result<RegisteredUser,string> Async =
         async {

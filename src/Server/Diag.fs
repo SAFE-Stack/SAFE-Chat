@@ -51,8 +51,12 @@ let createDiagChannel (getUser: GetUser) (system: ActorSystem) (server: IActorRe
 
         let! result = server |> getOrCreateChannel channelName topic (OtherChannel chanActorProps)
         match result with
-        | Ok chan ->
-            chan.channelActor <! (NewParticipant (echoUserId, bot))
+        | Ok chanId ->
+            let! channel = server |> getChannel (fun chan -> chan.cid = chanId)
+            match channel with
+            | Ok chan -> chan.channelActor <! (NewParticipant (echoUserId, bot))
+            | Error _ ->
+                () // FIXME log error
         | Error _ ->
             () // FIXME log error
     }

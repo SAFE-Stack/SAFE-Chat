@@ -159,14 +159,14 @@ type Session(server, userStore: UserStore, userArg: RegisteredUser) =
             let config = { GroupChatFlow.ChannelConfig.Default with autoRemove = true }
             let! channelResult = server |> getOrCreateChannel channelName "" (GroupChatChannel config)
             match channelResult with
-            | Ok channelData when isMember channels channelData.cid ->
+            | Ok channelId when isMember channels channelId ->
                 return replyErrorProtocol requestId "User already joined channel"
 
-            | Ok channelData ->
-                let! serverChannel = getChannel (byChanId channelData.cid) server
+            | Ok channelId ->
+                let! serverChannel = getChannel (byChanId channelId) server
                 let result = join serverChannel listenChannel channels meUserId
                 let! chaninfo = makeChannelInfoResult result
-                do userStore.UpdateUserChannel(meUserId, Joined channelData.cid)
+                do userStore.UpdateUserChannel(meUserId, Joined channelId)
                 return replyJoinedChannel requestId chaninfo
             | Result.Error err ->
                 return replyErrorProtocol requestId err

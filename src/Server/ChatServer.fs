@@ -68,6 +68,7 @@ type ServerReplyMessage =
     | Done
     | RequestError of string
     | FoundChannel of ChannelData
+    | CreatedChannel of ChannelId
     | FoundChannels of ChannelData list
 
 type ServerMessage =
@@ -119,11 +120,10 @@ let startServer (system: ActorSystem) : IActorRef<ServerMessage> =
                 let newState = 
                     { state with lastChannelId = max chanId state.lastChannelId; channels = newChan::state.channels }
 
-                do logger.debug (Message.eventX "Started watching {a}" >> Message.setFieldValue "a" ci.name)
+                do logger.debug (Message.eventX "Started watching {chanName}" >> Message.setFieldValue "chanName" ci.name)
                 monitor ctx actor |> ignore
 
                 do state.sessions |> Map.iter(fun _ session -> session.notifySink <! AddChannel newChan)
-                ctx.Sender() <! FoundChannel newChan
 
                 newState
 
@@ -159,9 +159,10 @@ let startServer (system: ActorSystem) : IActorRef<ServerMessage> =
                         ctx.Sender() <! FoundChannel chan
                         return loop state
                     | _ when isValidName name ->
-                        let event = ChannelCreated { chanId = string (state.lastChannelId + 1)
-                                                     name = name; topic = topic; chanType = channelType }
+                        let newChannelId = state.lastChannelId + 1
+                        let event = ChannelCreated { chanId = string newChannelId; name = name; topic = topic; chanType = channelType }
 
+                        ctx.Sender() <! CreatedChannel (ChannelId newChannelId)
                         // only persist regular channels which we know how to instantiate (persist)
                         match channelType with
                         | GroupChatChannel _ ->
@@ -190,7 +191,7 @@ let startServer (system: ActorSystem) : IActorRef<ServerMessage> =
                     let newState = { state with sessions = state.sessions |> Map.remove userid }
                     return loop newState
             | msg ->
-                do logger.debug (Message.eventX "Failed to process message: {a}" >> Message.setFieldValue "a" msg)
+                do logger.debug (Message.eventX "Didn't process message: {a}" >> Message.setFieldValue "a" msg)
                 // TODO unhandled()
                 return loop state
         }
@@ -201,20 +202,24 @@ let startServer (system: ActorSystem) : IActorRef<ServerMessage> =
     spawn system "ircserver" props |> retype
 
 
-let private getChannelImpl message (server: ServerT) =
+let getChannel criteria (server: ServerT) =
     async {
-        let! (reply: ServerReplyMessage) = server <? message
+        let! (reply: ServerReplyMessage) = server <? Command(FindChannel criteria)
         match reply with
         | FoundChannel channel -> return Ok channel
         | RequestError error -> return Result.Error error
         | _ -> return Result.Error "Unknown reason"
     }
 
-let getChannel criteria =
-    getChannelImpl (Command(FindChannel criteria))
-
-let getOrCreateChannel name topic (channelType: ChannelType) =
-    getChannelImpl (Command (GetOrCreateChannel (name, topic, channelType)))
+let getOrCreateChannel name topic (channelType: ChannelType) (server: ServerT) =
+    async {
+        let! (reply: ServerReplyMessage) = server <? Command (GetOrCreateChannel (name, topic, channelType))
+        match reply with
+        | CreatedChannel channelId -> return Ok channelId
+        | FoundChannel channel -> return Ok channel.cid
+        | RequestError error -> return Result.Error error
+        | _ -> return Result.Error "Unknown reason"
+    }
 
 let listChannels criteria (server: ServerT) =
     async {

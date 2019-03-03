@@ -13,9 +13,9 @@ type EventAdapter(__ : Akka.Actor.ExtendedActorSystem) =
             sprintf "%s,%s" manifestType.FullName <| manifestType.Assembly.GetName().Name
 
         member __.ToJournal(evt : obj) : obj = 
-            new JObject(
-                new JProperty("evtype", evt.GetType().FullName),
-                new JProperty("value", JsonConvert.SerializeObject(evt))
+            JObject(
+                JProperty("evtype", evt.GetType().FullName),
+                JProperty("value", JsonConvert.SerializeObject(evt))
             )
             :> obj
 
