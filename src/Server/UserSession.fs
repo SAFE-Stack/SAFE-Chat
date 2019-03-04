@@ -78,9 +78,13 @@ module private Implementation =
         else
             None
 
-    let isMember (ChannelList channels) channelId = channels |> Map.containsKey channelId
+    // TODO asyncutil
+    let bindResultAsync f = function
+    | Result.Ok cch -> async.ReturnFrom (async {let! r = f cch in return Result.Ok r})
+    | Result.Error x -> async.Return (Result.Error x)
 
 open Implementation
+
 type Session(server, userStore: UserStore, userArg: RegisteredUser) =
 
     let (RegisteredUser (meUserId, _)) = userArg
@@ -90,21 +94,30 @@ type Session(server, userStore: UserStore, userArg: RegisteredUser) =
     let mutable channels = ChannelList Map.empty
     let mutable listenChannel = None
 
+    let hasJoined channelId =
+        let (ChannelList channelsMap) = channels
+        channelsMap |> Map.containsKey channelId
+
     let updateChannels requestId f = function
         | Ok (newChannels, response) -> channels <- newChannels; f response
         | Result.Error e ->            replyErrorProtocol requestId e
 
-    let makeChannelInfoResult v = async {
+    let mapChannelInfoResult (channel: ChannelData) = async {
+        try
+            let! (userIds: UserId list) = channel.channelActor <? ListUsers
+            let! users = userStore.GetUsers userIds
+            let chaninfo = { mapChanInfo channel with users = users |> List.map mapUserToProtocol}
+            return Ok chaninfo
+        with :?AggregateException as e ->
+            do logger.error (Message.eventX "Error while communicating channel actor: {e}" >> Message.setFieldValue "e" e)
+            return Result.Error "Channel is not available"
+    }
+
+    let mapSndAsyncResult f v = async {
         match v with
-        | Ok (arg1, channel: ChannelData) ->
-            try
-                let! (userIds: UserId list) = channel.channelActor <? ListUsers
-                let! users = userStore.GetUsers userIds
-                let chaninfo = { mapChanInfo channel with users = users |> List.map mapUserToProtocol}
-                return Ok (arg1, chaninfo)
-            with :?AggregateException as e ->
-                do logger.error (Message.eventX "Error while communicating channel actor: {e}" >> Message.setFieldValue "e" e)
-                return Result.Error "Channel is not available"
+        | Ok arg ->
+            let! mapped = f (snd arg)
+            return mapped |> Result.map(fun x -> (fst arg, x))
         | Result.Error e -> return Result.Error e
     }
 
@@ -142,13 +155,13 @@ type Session(server, userStore: UserStore, userArg: RegisteredUser) =
 
     let rec processControlCommand requestId command = async {
         match command with
-        | Protocol.Join (IsChannelId channelId) when isMember channels channelId ->
+        | Protocol.Join (IsChannelId channelId) when hasJoined channelId ->
             return replyErrorProtocol requestId "User already joined channel"
 
         | Protocol.Join (IsChannelId channelId) ->
             let! serverChannel = getChannel (byChanId channelId) server
             let result = join serverChannel listenChannel channels meUserId
-            let! chaninfo = makeChannelInfoResult result
+            let! chaninfo = mapSndAsyncResult mapChannelInfoResult result
             return replyJoinedChannel requestId chaninfo
 
         | Protocol.Join _ ->
@@ -159,13 +172,13 @@ type Session(server, userStore: UserStore, userArg: RegisteredUser) =
             let config = { GroupChatFlow.ChannelConfig.Default with autoRemove = true }
             let! channelResult = server |> getOrCreateChannel channelName "" (GroupChatChannel config)
             match channelResult with
-            | Ok channelId when isMember channels channelId ->
+            | Ok channelId when hasJoined channelId ->
                 return replyErrorProtocol requestId "User already joined channel"
 
             | Ok channelId ->
                 let! serverChannel = getChannel (byChanId channelId) server
                 let result = join serverChannel listenChannel channels meUserId
-                let! chaninfo = makeChannelInfoResult result
+                let! chaninfo = mapSndAsyncResult mapChannelInfoResult result
                 do userStore.UpdateUserChannel(meUserId, Joined channelId)
                 return replyJoinedChannel requestId chaninfo
             | Result.Error err ->
@@ -206,9 +219,17 @@ type Session(server, userStore: UserStore, userArg: RegisteredUser) =
 
     let processControlMessage = function
         | Protocol.ServerMsg.Greets ->
-            let makeChanInfo chanData = { mapChanInfo chanData with joined = isMember channels chanData.cid}
-            let makeHello channels =
-                Protocol.ClientMsg.Hello {me = mapUserToProtocol <| RegisteredUser(meUserId, meUser); channels = channels |> List.map makeChanInfo}
+            let makeChanInfo chanData = async {
+                let isJoined = hasJoined chanData.cid
+                let fallBackResponse = { mapChanInfo chanData with joined = isJoined }
+
+                if isJoined then
+                    match! mapChannelInfoResult chanData with
+                    | Result.Ok chanInfo -> return { chanInfo with joined = isJoined }
+                    | _ -> return fallBackResponse
+                else
+                    return fallBackResponse
+            }
 
             async {
                 let! serverChannels = server |> (listChannels (fun _ -> true))
@@ -229,7 +250,15 @@ type Session(server, userStore: UserStore, userArg: RegisteredUser) =
 
                 | _ -> ()
 
-                return serverChannels |> (Result.map makeHello >> reply "")
+                let! hello  = serverChannels |> bindResultAsync (fun cch ->
+                    async {
+                        let! chanInfos = cch |> List.map makeChanInfo |> Array.ofList |> Async.Parallel
+                        return Protocol.ClientMsg.Hello {
+                                me = mapUserToProtocol <| RegisteredUser(meUserId, meUser)
+                                channels = List.ofArray chanInfos }
+                    }
+                )
+                return hello |> reply ""
             }
 
         | Protocol.ServerMsg.ServerCommand (requestId, command) ->
