@@ -4,17 +4,11 @@ open Akkling
 open Suave.Logging
 open ChatTypes
 
-type ChannelConfig = {
-    // instructs channel actor to shutdown channel after last member exited
-    autoRemove: bool
-} with static member Default = {autoRemove = false}
-
 module internal Internals =
     // maps user login
     type ChannelParties = Map<UserId, ClientMessage IActorRef>
 
     type ChannelState = {
-        Config: ChannelConfig
         Parties: ChannelParties
         LastEventId: int
     }
@@ -23,9 +17,9 @@ module internal Internals =
 
 open Internals
 
-let createActorProps<'User, 'Message when 'User: comparison> (config: ChannelConfig) =
+let createActorProps<'User, 'Message when 'User: comparison> lastUserLeft =
 
-    let incId chan = { chan with LastEventId = chan.LastEventId + 1}
+    let incEventId chan = { chan with LastEventId = chan.LastEventId + 1}
     let dispatch (parties: ChannelParties) (msg: ClientMessage): unit =
         parties |> Map.iter (fun _ subscriber -> subscriber <! msg)
     let allMembers = Map.toSeq >> Seq.map fst
@@ -38,18 +32,19 @@ let createActorProps<'User, 'Message when 'User: comparison> (config: ChannelCon
             logger.debug (Message.eventX "NewParticipant {user}" >> Message.setFieldValue "user" user)
             let parties = state.Parties |> Map.add user subscriber
             do dispatch state.Parties <| Joined (ts, user, parties |> allMembers)
-            incId { state with Parties = parties} |> updateState
+            incEventId { state with Parties = parties} |> updateState
 
         | ParticipantLeft user ->
             logger.debug (Message.eventX "Participant left {user}" >> Message.setFieldValue "user" user)
             let parties = state.Parties |> Map.remove user
             do dispatch state.Parties <| Left (ts, user, parties |> allMembers)
 
-            if config.autoRemove && parties |> Map.isEmpty then
-                logger.debug (Message.eventX "It was the last participant, closing the channel")
-                stop()
-            else
-                incId { state with Parties = parties} |> updateState
+            if parties |> Map.isEmpty then
+                logger.debug (Message.eventX "Last user left the channel")
+                match lastUserLeft with
+                | Some msg -> do ctx.Parent() <! msg
+                | _ -> ()
+            incEventId { state with Parties = parties} |> updateState
 
         | ParticipantUpdate user ->
             logger.debug (Message.eventX "Participant updated {user}" >> Message.setFieldValue "user" user)
@@ -59,7 +54,7 @@ let createActorProps<'User, 'Message when 'User: comparison> (config: ChannelCon
         | NewMessage (user, message) ->
             if state.Parties |> Map.containsKey user then
                 do dispatch state.Parties <| ChatMessage (ts, user, message)
-            incId state |> updateState
+            incEventId state |> updateState
 
         | ListUsers ->
             let users = state.Parties |> Map.toList |> List.map fst
@@ -67,4 +62,4 @@ let createActorProps<'User, 'Message when 'User: comparison> (config: ChannelCon
             ignored state
 
     in
-    props <| actorOf2 (behavior { Parties = Map.empty; LastEventId = 1000; Config = config })
+    props <| actorOf2 (behavior { Parties = Map.empty; LastEventId = 1000 })

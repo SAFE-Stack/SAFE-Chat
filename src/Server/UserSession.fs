@@ -169,8 +169,7 @@ type Session(server, userStore: UserStore, userArg: RegisteredUser) =
 
         | Protocol.JoinOrCreate channelName ->
             // user channels are all created with autoRemove, system channels are not
-            let config = { GroupChatFlow.ChannelConfig.Default with autoRemove = true }
-            let! channelResult = server |> getOrCreateChannel channelName "" (GroupChatChannel config)
+            let! channelResult = server |> getOrCreateChannel channelName "" (GroupChatChannel { autoRemove = true })
             match channelResult with
             | Ok channelId when hasJoined channelId ->
                 return replyErrorProtocol requestId "User already joined channel"

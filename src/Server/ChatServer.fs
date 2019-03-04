@@ -23,6 +23,9 @@ type ChannelData = {
     topic: string
     channelActor: IActorRef<ChannelMessage>
 }
+and ChannelSettings = {
+    autoRemove: bool
+}
 and UserSessionData = {
     notifySink: ServerNotifyMessage IActorRef
 }
@@ -41,7 +44,7 @@ and ServerNotifyMessage =
 // Chan event type. I need this type to create proper actor while restoring channels
 // Consider omitting parameters and just let channel store its state/settings.
 type ChannelType =
-    | GroupChatChannel of GroupChatFlow.ChannelConfig
+    | GroupChatChannel of ChannelSettings
     | OtherChannel of Props<ChannelMessage>     // this is not persistable channel (such as About)
 
 type ChannelCreateInfo = {
@@ -61,6 +64,8 @@ type ServerCommand =
     | GetOrCreateChannel of name: string * topic: string * ChannelType  // FIXME type instead of tuple
     | ListChannels of (ChannelData -> bool)
     | DumpChannels
+
+    | NotifyLastUserLeft of ChannelId
 
     | StartSession of UserId * IActorRef<ServerNotifyMessage>
     | CloseSession of UserId
@@ -87,12 +92,14 @@ module private Implementation =
         in
         {serverState with channels = serverState.channels |> List.map f}
 
-    /// Creates a new channel or returns existing if channel already exists
-
 let startServer (system: ActorSystem) : IActorRef<ServerMessage> =
 
-    let getChannelProps = function
-        | GroupChatChannel config -> GroupChatFlow.createActorProps config
+    let getChannelProps (chan: ChannelCreateInfo) =
+        match chan.chanType with
+        | GroupChatChannel settings ->
+            let (true, chanId) | OtherwiseFail chanId = System.Int32.TryParse chan.chanId
+            let notify = if settings.autoRemove then Some <| box (ServerMessage.Command (NotifyLastUserLeft <| ChannelId chanId)) else None
+            GroupChatFlow.createActorProps notify
         | OtherChannel props -> props
 
     let byChanName name c = (c:ChannelData).name = name
@@ -101,7 +108,7 @@ let startServer (system: ActorSystem) : IActorRef<ServerMessage> =
     let isValidName (name: string) =
         (String.length name) > 0 && Char.IsLetter name.[0]
 
-    let serverBehavior (ctx: Eventsourced<obj>) =
+    let serverBehavior (ctx: Eventsourced<_>) =
 
         let update (state: State) =
             function
@@ -115,92 +122,98 @@ let startServer (system: ActorSystem) : IActorRef<ServerMessage> =
             | ChannelCreated ci ->
 
                 let actorName = ci.chanId
-                let actor = spawn ctx actorName (getChannelProps ci.chanType)
+                let actor = spawn ctx actorName (getChannelProps ci)
                 let (true, chanId) | OtherwiseFail chanId = System.Int32.TryParse ci.chanId
 
                 let newChan =  { cid = ChannelId chanId; name = ci.name; topic = ci.topic; channelActor = actor }
                 let newState = { state with lastChannelId = max chanId state.lastChannelId; channels = newChan::state.channels }
 
                 do logger.debug (Message.eventX "Started watching {cid} \"{chanName}\"" >> Message.setFieldValue "chanName" ci.name >> Message.setFieldValue "cid" ci.chanId)
-                monitor ctx actor |> ignore
 
                 do state.sessions |> Map.iter(fun _ session -> session.notifySink <! AddChannel newChan)
 
                 newState
 
             | ChannelDeleted channelId ->
-                do logger.debug (Message.eventX "deleted channel {cid}" >> Message.setFieldValue "cid" channelId)
-                { state with channels = state.channels |> List.filter (fun chand -> chand.cid <> channelId)}
-
-        let rec loop (state: State) : Effect<obj> = actor {
-            let! cmd = ctx.Receive()
-
-            match cmd with
-            | Terminated(ref, _, _) ->
-                match state.channels |> List.tryFind (fun chan -> chan.channelActor = ref) with
+                match state.channels |> List.tryFind(fun c -> c.cid = channelId) with
                 | Some channel ->
-                    do logger.debug (Message.eventX "Channel terminated: {chanName}" >> Message.setFieldValue "chanName" channel.name)
+                    do logger.debug (Message.eventX "deleted channel {cid}" >> Message.setFieldValue "cid" channelId)
+                    if ctx.IsRecovering() then
+                        // FIXME the design here is to replay channels creation/destroy. See we ignore Terminated event for the same purpose
+                        // Eventually I'm going to keep channel actor active until the channel is purged.
+                        do logger.debug (Message.eventX "... and sent poison pill")
+                        retype channel.channelActor <! PoisonPill.Instance
+
                     do state.sessions |> Map.iter(fun _ session -> session.notifySink <! DropChannel channel)
-                    return ChannelDeleted channel.cid |> (Event >> box >> Persist)
+
+                    { state with channels = state.channels |> List.filter (fun chand -> chand.cid <> channelId)}
+                | None ->
+                    do logger.error (Message.eventX "deleted channel {cid} not found in server" >> Message.setFieldValue "cid" channelId)
+                    state
+
+        let rec loop (state: State) : Effect<_> = actor {
+            let! msg = ctx.Receive()
+            // removed lifetime Terminated event tracking in March 2019
+
+            match msg with
+            | Event evt ->
+                return loop (update state evt)
+
+            | Command (NotifyLastUserLeft chanId) ->
+                match state.channels |> List.tryFind (fun chan -> chan.cid = chanId) with
+                | Some channel ->
+                    do logger.debug (Message.eventX "Last user left from: {chanName}, removing" >> Message.setFieldValue "chanName" channel.name)
+                    return ChannelDeleted channel.cid |> (Event >> Persist)
                 | _ ->
-                    do logger.error (Message.eventX "Failed to locate terminated object: {a}" >> Message.setFieldValue "a" ref)
+                    do logger.error (Message.eventX "Failed to locate channel: {a}" >> Message.setFieldValue "a" chanId)
                     return loop state
 
-            | :? ServerMessage as msg ->
-                match msg with
-                | Event evt ->
-                    return loop (update state evt)
+            | Command (FindChannel criteria) ->
+                let found = state.channels |> List.tryFind criteria
+                ctx.Sender() <! (found |> function |Some chan -> FoundChannel chan |_ -> RequestError "Not found")
+                return ignored ()
 
-                | Command (FindChannel criteria) ->
-                    let found = state.channels |> List.tryFind criteria
-                    ctx.Sender() <! (found |> function |Some chan -> FoundChannel chan |_ -> RequestError "Not found")
-                    return ignored ()
+            | Command (GetOrCreateChannel (name, topic, channelType)) ->
+                match state.channels |> List.tryFind (byChanName name) with
+                | Some chan ->
+                    ctx.Sender() <! FoundChannel chan
+                    return loop state
+                | _ when isValidName name ->
+                    let newChannelId = state.lastChannelId + 1
+                    let event = ChannelCreated { chanId = string newChannelId; name = name; topic = topic; chanType = channelType }
 
-                | Command (GetOrCreateChannel (name, topic, channelType)) ->
-                    match state.channels |> List.tryFind (byChanName name) with
-                    | Some chan ->
-                        ctx.Sender() <! FoundChannel chan
-                        return loop state
-                    | _ when isValidName name ->
-                        let newChannelId = state.lastChannelId + 1
-                        let event = ChannelCreated { chanId = string newChannelId; name = name; topic = topic; chanType = channelType }
-
-                        ctx.Sender() <! CreatedChannel (ChannelId newChannelId)
-                        // only persist regular channels which we know how to instantiate (persist)
-                        match channelType with
-                        | GroupChatChannel _ ->
-                            return Persist (Event event |> box)
-                        | _ ->
-                            return loop <| update state event
-
+                    ctx.Sender() <! CreatedChannel (ChannelId newChannelId)
+                    // only persist regular channels which we know how to instantiate (persist)
+                    match channelType with
+                    | GroupChatChannel _ ->
+                        return Persist (Event event)
                     | _ ->
-                        ctx.Sender() <! RequestError "Invalid channel name"
-                        return loop state
+                        return loop <| update state event
 
-                | Command (ListChannels criteria) ->
-                    let found = state.channels |> List.filter criteria
-                    ctx.Sender() <! FoundChannels found
-                    return ignored()
-
-                | Command (StartSession (user, nsink)) ->
-                    do logger.debug (Message.eventX "StartSession user={userId}" >> Message.setFieldValue "userId" user)
-
-                    let newState = { state with sessions = state.sessions |> Map.add user { notifySink = nsink } }
-                    return loop newState
-
-                | Command (CloseSession userid) ->
-                    do logger.debug (Message.eventX "CloseSession user={userId}" >> Message.setFieldValue "userId" userid)
-                    
-                    let newState = { state with sessions = state.sessions |> Map.remove userid }
-                    return loop newState
-                | Command DumpChannels ->
-                    do logger.debug (Message.eventX "DumpChannels ({count} channels)" >> Message.setFieldValue "count" (List.length state.channels))
-                    for chan in state.channels do
-                        do logger.debug (Message.eventX "DumpChannels   {cid}: \"{name}\"" >> Message.setFieldValue "cid" chan.cid >> Message.setFieldValue "name" chan.name)
+                | _ ->
+                    ctx.Sender() <! RequestError "Invalid channel name"
                     return loop state
-            | msg ->
-                do logger.debug (Message.eventX "Didn't process message: {a}" >> Message.setFieldValue "a" msg)
-                // TODO unhandled()
+
+            | Command (ListChannels criteria) ->
+                let found = state.channels |> List.filter criteria
+                ctx.Sender() <! FoundChannels found
+                return ignored()
+
+            | Command (StartSession (user, nsink)) ->
+                do logger.debug (Message.eventX "StartSession user={userId}" >> Message.setFieldValue "userId" user)
+
+                let newState = { state with sessions = state.sessions |> Map.add user { notifySink = nsink } }
+                return loop newState
+
+            | Command (CloseSession userid) ->
+                do logger.debug (Message.eventX "CloseSession user={userId}" >> Message.setFieldValue "userId" userid)
+                
+                let newState = { state with sessions = state.sessions |> Map.remove userid }
+                return loop newState
+            | Command DumpChannels ->
+                do logger.debug (Message.eventX "DumpChannels ({count} channels)" >> Message.setFieldValue "count" (List.length state.channels))
+                for chan in state.channels do
+                    do logger.debug (Message.eventX "DumpChannels   {cid}: \"{name}\"" >> Message.setFieldValue "cid" chan.cid >> Message.setFieldValue "name" chan.name)
                 return loop state
         }
         loop initialState

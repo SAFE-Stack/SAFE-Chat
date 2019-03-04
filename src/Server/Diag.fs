@@ -47,7 +47,7 @@ let createEchoActor (getUser: GetUser) (system: ActorSystem) (botUserId: UserId)
 let createDiagChannel (getUser: GetUser) (system: ActorSystem) (server: IActorRef<_>) (echoUserId, channelName, topic) =
     async {
         let bot = createEchoActor getUser system echoUserId
-        let chanActorProps = createActorProps ChannelConfig.Default
+        let chanActorProps = createActorProps None
 
         let! result = server |> getOrCreateChannel channelName topic (OtherChannel chanActorProps)
         match result with
