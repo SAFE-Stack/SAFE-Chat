@@ -60,6 +60,7 @@ type ServerCommand =
     | FindChannel of (ChannelData -> bool)
     | GetOrCreateChannel of name: string * topic: string * ChannelType  // FIXME type instead of tuple
     | ListChannels of (ChannelData -> bool)
+    | DumpChannels
 
     | StartSession of UserId * IActorRef<ServerNotifyMessage>
     | CloseSession of UserId
@@ -102,7 +103,8 @@ let startServer (system: ActorSystem) : IActorRef<ServerMessage> =
 
     let serverBehavior (ctx: Eventsourced<obj>) =
 
-        let update (state: State) = function
+        let update (state: State) =
+            function
             | ChannelCreated ci when state.channels |> List.exists(fun {cid = ChannelId cid} -> string cid = ci.chanId) ->
 
                 do logger.error (Message.eventX "Channel named {a} (id={chanid}) already exists, cannot restore"
@@ -116,11 +118,10 @@ let startServer (system: ActorSystem) : IActorRef<ServerMessage> =
                 let actor = spawn ctx actorName (getChannelProps ci.chanType)
                 let (true, chanId) | OtherwiseFail chanId = System.Int32.TryParse ci.chanId
 
-                let newChan = {cid = ChannelId chanId; name = ci.name; topic = ci.topic; channelActor = actor }
-                let newState = 
-                    { state with lastChannelId = max chanId state.lastChannelId; channels = newChan::state.channels }
+                let newChan =  { cid = ChannelId chanId; name = ci.name; topic = ci.topic; channelActor = actor }
+                let newState = { state with lastChannelId = max chanId state.lastChannelId; channels = newChan::state.channels }
 
-                do logger.debug (Message.eventX "Started watching {chanName}" >> Message.setFieldValue "chanName" ci.name)
+                do logger.debug (Message.eventX "Started watching {cid} \"{chanName}\"" >> Message.setFieldValue "chanName" ci.name >> Message.setFieldValue "cid" ci.chanId)
                 monitor ctx actor |> ignore
 
                 do state.sessions |> Map.iter(fun _ session -> session.notifySink <! AddChannel newChan)
@@ -128,6 +129,7 @@ let startServer (system: ActorSystem) : IActorRef<ServerMessage> =
                 newState
 
             | ChannelDeleted channelId ->
+                do logger.debug (Message.eventX "deleted channel {cid}" >> Message.setFieldValue "cid" channelId)
                 { state with channels = state.channels |> List.filter (fun chand -> chand.cid <> channelId)}
 
         let rec loop (state: State) : Effect<obj> = actor {
@@ -137,6 +139,7 @@ let startServer (system: ActorSystem) : IActorRef<ServerMessage> =
             | Terminated(ref, _, _) ->
                 match state.channels |> List.tryFind (fun chan -> chan.channelActor = ref) with
                 | Some channel ->
+                    do logger.debug (Message.eventX "Channel terminated: {chanName}" >> Message.setFieldValue "chanName" channel.name)
                     do state.sessions |> Map.iter(fun _ session -> session.notifySink <! DropChannel channel)
                     return ChannelDeleted channel.cid |> (Event >> box >> Persist)
                 | _ ->
@@ -190,6 +193,11 @@ let startServer (system: ActorSystem) : IActorRef<ServerMessage> =
                     
                     let newState = { state with sessions = state.sessions |> Map.remove userid }
                     return loop newState
+                | Command DumpChannels ->
+                    do logger.debug (Message.eventX "DumpChannels ({count} channels)" >> Message.setFieldValue "count" (List.length state.channels))
+                    for chan in state.channels do
+                        do logger.debug (Message.eventX "DumpChannels   {cid}: \"{name}\"" >> Message.setFieldValue "cid" chan.cid >> Message.setFieldValue "name" chan.name)
+                    return loop state
             | msg ->
                 do logger.debug (Message.eventX "Didn't process message: {a}" >> Message.setFieldValue "a" msg)
                 // TODO unhandled()
@@ -199,7 +207,10 @@ let startServer (system: ActorSystem) : IActorRef<ServerMessage> =
     in
 
     let props = propsPersist serverBehavior
-    spawn system "ircserver" props |> retype
+    let server = spawn system "ircserver" props |> retype
+    server <! Command DumpChannels
+
+    server
 
 
 let getChannel criteria (server: ServerT) =
