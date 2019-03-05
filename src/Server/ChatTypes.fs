@@ -17,10 +17,18 @@ type ClientMessage =
     | Updated of ts: Timestamp * user: UserId
 
 /// Channel actor protocol (server side protocol)
-type ChannelMessage =
+type ChannelCommand =
     | NewParticipant of user: UserId * subscriber: ClientMessage IActorRef
     | ParticipantLeft of UserId
     | ParticipantUpdate of UserId
-    | NewMessage of UserId * Message
+    | PostMessage of UserId * Message
     | ListUsers
 
+/// Channel actor protocol (server side protocol)
+type MessageInfo = { ts: Timestamp; user: UserId; message: Message }
+type ChannelEvent =
+    | MessagePosted of MessageInfo
+
+type ChannelMessage =
+    | ChannelCommand of ChannelCommand
+    | ChannelEvent of ChannelEvent

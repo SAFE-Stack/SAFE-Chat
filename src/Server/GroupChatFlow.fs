@@ -1,6 +1,8 @@
 ﻿module GroupChatFlow
 
 open Akkling
+open Akkling.Persistence
+
 open Suave.Logging
 open ChatTypes
 
@@ -11,9 +13,18 @@ module internal Internals =
     type ChannelState = {
         Parties: ChannelParties
         LastEventId: int
+        Messages: MessageInfo list
     }
 
     let logger = Log.create "chanflow"
+
+    let storeMessage (state: ChannelState) (message: MessageInfo) =
+        let messageId = fst message.ts
+
+        { state with
+            LastEventId = System.Math.Max(state.LastEventId, messageId)
+            Messages = message :: state.Messages }
+        
 
 open Internals
 
@@ -24,42 +35,53 @@ let createActorProps<'User, 'Message when 'User: comparison> lastUserLeft =
         parties |> Map.iter (fun _ subscriber -> subscriber <! msg)
     let allMembers = Map.toSeq >> Seq.map fst
 
-    let rec behavior state (ctx: Actor<_>) =
-        let updateState newState = become (behavior newState ctx) in
-        let ts = state.LastEventId, System.DateTime.Now
-        function
-        | NewParticipant (user, subscriber) ->
-            logger.debug (Message.eventX "NewParticipant {user}" >> Message.setFieldValue "user" user)
-            let parties = state.Parties |> Map.add user subscriber
-            do dispatch state.Parties <| Joined (ts, user, parties |> allMembers)
-            incEventId { state with Parties = parties} |> updateState
+    let handler (ctx: Eventsourced<ChannelMessage>) =
 
-        | ParticipantLeft user ->
-            logger.debug (Message.eventX "Participant left {user}" >> Message.setFieldValue "user" user)
-            let parties = state.Parties |> Map.remove user
-            do dispatch state.Parties <| Left (ts, user, parties |> allMembers)
+        let rec loop state = actor {
+            let! msg = ctx.Receive()
+            match msg with
+            | ChannelEvent evt ->
+                let (MessagePosted msg) = evt
+                return loop (storeMessage state msg)
 
-            if parties |> Map.isEmpty then
-                logger.debug (Message.eventX "Last user left the channel")
-                match lastUserLeft with
-                | Some msg -> do ctx.Parent() <! msg
-                | _ -> ()
-            incEventId { state with Parties = parties} |> updateState
+            | ChannelCommand cmd ->
+                let ts = state.LastEventId, System.DateTime.Now
 
-        | ParticipantUpdate user ->
-            logger.debug (Message.eventX "Participant updated {user}" >> Message.setFieldValue "user" user)
-            do dispatch state.Parties <| Updated (ts, user)
-            ignored state
+                match cmd with
+                | NewParticipant (user, subscriber) ->
+                    logger.debug (Message.eventX "NewParticipant {user}" >> Message.setFieldValue "user" user)
+                    let parties = state.Parties |> Map.add user subscriber
+                    do dispatch state.Parties <| Joined (ts, user, parties |> allMembers)
+                    return loop <| incEventId { state with Parties = parties}
 
-        | NewMessage (user, message) ->
-            if state.Parties |> Map.containsKey user then
-                do dispatch state.Parties <| ChatMessage (ts, user, message)
-            incEventId state |> updateState
+                | ParticipantLeft user ->
+                    logger.debug (Message.eventX "Participant left {user}" >> Message.setFieldValue "user" user)
+                    let parties = state.Parties |> Map.remove user
+                    do dispatch state.Parties <| Left (ts, user, parties |> allMembers)
 
-        | ListUsers ->
-            let users = state.Parties |> Map.toList |> List.map fst
-            ctx.Sender() <! users
-            ignored state
+                    if parties |> Map.isEmpty then
+                        logger.debug (Message.eventX "Last user left the channel")
+                        match lastUserLeft with
+                        | Some msg -> do ctx.Parent() <! msg
+                        | _ -> ()
+                    return loop <| incEventId { state with Parties = parties}
 
+                | ParticipantUpdate user ->
+                    logger.debug (Message.eventX "Participant updated {user}" >> Message.setFieldValue "user" user)
+                    do dispatch state.Parties <| Updated (ts, user)
+                    return loop state
+
+                | PostMessage (user, message) ->
+                    if state.Parties |> Map.containsKey user then
+                        do dispatch state.Parties <| ChatMessage (ts, user, message)
+                    return MessagePosted {ts = ts; user = user; message = message} |> ChannelEvent |> Persist
+
+                | ListUsers ->
+                    let users = state.Parties |> Map.toList |> List.map fst
+                    ctx.Sender() <! users
+                    return loop state
+        }
+
+        loop { Parties = Map.empty; LastEventId = 1000; Messages = [] }
     in
-    props <| actorOf2 (behavior { Parties = Map.empty; LastEventId = 1000 })
+    propsPersist handler

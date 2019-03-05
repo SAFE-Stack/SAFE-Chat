@@ -35,7 +35,7 @@ let createEchoActor (getUser: GetUser) (system: ActorSystem) (botUserId: UserId)
                 | _ -> async.Return None
 
             match reply with
-            | Some reply -> do ctx.Sender() <! NewMessage (botUserId, Message reply)
+            | Some reply -> do ctx.Sender() <! PostMessage (botUserId, Message reply)
             | _ -> ()
 
             return! loop()
@@ -54,7 +54,7 @@ let createDiagChannel (getUser: GetUser) (system: ActorSystem) (server: IActorRe
         | Ok chanId ->
             let! channel = server |> getChannel (fun chan -> chan.cid = chanId)
             match channel with
-            | Ok chan -> chan.channelActor <! (NewParticipant (echoUserId, bot))
+            | Ok chan -> chan.channelActor <! ChannelCommand (NewParticipant (echoUserId, bot))
             | Error _ ->
                 () // FIXME log error
         | Error _ ->

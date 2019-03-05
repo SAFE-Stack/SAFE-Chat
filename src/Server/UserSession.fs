@@ -16,6 +16,7 @@ open ChatServer
 
 open FsChat
 open ProtocolConv
+open GroupChatFlow
 
 type ChannelList = ChannelList of Map<ChannelId, UniqueKillSwitch>
 
@@ -26,19 +27,19 @@ module private Implementation =
 
     // Creates a Flow instance for user in channel.
     // When materialized flow connects user to channel and starts bidirectional communication.
-    let createChannelFlow (channelActor: IActorRef<_>) user =
-        let chatInSink = Sink.toActorRef (ParticipantLeft user) channelActor
+    let createChannelFlow (channelActor: IActorRef<ChannelMessage>) user =
+        let chatInSink = Sink.toActorRef (ChannelCommand (ParticipantLeft user)) channelActor
 
         let fin =
             (Flow.empty<_, Akka.NotUsed>
-                |> Flow.map (fun msg -> NewMessage(user, msg))
+                |> Flow.map (fun msg -> PostMessage(user, msg) |> ChannelCommand)
             ).To(chatInSink)
 
         // The counter-part which is a source that will create a target ActorRef per
         // materialization where the chatActor will send its messages to.
         // This source will only buffer one element and will fail if the client doesn't read
         // messages fast enough.
-        let notifyNew sub = channelActor <! NewParticipant (user, sub); Akka.NotUsed.Instance
+        let notifyNew sub = channelActor <! ChannelCommand (NewParticipant (user, sub)); Akka.NotUsed.Instance
         let fout = Source.actorRef OverflowStrategy.DropHead 100 |> Source.mapMaterializedValue notifyNew
 
         Flow.ofSinkAndSource fin fout
@@ -84,6 +85,7 @@ module private Implementation =
     | Result.Error x -> async.Return (Result.Error x)
 
 open Implementation
+open GroupChatFlow
 
 type Session(server, userStore: UserStore, userArg: RegisteredUser) =
 
@@ -104,7 +106,7 @@ type Session(server, userStore: UserStore, userArg: RegisteredUser) =
 
     let mapChannelInfoResult (channel: ChannelData) = async {
         try
-            let! (userIds: UserId list) = channel.channelActor <? ListUsers
+            let! (userIds: UserId list) = channel.channelActor <? ChannelCommand ListUsers
             let! users = userStore.GetUsers userIds
             let chaninfo = { mapChanInfo channel with users = users |> List.map mapUserToProtocol}
             return Ok chaninfo
@@ -144,7 +146,7 @@ type Session(server, userStore: UserStore, userArg: RegisteredUser) =
             match updateResult with
             | Ok (RegisteredUser (_, updatedUser)) ->
                 meUser <- updatedUser
-                do! notifyChannels (ParticipantUpdate meUserId)
+                do! notifyChannels (ChannelCommand (ParticipantUpdate meUserId))
                 return Protocol.CmdResponse (requestId, Protocol.UserUpdated (mapUserToProtocol <| RegisteredUser (meUserId, meUser)))
             | Result.Error e ->
                 return replyErrorProtocol requestId e

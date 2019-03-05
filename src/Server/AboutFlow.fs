@@ -31,7 +31,7 @@ let createActorProps systemUser =
 
     let rec behavior (ctx: Actor<_>) =
         function
-        | NewParticipant (user, subscriber) ->
+        | ChannelCommand (NewParticipant (user, subscriber)) ->
             users <- users |> Map.add user subscriber
             logger.debug (Message.eventX "Sending about to {user}" >> Message.setFieldValue "user" user)
             let ts = (0, System.DateTime.Now)
@@ -42,18 +42,18 @@ let createActorProps systemUser =
             // sending messages with some delay. Sending while flow is initialized causes intermittently dropped messages
             ignored ()
 
-        | ParticipantLeft user ->
+        | ChannelCommand (ParticipantLeft user) ->
             users <- users |> Map.remove user
             logger.debug (Message.eventX "Participant left {user}" >> Message.setFieldValue "user" user)
             ignored ()
 
-        | NewMessage (user, _) ->
+        | ChannelCommand (PostMessage (user, _)) ->
             let ts = (0, System.DateTime.Now)
             let sub = users |> Map.find user
             do sub <! ChatMessage (ts, systemUser, Message "> Sorry, this feature is not implemented yet.")
             ignored ()
 
-        | ListUsers ->
+        | ChannelCommand ListUsers ->
             do ctx.Sender() <! [systemUser]
             ignored ()
 
