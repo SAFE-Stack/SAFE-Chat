@@ -28,10 +28,10 @@ let createEchoActor (getUser: GetUser) (system: ActorSystem) (botUserId: UserId)
             let! msg = ctx.Receive()
             let! reply =
                 match msg with
-                | ChatMessage (_, userid, Message message) ->
-                    forUser userid (fun nickName -> sprintf "%s said: %s" nickName message)
-                | Joined (_, userid, _) ->
-                    forUser userid (fun nickName -> sprintf "Welcome aboard, %s!" nickName)
+                | ChatMessage { author = author; message = Message message} ->
+                    forUser author (fun nickName -> sprintf "%s said: %s" nickName message)
+                | Joined { user = user} ->
+                    forUser user (fun nickName -> sprintf "Welcome aboard, %s!" nickName)
                 | _ -> async.Return None
 
             match reply with

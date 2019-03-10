@@ -28,16 +28,17 @@ let createActorProps systemUser =
 
     // TODO put to actor state, otherwise only one instance would be supported
     let mutable users = Map.empty
+    let mkChatMessage message =
+        ChatMessage { ts = (0, System.DateTime.Now); author =systemUser; message = Message message }
 
     let rec behavior (ctx: Actor<_>) =
         function
         | ChannelCommand (NewParticipant (user, subscriber)) ->
             users <- users |> Map.add user subscriber
             logger.debug (Message.eventX "Sending about to {user}" >> Message.setFieldValue "user" user)
-            let ts = (0, System.DateTime.Now)
 
-            aboutMessage |> List.indexed |> List.iter (fun (i, m) ->
-                ctx.System.Scheduler.ScheduleTellOnce( System.TimeSpan.FromMilliseconds(400. * float i), subscriber, ChatMessage (ts, systemUser, Message m))
+            aboutMessage |> List.indexed |> List.iter (fun (i, msgText) ->
+                ctx.System.Scheduler.ScheduleTellOnce( System.TimeSpan.FromMilliseconds(400. * float i), subscriber, mkChatMessage msgText)
                 )
             // sending messages with some delay. Sending while flow is initialized causes intermittently dropped messages
             ignored ()
@@ -48,9 +49,8 @@ let createActorProps systemUser =
             ignored ()
 
         | ChannelCommand (PostMessage (user, _)) ->
-            let ts = (0, System.DateTime.Now)
             let sub = users |> Map.find user
-            do sub <! ChatMessage (ts, systemUser, Message "> Sorry, this feature is not implemented yet.")
+            do sub <! mkChatMessage "> Sorry, this feature is not implemented yet."
             ignored ()
 
         | ChannelCommand ListUsers ->

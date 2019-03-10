@@ -100,14 +100,14 @@ let createSessionFlow (userStore: UserStore) messageFlow controlFlow =
             return Protocol.ChannelEvent {id = id; ts = ts; evt = userResult |> (registeredUserResult >> f)}
         }
         function
-        | ChatMessage ((id, ts), UserId authorId, Message message) ->
+        | ChatMessage { ts = (id, ts); author = UserId authorId; message = Message message} ->
             async.Return <| Protocol.ChanMsg {id = id; ts = ts; text = message; chan = channelId; author = authorId}
-        | Joined (idts, userid, _) ->
-            returnUserEvent idts userid (fun u -> Protocol.Joined (channelId, u))
-        | Left ((id, ts), UserId userid, _) ->
+        | Joined info -> // (idts, userid, _) ->
+            returnUserEvent info.ts info.user (fun u -> Protocol.Joined (channelId, u))
+        | Left { ts = (id, ts); user = UserId userid } ->
             async.Return <| Protocol.ChannelEvent {id = id; ts = ts; evt = Protocol.Left (channelId, userid)}
-        | Updated (idts, userid) ->
-            returnUserEvent idts userid (fun u -> Protocol.Updated (channelId, u))
+        | UserUpdated upd ->
+            returnUserEvent upd.ts upd.user (fun u -> Protocol.Updated (channelId, u))
 
     let partition = function |ChannelMessage _ -> 0 | _ -> 1
 

@@ -13,12 +13,12 @@ module internal Internals =
     type ChannelState = {
         Parties: ChannelParties
         LastEventId: int
-        Messages: MessageInfo list
+        Messages: ChatMsgInfo list
     }
 
     let logger = Log.create "chanflow"
 
-    let storeMessage (state: ChannelState) (message: MessageInfo) =
+    let storeMessage (state: ChannelState) (message: ChatMsgInfo) =
         let messageId = fst message.ts
 
         { state with
@@ -46,18 +46,19 @@ let createActorProps<'User, 'Message when 'User: comparison> lastUserLeft =
 
             | ChannelCommand cmd ->
                 let ts = state.LastEventId, System.DateTime.Now
+                let mkPartiesMsgInfo f user parties = f { ts = ts; user = user;all = parties |> allMembers }
 
                 match cmd with
                 | NewParticipant (user, subscriber) ->
                     logger.debug (Message.eventX "NewParticipant {user}" >> Message.setFieldValue "user" user)
                     let parties = state.Parties |> Map.add user subscriber
-                    do dispatch state.Parties <| Joined (ts, user, parties |> allMembers)
+                    do dispatch state.Parties <| mkPartiesMsgInfo Joined user parties
                     return loop <| incEventId { state with Parties = parties}
 
                 | ParticipantLeft user ->
                     logger.debug (Message.eventX "Participant left {user}" >> Message.setFieldValue "user" user)
                     let parties = state.Parties |> Map.remove user
-                    do dispatch state.Parties <| Left (ts, user, parties |> allMembers)
+                    do dispatch state.Parties <| mkPartiesMsgInfo Left user parties
 
                     if parties |> Map.isEmpty then
                         logger.debug (Message.eventX "Last user left the channel")
@@ -68,13 +69,14 @@ let createActorProps<'User, 'Message when 'User: comparison> lastUserLeft =
 
                 | ParticipantUpdate user ->
                     logger.debug (Message.eventX "Participant updated {user}" >> Message.setFieldValue "user" user)
-                    do dispatch state.Parties <| Updated (ts, user)
+                    do dispatch state.Parties <| UserUpdated { ts = ts; user = user }
                     return loop state
 
                 | PostMessage (user, message) ->
+                    let messageInfo = {ts = ts; author = user; message = message}
                     if state.Parties |> Map.containsKey user then
-                        do dispatch state.Parties <| ChatMessage (ts, user, message)
-                    return MessagePosted {ts = ts; user = user; message = message} |> ChannelEvent |> Persist
+                        do dispatch state.Parties <| ChatMessage messageInfo
+                    return MessagePosted messageInfo |> ChannelEvent |> Persist
 
                 | ListUsers ->
                     let users = state.Parties |> Map.toList |> List.map fst

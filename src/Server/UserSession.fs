@@ -236,17 +236,16 @@ type Session(server, userStore: UserStore, userArg: RegisteredUser) =
                 let! serverChannels = server |> (listChannels (fun _ -> true))
 
                 // restore connected channels
-                match serverChannels with
-                | Ok serverChannels ->
-
-                    let connectChannels = serverChannels |> List.filter(fun c -> meUser.channelList |> List.contains c.cid)
-                    let mutable chans = Map.empty
-
-                    for channel in connectChannels do
-                        chans <-
-                            let listen = listenChannel |> Option.get    // TODO fixme
+                match serverChannels, listenChannel with
+                | Ok serverChannels, Some listen ->
+                    let chans =
+                        serverChannels
+                        |> List.filter(fun c -> meUser.channelList |> List.contains c.cid)
+                        |> List.map(fun channel ->
                             let ks = listen channel.cid (createChannelFlow channel.channelActor meUserId)
-                            (chans |> Map.add channel.cid ks)
+                            (channel.cid, ks))
+                        |> Map.ofList
+
                     channels <- ChannelList chans
 
                 | _ -> ()
