@@ -26,6 +26,13 @@ module private Conversions =
     let mapChannel (ch: Protocol.ChannelInfo) : ChannelInfo =
         {Id = ch.id; Name = ch.name; Topic = ch.topic; UserCount = ch.userCount}
 
+    let mapChannel1 isMe (ch: Protocol.ActiveChannelInfo) : ChannelData =
+        let channelInfo = mapChannel ch.info
+        let users = ch.info.users |> List.map (mapUserInfo isMe)
+        let messages = [] //TODO map last messages
+
+        { Info = channelInfo; Users = users |> List.map(fun u -> u.Id, u) |> Map.ofList; Messages = messages; PostText = "" }
+
 module private Implementation =
 
     let updateChanCmd chanId (f: ChannelData -> ChannelData * Channel.Types.Msg Cmd) (chat: ChatData) : ChatData * Chat.Types.AppMsg Cmd=
@@ -135,7 +142,12 @@ module private Implementation =
             Channel.State.init() |> fst
             |> Channel.State.update (Init (channel, users))
         {chat with Channels = chat.Channels |> Map.add chanInfo.id chanData}, cmd
+        // tODO remove the function (see the next)
 
+    let joinChannel1 isMe (chanInfo: Protocol.ActiveChannelInfo) chat =
+        let channelData = Conversions.mapChannel1 isMe chanInfo
+        // TODO consider using init instead of mapChannel1
+        {chat with Channels = chat.Channels |> Map.add channelData.Info.Id channelData}, Cmd.none
 
     let socketMsgUpdate msg =
         function
@@ -168,11 +180,11 @@ module private Implementation =
                     Connected (meNew, chat), Cmd.none
 
                 | Protocol.JoinedChannel chanInfo ->
-                    let newState, cmd = chat |> joinChannel isMe chanInfo
+                    let newState, cmd = chat |> joinChannel1 isMe chanInfo
                     Connected (me, newState),
                         Cmd.batch [
-                            cmd |> Cmd.map (fun msg -> ChannelMsg (chanInfo.id, msg) |> ApplicationMsg)
-                            Channel chanInfo.id |> toHash |> Navigation.newUrl
+                            cmd |> Cmd.map (fun msg -> ChannelMsg (chanInfo.info.id, msg) |> ApplicationMsg)
+                            Channel chanInfo.info.id |> toHash |> Navigation.newUrl
                         ]
 
                 | Protocol.LeftChannel channelId ->

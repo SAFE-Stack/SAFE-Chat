@@ -95,10 +95,10 @@ module private Implementation =
 
 let startServer (system: ActorSystem) : IActorRef<ServerMessage> =
 
-    let getChannelProps (chan: ChannelCreateInfo) =
-        match chan.chanType with
+    let getChannelProps ({chanType = channelType; chanId = channelId}: ChannelCreateInfo) =
+        match channelType with
         | GroupChatChannel settings ->
-            let (true, chanId) | OtherwiseFail chanId = System.Int32.TryParse chan.chanId
+            let (true, chanId) | OtherwiseFail chanId = System.Int32.TryParse channelId
             let notify = if settings.autoRemove then Some <| box (ServerMessage.Command (NotifyLastUserLeft <| ChannelId chanId)) else None
             GroupChatFlow.createActorProps notify
         | OtherChannel props -> props

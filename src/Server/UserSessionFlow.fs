@@ -93,10 +93,8 @@ let createSessionFlow (userStore: UserStore) messageFlow controlFlow =
         let returnUserEvent (id, ts) userid f = async {
             let! userResult = getUser userid
             let registeredUserResult =
-                    Option.map (fun u -> RegisteredUser (userid, u))
-                    >> function
-                        | Some user -> mapUserToProtocol user
-                        | _ -> makeBlankUserInfo "zz" "unknown"
+                Option.map (fun u -> RegisteredUser (userid, u) |> mapUserToProtocol)
+                >> Option.defaultValue (makeBlankUserInfo "zz" "unknown")
             return Protocol.ChannelEvent {id = id; ts = ts; evt = userResult |> (registeredUserResult >> f)}
         }
         function
@@ -108,6 +106,12 @@ let createSessionFlow (userStore: UserStore) messageFlow controlFlow =
             async.Return <| Protocol.ChannelEvent {id = id; ts = ts; evt = Protocol.Left (channelId, userid)}
         | UserUpdated upd ->
             returnUserEvent upd.ts upd.user (fun u -> Protocol.Updated (channelId, u))
+        | ChannelInfo chanInfo ->
+            // TODO send some message to a client
+            async.Return <| Protocol.ChannelInfo {
+                info = chanInfo
+                messageCount = 111; unreadMessageCount = None; lastMessages = []
+            }
 
     let partition = function |ChannelMessage _ -> 0 | _ -> 1
 

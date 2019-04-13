@@ -16,7 +16,6 @@ open ChatServer
 
 open FsChat
 open ProtocolConv
-open GroupChatFlow
 
 type ChannelList = ChannelList of Map<ChannelId, UniqueKillSwitch>
 
@@ -85,7 +84,6 @@ module private Implementation =
     | Result.Error x -> async.Return (Result.Error x)
 
 open Implementation
-open GroupChatFlow
 
 type Session(server, userStore: UserStore, userArg: RegisteredUser) =
 
@@ -110,6 +108,23 @@ type Session(server, userStore: UserStore, userArg: RegisteredUser) =
             let! users = userStore.GetUsers userIds
             let chaninfo = { mapChanInfo channel with users = users |> List.map mapUserToProtocol}
             return Ok chaninfo
+        with :?AggregateException as e ->
+            do logger.error (Message.eventX "Error while communicating channel actor: {e}" >> Message.setFieldValue "e" e)
+            return Result.Error "Channel is not available"
+    }
+
+    let mapActiveChannelInfoResult (channel: ChannelData) = async {
+        try
+            let! chanInfo = mapChannelInfoResult channel
+            let result = chanInfo |> Result.bind(fun info ->
+                let chan: Protocol.ActiveChannelInfo = {
+                    info = info
+                    messageCount = 0    // TODO
+                    unreadMessageCount = None
+                    lastMessages = [] // TODO
+                    }
+                Ok chan)
+            return result
         with :?AggregateException as e ->
             do logger.error (Message.eventX "Error while communicating channel actor: {e}" >> Message.setFieldValue "e" e)
             return Result.Error "Channel is not available"
@@ -153,7 +168,7 @@ type Session(server, userStore: UserStore, userArg: RegisteredUser) =
         }
 
     let replyJoinedChannel requestId chaninfo =
-        chaninfo |> updateChannels requestId (fun ch -> Protocol.CmdResponse (requestId, Protocol.JoinedChannel {ch with joined = true}))
+        chaninfo |> updateChannels requestId (fun ch -> Protocol.CmdResponse (requestId, Protocol.JoinedChannel ch))
 
     let rec processControlCommand requestId command = async {
         match command with
@@ -163,7 +178,7 @@ type Session(server, userStore: UserStore, userArg: RegisteredUser) =
         | Protocol.Join (IsChannelId channelId) ->
             let! serverChannel = getChannel (byChanId channelId) server
             let result = join serverChannel listenChannel channels meUserId
-            let! chaninfo = mapSndAsyncResult mapChannelInfoResult result
+            let! chaninfo = mapSndAsyncResult mapActiveChannelInfoResult result
             return replyJoinedChannel requestId chaninfo
 
         | Protocol.Join _ ->
@@ -179,7 +194,7 @@ type Session(server, userStore: UserStore, userArg: RegisteredUser) =
             | Ok channelId ->
                 let! serverChannel = getChannel (byChanId channelId) server
                 let result = join serverChannel listenChannel channels meUserId
-                let! chaninfo = mapSndAsyncResult mapChannelInfoResult result
+                let! chaninfo = mapSndAsyncResult mapActiveChannelInfoResult result
                 do userStore.UpdateUserChannel(meUserId, Joined channelId)
                 return replyJoinedChannel requestId chaninfo
             | Result.Error err ->

@@ -35,6 +35,16 @@ let createActorProps<'User, 'Message when 'User: comparison> lastUserLeft =
         parties |> Map.iter (fun _ subscriber -> subscriber <! msg)
     let allMembers = Map.toSeq >> Seq.map fst
 
+    let mkChannelInfo state =
+        let ts = state.LastEventId, System.DateTime.Now
+        {
+            ts = ts
+            users = state.Parties |> allMembers
+            messageCount = state.Messages |> List.length
+            unreadMessageCount = None
+            lastMessages = state.Messages |> List.truncate 10   // FIXME const
+        }
+
     let handler (ctx: Eventsourced<ChannelMessage>) =
 
         let rec loop state = actor {
@@ -51,9 +61,14 @@ let createActorProps<'User, 'Message when 'User: comparison> lastUserLeft =
                 match cmd with
                 | NewParticipant (user, subscriber) ->
                     logger.debug (Message.eventX "NewParticipant {user}" >> Message.setFieldValue "user" user)
+
                     let parties = state.Parties |> Map.add user subscriber
                     do dispatch state.Parties <| mkPartiesMsgInfo Joined user parties
-                    return loop <| incEventId { state with Parties = parties}
+
+                    let newState = incEventId { state with Parties = parties}
+                    subscriber <! ChannelInfo (mkChannelInfo newState)
+
+                    return loop newState
 
                 | ParticipantLeft user ->
                     logger.debug (Message.eventX "Participant left {user}" >> Message.setFieldValue "user" user)
