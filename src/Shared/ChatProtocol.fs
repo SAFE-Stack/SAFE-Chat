@@ -1,6 +1,4 @@
 namespace FsChat
-open ChatTypes
-open ChatServer
 
 [<RequireQualifiedAccess>]
 module Protocol =

@@ -35,7 +35,7 @@ let createEchoActor (getUser: GetUser) (system: ActorSystem) (botUserId: UserId)
                 | _ -> async.Return None
 
             match reply with
-            | Some reply -> do ctx.Sender() <! PostMessage (botUserId, Message reply)
+            | Some reply -> do ctx.Sender() <! ChannelCommand (PostMessage (botUserId, Message reply))
             | _ -> ()
 
             return! loop()

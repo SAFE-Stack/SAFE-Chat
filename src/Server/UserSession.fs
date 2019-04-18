@@ -242,7 +242,7 @@ type Session(server, userStore: UserStore, userArg: RegisteredUser) =
                     // restore connected channels
                     channels <- joinedChannels |> createChannelFlows listenChannel
 
-                    let! chanInfos = channelsData |> List.map mapChannelWithFallback |> Array.ofList |> Async.Parallel
+                    let! chanInfos = joinedChannels |> List.map mapChannelWithFallback |> Array.ofList |> Async.Parallel
 
                     return Protocol.ClientMsg.Hello {
                             me = mapUserToProtocol <| RegisteredUser(meUserId, meUser)
