@@ -1,35 +1,37 @@
 namespace FsChat
+open ChatTypes
+open ChatServer
 
 [<RequireQualifiedAccess>]
 module Protocol =
 
     type UserId = string
     type ChannelId = string
+    type RequestId = string
 
-    type ChannelMsgInfo = {
+    type ChannelMessageInfo = {
         id: int; ts: System.DateTime; text: string; chan: ChannelId; author: UserId
     }
-
     type ChanUserInfo = {
         id: UserId; nick: string; isbot: bool; status: string; email: string; imageUrl: string
     }
     type ChannelInfo = {
-        id: ChannelId; name: string; userCount: int; topic: string; joined: bool; users: ChanUserInfo list  // TODO remove user list and joined
+        id: ChannelId; name: string; userCount: int; topic: string
     }
 
-    type ActiveChannelInfo = {  // FIXME name
-        info: ChannelInfo
-        // users: ChanUserInfo list
+    type ActiveChannelData = {
+        channelId: ChannelId
+        users: ChanUserInfo list
         messageCount: int
         unreadMessageCount: int option
-        lastMessages: ChannelMsgInfo list
+        lastMessages: ChannelMessageInfo list
     }
 
-    type UserMessageInfo = {text: string; chan: ChannelId}
-    type UserCommandInfo = {command: string; chan: ChannelId}
+    type UserMessageData = {text: string; chan: ChannelId}
+    type UserCommandData = {command: string; chan: ChannelId}
 
     type ServerCommand =
-        | UserCommand of UserCommandInfo
+        | UserCommand of UserCommandData
         | Join of ChannelId
         | JoinOrCreate of channelName: string
         | Leave of ChannelId
@@ -37,45 +39,48 @@ module Protocol =
 
     type ServerMsg =
         | Greets
-        | UserMessage of UserMessageInfo
-        | ServerCommand of reqId: string * message: ServerCommand
+        | UserMessage of UserMessageData
+        | ServerCommand of reqId: RequestId * message: ServerCommand
 
     type HelloInfo = {
         me: ChanUserInfo
         channels: ChannelInfo list
-        // TODO separate all channels from active channels
+        // TODO active channels list or sequence of JoinedChannel
+        activeChannels: ActiveChannelData list
     }
 
     type ClientErrMsg =
         | AuthFail of string
         | CannotProcess of string
 
-    type ChannelEventKind =
-        | Joined of ChannelId * ChanUserInfo
-        | Left of ChannelId * UserId
-        | Updated of ChannelId * ChanUserInfo
+    type ChannelEvent =
+        | Joined of ChanUserInfo
+        | Left of UserId
+        | Updated of ChanUserInfo
 
-    type ChannelEventInfo = {
+    type ServerEvent =
+        | NewChannel of ChannelInfo
+        | RemoveChannel of ChannelInfo
+        | ChannelEvent of ChannelId * ChannelEvent
+        | JoinedChannel of ActiveChannelData
+
+    type ServerEventInfo = {
         id: int; ts: System.DateTime
-        evt: ChannelEventKind
+        evt: ServerEvent
     }
 
     type CommandResponse =
         | Error of ClientErrMsg
         | UserUpdated of ChanUserInfo
-        | JoinedChannel of ActiveChannelInfo  // client joined a channel
+        | JoinedChannel of ChannelInfo  // client joined a channel
         | LeftChannel of chanId: string
         | Pong
 
     /// The messages from server to client
     type ClientMsg =
         | Hello of HelloInfo
-        | CmdResponse of reqId: string * reply: CommandResponse
+        | CmdResponse of reqId: RequestId * reply: CommandResponse
 
         // external events
-        | ChanMsg of ChannelMsgInfo
-        | ChannelEvent of ChannelEventInfo
-        | NewChannel of ChannelInfo
-        | RemoveChannel of ChannelInfo
-        | ChannelInfo of ActiveChannelInfo
-
+        | ChanMsg of ChannelMessageInfo
+        | ServerEvent of ServerEventInfo

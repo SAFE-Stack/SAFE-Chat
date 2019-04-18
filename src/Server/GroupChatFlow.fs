@@ -13,8 +13,7 @@ module internal Internals =
     type ChannelState = {
         Parties: ChannelParties
         LastEventId: int
-        Messages: ChatMsgInfo list
-    }
+        Messages: ChatMsgInfo list }
 
     let logger = Log.create "chanflow"
 
@@ -24,7 +23,6 @@ module internal Internals =
         { state with
             LastEventId = System.Math.Max(state.LastEventId, messageId)
             Messages = message :: state.Messages }
-        
 
 open Internals
 
@@ -36,14 +34,11 @@ let createActorProps<'User, 'Message when 'User: comparison> lastUserLeft =
     let allMembers = Map.toSeq >> Seq.map fst
 
     let mkChannelInfo state =
-        let ts = state.LastEventId, System.DateTime.Now
-        {
-            ts = ts
+        {   ts = state.LastEventId, System.DateTime.Now
             users = state.Parties |> allMembers
             messageCount = state.Messages |> List.length
             unreadMessageCount = None
-            lastMessages = state.Messages |> List.truncate 10   // FIXME const
-        }
+            lastMessages = state.Messages |> List.truncate 10 }  // FIXME const
 
     let handler (ctx: Eventsourced<ChannelMessage>) =
 
@@ -66,7 +61,7 @@ let createActorProps<'User, 'Message when 'User: comparison> lastUserLeft =
                     do dispatch state.Parties <| mkPartiesMsgInfo Joined user parties
 
                     let newState = incEventId { state with Parties = parties}
-                    subscriber <! ChannelInfo (mkChannelInfo newState)
+                    subscriber <! JoinedChannel (mkChannelInfo newState)
 
                     return loop newState
 

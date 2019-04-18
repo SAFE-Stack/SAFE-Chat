@@ -30,5 +30,7 @@ let mapUserToProtocol (RegisteredUser (UserId userid, userInfo)) :Protocol.ChanU
     | System ->
         fun u -> {u with imageUrl = "/system.png"} // {makeBlankUserInfo userid "system" with imageUrl = "/system.png" }
 
-let mapChanInfo ({name = name; topic = topic; cid = (ChannelId id)}: ChannelData) : Protocol.ChannelInfo =
-    {id = id.ToString(); name = name; topic = topic; userCount = 0; users = []; joined = false}
+let mapChannelId (ChannelId id) = id.ToString()
+
+let mapChanInfo ({name = name; topic = topic; cid = cid}: ChannelData) : Protocol.ChannelInfo =
+    {id = mapChannelId cid; name = name; topic = topic; userCount = 0}

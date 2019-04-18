@@ -9,7 +9,6 @@ open Akkling.Persistence
 open Suave.Logging
 
 open ChatTypes
-open GroupChatFlow
 
 let private logger = Log.create "chatserver"
 

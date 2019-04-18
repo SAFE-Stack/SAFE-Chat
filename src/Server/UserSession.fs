@@ -78,12 +78,8 @@ module private Implementation =
         else
             None
 
-    // TODO asyncutil
-    let bindResultAsync f = function
-    | Result.Ok cch -> async.ReturnFrom (async {let! r = f cch in return Result.Ok r})
-    | Result.Error x -> async.Return (Result.Error x)
-
 open Implementation
+open AsyncUtil
 
 type Session(server, userStore: UserStore, userArg: RegisteredUser) =
 
@@ -102,40 +98,36 @@ type Session(server, userStore: UserStore, userArg: RegisteredUser) =
         | Ok (newChannels, response) -> channels <- newChannels; f response
         | Result.Error e ->            replyErrorProtocol requestId e
 
-    let mapChannelInfoResult (channel: ChannelData) = async {
+    let mapActiveChannelData (channel: ChannelData) = async {
         try
             let! (userIds: UserId list) = channel.channelActor <? ChannelCommand ListUsers
             let! users = userStore.GetUsers userIds
-            let chaninfo = { mapChanInfo channel with users = users |> List.map mapUserToProtocol}
-            return Ok chaninfo
+            let chan: Protocol.ActiveChannelData = {
+                channelId = mapChannelId channel.cid
+                users = users |> List.map mapUserToProtocol
+                messageCount = 0    // TODO
+                unreadMessageCount = None
+                lastMessages = [] // TODO
+            }
+            return Ok chan
         with :?AggregateException as e ->
             do logger.error (Message.eventX "Error while communicating channel actor: {e}" >> Message.setFieldValue "e" e)
             return Result.Error "Channel is not available"
     }
 
-    let mapActiveChannelInfoResult (channel: ChannelData) = async {
-        try
-            let! chanInfo = mapChannelInfoResult channel
-            let result = chanInfo |> Result.bind(fun info ->
-                let chan: Protocol.ActiveChannelInfo = {
-                    info = info
-                    messageCount = 0    // TODO
-                    unreadMessageCount = None
-                    lastMessages = [] // TODO
-                    }
-                Ok chan)
-            return result
-        with :?AggregateException as e ->
-            do logger.error (Message.eventX "Error while communicating channel actor: {e}" >> Message.setFieldValue "e" e)
-            return Result.Error "Channel is not available"
-    }
-
-    let mapSndAsyncResult f v = async {
-        match v with
-        | Ok arg ->
-            let! mapped = f (snd arg)
-            return mapped |> Result.map(fun x -> (fst arg, x))
-        | Result.Error e -> return Result.Error e
+    let mapChannelWithFallback chan = async {
+        match! mapActiveChannelData chan with
+        | Result.Ok r -> return r
+        | _ ->
+            // TODO consider another state: Connecting
+            let ch: Protocol.ActiveChannelData = {
+                channelId = mapChannelId chan.cid
+                users = []
+                messageCount = 0
+                unreadMessageCount = None
+                lastMessages = []
+            }
+            return ch
     }
 
     let notifyChannels message = async {
@@ -167,10 +159,9 @@ type Session(server, userStore: UserStore, userArg: RegisteredUser) =
                 return replyErrorProtocol requestId e
         }
 
-    let replyJoinedChannel requestId chaninfo =
-        chaninfo |> updateChannels requestId (fun ch -> Protocol.CmdResponse (requestId, Protocol.JoinedChannel ch))
-
     let rec processControlCommand requestId command = async {
+        let replyJoinedChannel requestId chaninfo =
+            chaninfo |> updateChannels requestId (fun ch -> Protocol.CmdResponse (requestId, Protocol.CommandResponse.JoinedChannel ch))
         match command with
         | Protocol.Join (IsChannelId channelId) when hasJoined channelId ->
             return replyErrorProtocol requestId "User already joined channel"
@@ -178,7 +169,7 @@ type Session(server, userStore: UserStore, userArg: RegisteredUser) =
         | Protocol.Join (IsChannelId channelId) ->
             let! serverChannel = getChannel (byChanId channelId) server
             let result = join serverChannel listenChannel channels meUserId
-            let! chaninfo = mapSndAsyncResult mapActiveChannelInfoResult result
+            let chaninfo = result |> Result.map(fun (l,chan) -> l, mapChanInfo chan)
             return replyJoinedChannel requestId chaninfo
 
         | Protocol.Join _ ->
@@ -194,7 +185,8 @@ type Session(server, userStore: UserStore, userArg: RegisteredUser) =
             | Ok channelId ->
                 let! serverChannel = getChannel (byChanId channelId) server
                 let result = join serverChannel listenChannel channels meUserId
-                let! chaninfo = mapSndAsyncResult mapActiveChannelInfoResult result
+                let chaninfo = result |> Result.map(fun (l,chan) -> l, mapChanInfo chan)
+
                 do userStore.UpdateUserChannel(meUserId, Joined channelId)
                 return replyJoinedChannel requestId chaninfo
             | Result.Error err ->
@@ -224,7 +216,7 @@ type Session(server, userStore: UserStore, userArg: RegisteredUser) =
                 let update nick u = {u with nick = nick }
                 return! updateUser requestId update newNick
             | CommandPrefix "/status" newStatus ->
-                let update status u = {u with status = optionOfStr status }
+                let update status u = {u with UserInfo.status = optionOfStr status }
                 return! updateUser requestId update newStatus
             | CommandPrefix "/avatar" newAvatarUrl ->
                 let update ava u = {u with imageUrl = optionOfStr ava }: UserInfo
@@ -235,46 +227,30 @@ type Session(server, userStore: UserStore, userArg: RegisteredUser) =
 
     let processControlMessage = function
         | Protocol.ServerMsg.Greets ->
-            let makeChanInfo chanData = async {
-                let isJoined = hasJoined chanData.cid
-                let fallBackResponse = { mapChanInfo chanData with joined = isJoined }
+            let createChannelFlows =
+                let createFlow listen { cid = chanid; channelActor = actor } =
+                    chanid, listen chanid (createChannelFlow actor meUserId)
+                function
+                | Some listen -> List.map(createFlow listen) >> Map.ofList >> ChannelList
+                | _ -> fun _  -> ChannelList Map.empty
 
-                if isJoined then
-                    match! mapChannelInfoResult chanData with
-                    | Result.Ok chanInfo -> return { chanInfo with joined = isJoined }
-                    | _ -> return fallBackResponse
-                else
-                    return fallBackResponse
-            }
+            listChannels (fun _ -> true) server
+            |> AsyncResult.bind (fun channelsData ->
+                async {
+                    let channelList = channelsData |> List.map mapChanInfo
+                    let joinedChannels = channelsData |> List.filter(fun c -> meUser.channelList |> List.contains c.cid)
+                    // restore connected channels
+                    channels <- joinedChannels |> createChannelFlows listenChannel
 
-            async {
-                let! serverChannels = server |> (listChannels (fun _ -> true))
+                    let! chanInfos = channelsData |> List.map mapChannelWithFallback |> Array.ofList |> Async.Parallel
 
-                // restore connected channels
-                match serverChannels, listenChannel with
-                | Ok serverChannels, Some listen ->
-                    let chans =
-                        serverChannels
-                        |> List.filter(fun c -> meUser.channelList |> List.contains c.cid)
-                        |> List.map(fun channel ->
-                            let ks = listen channel.cid (createChannelFlow channel.channelActor meUserId)
-                            (channel.cid, ks))
-                        |> Map.ofList
-
-                    channels <- ChannelList chans
-
-                | _ -> ()
-
-                let! hello  = serverChannels |> bindResultAsync (fun cch ->
-                    async {
-                        let! chanInfos = cch |> List.map makeChanInfo |> Array.ofList |> Async.Parallel
-                        return Protocol.ClientMsg.Hello {
-                                me = mapUserToProtocol <| RegisteredUser(meUserId, meUser)
-                                channels = List.ofArray chanInfos }
-                    }
-                )
-                return hello |> reply ""
-            }
+                    return Protocol.ClientMsg.Hello {
+                            me = mapUserToProtocol <| RegisteredUser(meUserId, meUser)
+                            channels = channelList
+                            activeChannels = chanInfos |> List.ofArray }
+                        |> Result.Ok
+                })
+            |> Async.map (reply "")
 
         | Protocol.ServerMsg.ServerCommand (requestId, command) ->
             processControlCommand requestId command
@@ -288,9 +264,11 @@ type Session(server, userStore: UserStore, userArg: RegisteredUser) =
         let notifyNew sub = startSession server meUserId sub; Akka.NotUsed.Instance
         let source = Source.actorRef OverflowStrategy.Fail 1 |> Source.mapMaterializedValue notifyNew
 
-        source |> Source.map (function
-            | AddChannel ch -> ch |> (mapChanInfo >> Protocol.ClientMsg.NewChannel)
-            | DropChannel ch -> ch |> (mapChanInfo >> Protocol.ClientMsg.RemoveChannel)
+        source |> Source.map (
+            let m x = Protocol.ServerEvent { id = 0; ts = DateTime.Now; evt = x}
+            function
+            | AddChannel ch -> ch |> (mapChanInfo >> Protocol.NewChannel >> m)
+            | DropChannel ch -> ch |> (mapChanInfo >> Protocol.RemoveChannel >> m)
         )
 
     let controlFlow =

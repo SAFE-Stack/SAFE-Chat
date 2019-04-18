@@ -26,7 +26,7 @@ type ClientMessage =
     | Left of ChangedPartiesMsgInfo
     | UserUpdated of UserUpdatedMsgInfo
     /// this message is sent to a client upon connection
-    | ChannelInfo of ChannelInfo
+    | JoinedChannel of ChannelInfo
 
 /// Channel actor protocol (server side protocol)
 type ChannelCommand =

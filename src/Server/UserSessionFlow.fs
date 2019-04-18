@@ -4,6 +4,7 @@ open System
 open Akkling.Streams
 open Akka.Streams
 open Akka.Streams.Dsl
+open AsyncUtil
 
 open Suave
 open Suave.Logging
@@ -95,24 +96,41 @@ let createSessionFlow (userStore: UserStore) messageFlow controlFlow =
             let registeredUserResult =
                 Option.map (fun u -> RegisteredUser (userid, u) |> mapUserToProtocol)
                 >> Option.defaultValue (makeBlankUserInfo "zz" "unknown")
-            return Protocol.ChannelEvent {id = id; ts = ts; evt = userResult |> (registeredUserResult >> f)}
+            return Protocol.ServerEvent {
+                id = id; ts = ts
+                evt = Protocol.ChannelEvent (channelId, userResult |> registeredUserResult |> f) }
         }
         function
         | ChatMessage { ts = (id, ts); author = UserId authorId; message = Message message} ->
             async.Return <| Protocol.ChanMsg {id = id; ts = ts; text = message; chan = channelId; author = authorId}
-        | Joined info -> // (idts, userid, _) ->
-            returnUserEvent info.ts info.user (fun u -> Protocol.Joined (channelId, u))
-        | Left { ts = (id, ts); user = UserId userid } ->
-            async.Return <| Protocol.ChannelEvent {id = id; ts = ts; evt = Protocol.Left (channelId, userid)}
+        | Joined info ->
+            returnUserEvent info.ts info.user Protocol.Joined
         | UserUpdated upd ->
-            returnUserEvent upd.ts upd.user (fun u -> Protocol.Updated (channelId, u))
-        | ChannelInfo chanInfo ->
-            // TODO send some message to a client
-            async.Return <| Protocol.ChannelInfo {
-                info = chanInfo
-                messageCount = 111; unreadMessageCount = None; lastMessages = []
+            returnUserEvent upd.ts upd.user Protocol.Updated
+        | Left { ts = (id, ts); user = UserId userid } ->
+            async.Return <| Protocol.ServerEvent {
+                id = id; ts = ts
+                evt = Protocol.ChannelEvent(channelId, Protocol.Left userid) }
+        | JoinedChannel nfo ->
+            let (id, ts) = nfo.ts
+            async {
+                let userWithDefault (UserId userid) =
+                    // FIXME something better with unrecognized users
+                    Option.defaultWith(fun () -> ChatUser.makeNew System (sprintf "user#%s" userid))
+                let! users =
+                    nfo.users |> List.ofSeq
+                    |> List.map (fun userid -> getUser userid |> Async.map(fun u -> RegisteredUser(userid, userWithDefault userid u)))
+                    |> Async.Parallel |> Async.map List.ofArray
+                return Protocol.ServerEvent {
+                    id = id; ts = ts
+                    evt = Protocol.JoinedChannel {
+                        channelId = channelId
+                        users = users |> List.map mapUserToProtocol
+                        messageCount = nfo.messageCount
+                        unreadMessageCount = None
+                        lastMessages = [] } }
             }
-
+ 
     let partition = function |ChannelMessage _ -> 0 | _ -> 1
 
     let userMessageFlow =
