@@ -98,38 +98,6 @@ type Session(server, userStore: UserStore, userArg: RegisteredUser) =
         | Ok (newChannels, response) -> channels <- newChannels; f response
         | Result.Error e ->            replyErrorProtocol requestId e
 
-    let mapActiveChannelData (channel: ChannelData) = async {
-        try
-            let! (userIds: UserId list) = channel.channelActor <? ChannelCommand ListUsers
-            let! users = userStore.GetUsers userIds
-            let chan: Protocol.ActiveChannelData = {
-                channelId = mapChannelId channel.cid
-                users = users |> List.map mapUserToProtocol
-                messageCount = 0    // TODO
-                unreadMessageCount = None
-                lastMessages = [] // TODO
-            }
-            return Ok chan
-        with :?AggregateException as e ->
-            do logger.error (Message.eventX "Error while communicating channel actor: {e}" >> Message.setFieldValue "e" e)
-            return Result.Error "Channel is not available"
-    }
-
-    let mapChannelWithFallback chan = async {
-        match! mapActiveChannelData chan with
-        | Result.Ok r -> return r
-        | _ ->
-            // TODO consider another state: Connecting
-            let ch: Protocol.ActiveChannelData = {
-                channelId = mapChannelId chan.cid
-                users = []
-                messageCount = 0
-                unreadMessageCount = None
-                lastMessages = []
-            }
-            return ch
-    }
-
     let notifyChannels message = async {
         do logger.debug (Message.eventX "notifyChannels")
         let (ChannelList channelList) = channels
@@ -242,12 +210,9 @@ type Session(server, userStore: UserStore, userArg: RegisteredUser) =
                     // restore connected channels
                     channels <- joinedChannels |> createChannelFlows listenChannel
 
-                    let! chanInfos = joinedChannels |> List.map mapChannelWithFallback |> Array.ofList |> Async.Parallel
-
                     return Protocol.ClientMsg.Hello {
                             me = mapUserToProtocol <| RegisteredUser(meUserId, meUser)
-                            channels = channelList
-                            activeChannels = chanInfos |> List.ofArray }
+                            channels = channelList }
                         |> Result.Ok
                 })
             |> Async.map (reply "")

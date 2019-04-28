@@ -43,8 +43,6 @@ module Protocol =
     type HelloInfo = {
         me: ChanUserInfo
         channels: ChannelInfo list
-        // TODO active channels list or sequence of JoinedChannel
-        activeChannels: ActiveChannelData list
     }
 
     type ClientErrMsg =

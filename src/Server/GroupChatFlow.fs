@@ -89,7 +89,7 @@ let createActorProps<'User, 'Message when 'User: comparison> lastUserLeft =
                     return MessagePosted messageInfo |> ChannelEvent |> Persist
 
                 | ListUsers ->
-                    let users = state.Parties |> Map.toList |> List.map fst
+                    let users = state.Parties |> (Map.toList >> List.map fst)
                     ctx.Sender() <! users
                     return loop state
         }

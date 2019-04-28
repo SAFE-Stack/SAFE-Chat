@@ -121,6 +121,12 @@ let createSessionFlow (userStore: UserStore) messageFlow controlFlow =
                     nfo.users |> List.ofSeq
                     |> List.map (fun userid -> getUser userid |> Async.map(fun u -> RegisteredUser(userid, userWithDefault userid u)))
                     |> Async.Parallel |> Async.map List.ofArray
+
+                let mapMessage: ChatMsgInfo -> Protocol.ChannelMessageInfo =
+                    function
+                    | {author = UserId author; ts = (msgid, msgts); message = Message message} ->
+                        { id = msgid; ts = msgts; text = message; chan = channelId; author = author}
+
                 return Protocol.ServerEvent {
                     id = id; ts = ts
                     evt = Protocol.JoinedChannel {
@@ -128,7 +134,7 @@ let createSessionFlow (userStore: UserStore) messageFlow controlFlow =
                         users = users |> List.map mapUserToProtocol
                         messageCount = nfo.messageCount
                         unreadMessageCount = None
-                        lastMessages = [] } }
+                        lastMessages = nfo.lastMessages |> List.map mapMessage } }
             }
  
     let partition = function |ChannelMessage _ -> 0 | _ -> 1
