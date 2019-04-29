@@ -29,7 +29,7 @@ clitool dotnet-fable
 group UITests
   source https://nuget.org/api/v2
   framework >= net461
-  nuget FSharp.Core redirects: force
+  nuget FSharp.Core
   nuget Canopy
   nuget Expecto
   nuget phantomjs

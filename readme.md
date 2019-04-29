@@ -9,6 +9,7 @@ Sample chat application built with netcore, F#, Akka.net and Fable.
 ## Requirements
 
 * [dotnet SDK](https://www.microsoft.com/net/download/core) 2.0.0 or higher
+* [.NET Framework 4.6.1 Developer Pack](https://www.microsoft.com/en-us/download/details.aspx?id=49978) to run e2e tests
 * [node.js](https://nodejs.org) 4.8.2 or higher
 * yarn (`npm i yarn -g`)
 * npm5: JS package manager
@@ -34,15 +35,13 @@ Sample chat application built with netcore, F#, Akka.net and Fable.
 
 ## Running integration (e2e) tests
 
+E2e tests are based on canopy and webdriver so currently I know it runs on Windows. I have no idea how to run in non-windows environment.
+
 * Follow the instructions above to start the server
 * **Move to `test/e2e` folder**: `cd test\e2e`
 * run the tests: `dotnet run`
 
-or, if you love VS Code as much as I do:
-
-* open Integrated Terminal (`Ctrl-~` keyboard shortcut)
-* start server by typing `dev-server` (this is for Windows, on Linux it should be `cd src/Server & dotnet run`)
-* press F1 and start typing `Expecto`, choose `Expecto: Run` in the dropdown
+It used to work with Expecto plugin but it's no longer included in Ionide.
 
 ## Implementation overview
 
