@@ -25,12 +25,12 @@ module internal Internals =
             Messages = message :: state.Messages }
 
 open Internals
+open System
 
 let createActorProps<'User, 'Message when 'User: comparison> lastUserLeft =
 
-    let incEventId chan = { chan with LastEventId = chan.LastEventId + 1}
     let dispatch (parties: ChannelParties) (msg: ClientMessage): unit =
-        parties |> Map.iter (fun _ subscriber -> subscriber <! msg)
+        parties |> Map.iter (fun _ sub -> sub <! msg)
     let allMembers = Map.toSeq >> Seq.map fst
 
     let mkChannelInfo state =
@@ -50,7 +50,8 @@ let createActorProps<'User, 'Message when 'User: comparison> lastUserLeft =
                 return loop (storeMessage state msg)
 
             | ChannelCommand cmd ->
-                let ts = state.LastEventId, System.DateTime.Now
+                let eventId = state.LastEventId + 1
+                let ts = eventId, System.DateTime.Now
                 let mkPartiesMsgInfo f user parties = f { ts = ts; user = user;all = parties |> allMembers }
 
                 match cmd with
@@ -60,8 +61,10 @@ let createActorProps<'User, 'Message when 'User: comparison> lastUserLeft =
                     let parties = state.Parties |> Map.add user subscriber
                     do dispatch state.Parties <| mkPartiesMsgInfo Joined user parties
 
-                    let newState = incEventId { state with Parties = parties}
-                    subscriber <! JoinedChannel (mkChannelInfo newState)
+                    let newState = { state with LastEventId = eventId; Parties = parties }
+                    // subscriber <! JoinedChannel (mkChannelInfo newState)
+                    // TODO
+                    ctx.Schedule (TimeSpan.FromMilliseconds 5.) subscriber (JoinedChannel (mkChannelInfo newState)) |> ignore
 
                     return loop newState
 
@@ -75,12 +78,12 @@ let createActorProps<'User, 'Message when 'User: comparison> lastUserLeft =
                         match lastUserLeft with
                         | Some msg -> do ctx.Parent() <! msg
                         | _ -> ()
-                    return loop <| incEventId { state with Parties = parties}
+                    return loop <| { state with LastEventId = eventId; Parties = parties }
 
                 | ParticipantUpdate user ->
                     logger.debug (Message.eventX "Participant updated {user}" >> Message.setFieldValue "user" user)
                     do dispatch state.Parties <| UserUpdated { ts = ts; user = user }
-                    return loop state
+                    return loop { state with LastEventId = eventId }
 
                 | PostMessage (user, message) ->
                     let messageInfo = {ts = ts; author = user; message = message}
