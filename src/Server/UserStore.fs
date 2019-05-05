@@ -12,11 +12,10 @@ open Suave.Logging
 let private logger = Log.create "userstore"
 
 module UserIds =
-
     let system = UserId "sys"
     let echo = UserId "echo"
 
-module public Implementation =
+module private StoreImplementation =
 
     type ErrorInfo = ErrorInfo of string
 
@@ -164,8 +163,8 @@ module public Implementation =
                         return loop state
                 | UpdateUserChannels (userId, update) ->
                     return update |> function
-                        | Joined chanId -> JoinedChannel (userId, chanId) |> persist
-                        | Left chanId ->   LeftChannel (userId, chanId) |> persist
+                        | UpdateChannelInfo.Joined chanId -> JoinedChannel (userId, chanId) |> persist
+                        | UpdateChannelInfo.Left chanId ->   LeftChannel (userId, chanId) |> persist
 
                 | GetUsers (userids) ->
                     let findUser userId = Map.tryFind userId state.users |> Option.map (fun u -> RegisteredUser (userId, u))
@@ -181,7 +180,7 @@ module public Implementation =
         }
         loop initialState
 
-open Implementation
+open StoreImplementation
 
 type UserStore(system: Akka.Actor.ActorSystem) =
 
@@ -215,5 +214,8 @@ type UserStore(system: Akka.Actor.ActorSystem) =
             return result
         }
 
-    member __.UpdateUserChannel(userId: UserId, update: UpdateChannelInfo) =
-        storeActor <! (Command <| UpdateUserChannels (userId, update))
+    member __.UpdateUserJoinedChannel(userId: UserId, channel: ChannelId) =
+        storeActor <! (Command <| UpdateUserChannels (userId, UpdateChannelInfo.Joined channel))
+
+    member __.UpdateUserLeftChannel(userId: UserId, channel: ChannelId) =
+        storeActor <! (Command <| UpdateUserChannels (userId, UpdateChannelInfo.Left channel))

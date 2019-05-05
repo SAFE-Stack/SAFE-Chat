@@ -12,8 +12,11 @@ let (|IsChannelId|_|) =
     | true, value -> Some (ChannelId value)
     | _ -> None
 
+let mapChannelId (ChannelId id) = id.ToString()
+
 let makeBlankUserInfo userid nick :Protocol.ChanUserInfo =
     {id = userid; nick = nick; isbot = false; status = ""; email = null; imageUrl = null}
+
 let mapUserToProtocol (RegisteredUser (UserId userid, userInfo)) :Protocol.ChanUserInfo =
 
     let tostr = Option.toObj
@@ -29,8 +32,6 @@ let mapUserToProtocol (RegisteredUser (UserId userid, userInfo)) :Protocol.ChanU
         id
     | System ->
         fun u -> {u with imageUrl = "/system.png"} // {makeBlankUserInfo userid "system" with imageUrl = "/system.png" }
-
-let mapChannelId (ChannelId id) = id.ToString()
 
 let mapChanInfo ({name = name; topic = topic; cid = cid}: ChannelData) : Protocol.ChannelInfo =
     {id = mapChannelId cid; name = name; topic = topic; userCount = 0}

@@ -1,11 +1,11 @@
-module AboutFlow
+module AboutChannelActor
 
 open Akkling
 open Suave.Logging
 
 open ChatTypes
 
-let internal logger = Log.create "aboutflow"
+let private logger = Log.create "aboutflow"
 
 let private aboutMessage =
     [   """## Welcome to F# Chat
@@ -21,10 +21,9 @@ F# Chat application built with Fable, Elmish, React, Suave, Akka.Streams, Akklin
 * **/nick <newnick>** - changes your nickname
 * **/status <newstatus>** - change status
 * **/avatar <imageUrl>** - change user avatar
-"""
-]
+""" ]
 
-let createActorProps systemUser =
+let props systemUser =
 
     // TODO put to actor state, otherwise only one instance would be supported
     let mutable users = Map.empty

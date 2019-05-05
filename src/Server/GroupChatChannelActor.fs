@@ -1,12 +1,13 @@
-﻿module GroupChatFlow
+﻿module GroupChatChannelActor
 
+open System
 open Akkling
 open Akkling.Persistence
 
 open Suave.Logging
 open ChatTypes
 
-module internal Internals =
+module private Internals =
     // maps user login
     type ChannelParties = Map<UserId, ClientMessage IActorRef>
 
@@ -25,9 +26,8 @@ module internal Internals =
             Messages = message :: state.Messages }
 
 open Internals
-open System
 
-let createActorProps<'User, 'Message when 'User: comparison> lastUserLeft =
+let props<'User, 'Message when 'User: comparison> lastUserLeft =
 
     let dispatch (parties: ChannelParties) (msg: ClientMessage): unit =
         parties |> Map.iter (fun _ sub -> sub <! msg)

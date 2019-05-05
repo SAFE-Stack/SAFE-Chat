@@ -4,7 +4,6 @@ open System
 open Akkling.Streams
 open Akka.Streams
 open Akka.Streams.Dsl
-open AsyncUtil
 
 open Suave
 open Suave.Logging
@@ -14,43 +13,48 @@ open ChatTypes
 open UserStore
 open SocketFlow
 
+open AsyncUtil
 open FsChat
 open ProtocolConv
 
-let logger = Log.create "chatapi"
+module private Implementation =
 
-type internal IncomingMessage =
-    | ChannelMessage of ChannelId * Message
-    | ControlMessage of Protocol.ServerMsg
-    | Trash of reason: string
+    type IncomingMessage =
+        | ChannelMessage of ChannelId * Message
+        | ControlMessage of Protocol.ServerMsg
+        | Trash of reason: string
 
-// extracts message from websocket reply, only handles User input (channel * string)
-let internal extractMessage message =
-    try
-        match message with
-        | Text t ->
-            match t |> Json.unjson<Protocol.ServerMsg> with
-            | Protocol.UserMessage {chan = channelId; text = messageText} ->
-                match Int32.TryParse channelId with
-                | true, chanId -> ChannelMessage (ChannelId chanId, Message messageText)
-                | _ -> Trash "Bad channel id"
-            | message -> ControlMessage message                
-        | x -> Trash <| sprintf "Not a Text message '%A'" x
-    with e ->
-        do logger.error (Message.eventX "Failed to parse message '{msg}'. Reason: {e}" >> Message.setFieldValue "msg" message  >> Message.setFieldValue "e" e)
-        Trash "exception"
+    let logger = Log.create "chatapi"
 
-let internal partitionFlows (pfn: _ -> int) worker1 worker2 combine =
-    Akkling.Streams.Graph.create2 combine (fun b (w1: FlowShape<_,_>) (w2: FlowShape<_,_>) ->
-        let partition = Partition<'TIn>(2, System.Func<_,int>(pfn)) |> b.Add
-        let merge = Merge<'TOut> 2 |> b.Add
+    // extracts message from websocket reply, only handles User input (channel * string)
+    let extractMessage message =
+        try
+            match message with
+            | Text t ->
+                match t |> Json.unjson<Protocol.ServerMsg> with
+                | Protocol.UserMessage {chan = channelId; text = messageText} ->
+                    match Int32.TryParse channelId with
+                    | true, chanId -> ChannelMessage (ChannelId chanId, Message messageText)
+                    | _ -> Trash "Bad channel id"
+                | message -> ControlMessage message                
+            | x -> Trash <| sprintf "Not a Text message '%A'" x
+        with e ->
+            do logger.error (Message.eventX "Failed to parse message '{msg}'. Reason: {e}" >> Message.setFieldValue "msg" message  >> Message.setFieldValue "e" e)
+            Trash "exception"
 
-        b.From(partition.Out 0).Via(w1).To(merge.In 0) |> ignore
-        b.From(partition.Out 1).Via(w2).To(merge.In 1) |> ignore
+    let partitionFlows (pfn: _ -> int) worker1 worker2 combine =
+        Akkling.Streams.Graph.create2 combine (fun b (w1: FlowShape<_,_>) (w2: FlowShape<_,_>) ->
+            let partition = Partition<'TIn>(2, System.Func<_,int>(pfn)) |> b.Add
+            let merge = Merge<'TOut> 2 |> b.Add
 
-        FlowShape(partition.In, merge.Out)
-    ) worker1 worker2
-    |> Flow.FromGraph
+            b.From(partition.Out 0).Via(w1).To(merge.In 0) |> ignore
+            b.From(partition.Out 1).Via(w2).To(merge.In 1) |> ignore
+
+            FlowShape(partition.In, merge.Out)
+        ) worker1 worker2
+        |> Flow.FromGraph
+
+open Implementation
 
 /// User session multiplexer. Creates a flow that receives user messages for multiple channels, binds each stream to channel flow
 /// and finally collects the messages from multiple channels into single stream.

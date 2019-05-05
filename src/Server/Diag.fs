@@ -6,7 +6,6 @@ open Akkling
 open ChatUser
 open ChatTypes
 open ChatServer
-open GroupChatFlow
 
 /// Creates an actor for echo bot.
 let createEchoActor (getUser: GetUser) (system: ActorSystem) (botUserId: UserId) =
@@ -47,7 +46,7 @@ let createEchoActor (getUser: GetUser) (system: ActorSystem) (botUserId: UserId)
 let createDiagChannel (getUser: GetUser) (system: ActorSystem) (server: IActorRef<_>) (echoUserId, channelName, topic) =
     async {
         let bot = createEchoActor getUser system echoUserId
-        let chanActorProps = createActorProps None
+        let chanActorProps = GroupChatChannelActor.props None
 
         let! result = server |> getOrCreateChannel channelName topic (OtherChannel chanActorProps)
         match result with

@@ -16,8 +16,7 @@ type ChannelInfo = {
     users: UserId seq
     messageCount: int
     unreadMessageCount: int option
-    lastMessages: ChatMsgInfo list
-    }
+    lastMessages: ChatMsgInfo list }
 
 /// Client protocol message (messages sent from channel to client actor)
 type ClientMessage =

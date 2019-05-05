@@ -155,7 +155,7 @@ type Session(server, userStore: UserStore, userArg: RegisteredUser) =
                 let result = join serverChannel listenChannel channels meUserId
                 let chaninfo = result |> Result.map(fun (l,chan) -> l, mapChanInfo chan)
 
-                do userStore.UpdateUserChannel(meUserId, Joined channelId)
+                do userStore.UpdateUserJoinedChannel (meUserId, channelId)
                 return replyJoinedChannel requestId chaninfo
             | Result.Error err ->
                 return replyErrorProtocol requestId err
@@ -164,7 +164,7 @@ type Session(server, userStore: UserStore, userArg: RegisteredUser) =
             return chanIdStr |> function
                 | IsChannelId channelId ->
                     let result = leave channels channelId
-                    do userStore.UpdateUserChannel(meUserId, Left channelId)
+                    do userStore.UpdateUserLeftChannel (meUserId, channelId)
                     result |> updateChannels requestId (fun _ -> Protocol.CmdResponse (requestId, Protocol.LeftChannel chanIdStr))
                 | _ ->
                     replyErrorProtocol requestId "bad channel id"

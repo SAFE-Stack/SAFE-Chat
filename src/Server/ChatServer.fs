@@ -92,21 +92,24 @@ module private Implementation =
         in
         {serverState with channels = serverState.channels |> List.map f}
 
-let startServer (system: ActorSystem) : IActorRef<ServerMessage> =
-
     let getChannelProps ({chanType = channelType; chanId = channelId}: ChannelCreateInfo) =
         match channelType with
         | GroupChatChannel settings ->
             let (true, chanId) | OtherwiseFail chanId = System.Int32.TryParse channelId
             let notify = if settings.autoRemove then Some <| box (ServerMessage.Command (NotifyLastUserLeft <| ChannelId chanId)) else None
-            GroupChatFlow.createActorProps notify
+            GroupChatChannelActor.props notify
         | OtherChannel props -> props
 
     let byChanName name c = (c:ChannelData).name = name
+    let byChanId chanId c = (c:ChannelData).cid = chanId
 
     // verifies the name is correct
     let isValidName (name: string) =
         (String.length name) > 0 && Char.IsLetter name.[0]
+
+open Implementation
+
+let startServer (system: ActorSystem) : IActorRef<ServerMessage> =
 
     let serverBehavior (ctx: Eventsourced<_>) =
 
@@ -135,7 +138,7 @@ let startServer (system: ActorSystem) : IActorRef<ServerMessage> =
                 newState
 
             | ChannelDeleted channelId ->
-                match state.channels |> List.tryFind(fun c -> c.cid = channelId) with
+                match state.channels |> List.tryFind (byChanId channelId) with
                 | Some channel ->
                     do logger.debug (Message.eventX "deleted channel {cid}" >> Message.setFieldValue "cid" channelId)
                     if ctx.IsRecovering() then
@@ -157,10 +160,10 @@ let startServer (system: ActorSystem) : IActorRef<ServerMessage> =
 
             match msg with
             | Event evt ->
-                return loop (update state evt)
+                return update state evt |> loop
 
             | Command (NotifyLastUserLeft chanId) ->
-                match state.channels |> List.tryFind (fun chan -> chan.cid = chanId) with
+                match state.channels |> List.tryFind (byChanId chanId) with
                 | Some channel ->
                     do logger.debug (Message.eventX "Last user left from: {chanName}, removing" >> Message.setFieldValue "chanName" channel.name)
                     return ChannelDeleted channel.cid |> (Event >> Persist)
@@ -188,11 +191,11 @@ let startServer (system: ActorSystem) : IActorRef<ServerMessage> =
                     | GroupChatChannel _ ->
                         return Persist (Event event)
                     | _ ->
-                        return loop <| update state event
+                        return update state event |> loop
 
                 | _ ->
                     ctx.Sender() <! RequestError "Invalid channel name"
-                    return loop state
+                    return state |> loop
 
             | Command (ListChannels criteria) ->
                 let found = state.channels |> List.filter criteria
@@ -225,10 +228,9 @@ let startServer (system: ActorSystem) : IActorRef<ServerMessage> =
 
     server
 
-
 let getChannel criteria (server: ServerT) =
     async {
-        let! (reply: ServerReplyMessage) = server <? Command(FindChannel criteria)
+        let! (reply: ServerReplyMessage) = server <? Command (FindChannel criteria)
         match reply with
         | FoundChannel channel -> return Ok channel
         | RequestError error -> return Result.Error error
