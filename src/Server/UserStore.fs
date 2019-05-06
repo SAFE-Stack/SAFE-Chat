@@ -3,26 +3,27 @@ module UserStore
 
 open Akkling
 open Akkling.Persistence
+open Suave.Logging
 
 open ChatTypes
 open ChatUser
-
-open Suave.Logging
-open Newtonsoft.Json
-
-let private logger = Log.create "userstore"
 
 module UserIds =
     let system = UserId "sys"
     let echo = UserId "echo"
 
-module StoreImplementation =
-
-    type ErrorInfo = ErrorInfo of string
-
+module Persist =
+    // keep this module public, so that Json serializer (Newtonsoft's) will not complain
     type UpdateChannelInfo =
         | Joined of ChannelId
         | Left of ChannelId
+
+    type StoreEvent =
+        | AddUser of RegisteredUser
+        | DropUser of UserId
+        | UpdateUser of RegisteredUser
+        | JoinedChannel of UserId * ChannelId
+        | LeftChannel of UserId * ChannelId
 
     type StoreCommand =
         | Register of UserInfo
@@ -32,26 +33,26 @@ module StoreImplementation =
         | GetUsers of UserId list
         | DumpUsers // dumps user list to a logger (debugging)
 
-    type StoreEvent =
-        | AddUser of RegisteredUser
-        | DropUser of UserId
-        | UpdateUser of RegisteredUser
-        | JoinedChannel of UserId * ChannelId
-        | LeftChannel of UserId * ChannelId
+    type StoreMessage =
+        | Event of StoreEvent
+        | Command of StoreCommand
+
+module private StoreImplementation =
+    open Persist
+
+    type ErrorInfo = ErrorInfo of string
 
     type ReplyMessage =
         | RegisterResult of Result<RegisteredUser, ErrorInfo>
         | UpdateResult of Result<RegisteredUser, ErrorInfo>
         | GetUsersResult of RegisteredUser list
 
-    type StoreMessage =
-        | Event of StoreEvent
-        | Command of StoreCommand
-
     type State = {
         nextId: int
         users: Map<UserId, UserInfo>
     }
+
+    let logger = Log.create "userstore"
 
     let makeUser nick identity = {identity = identity; nick = nick; status = None; imageUrl = None; channelList = []}
     let makeBot nick = {makeUser nick Bot with imageUrl = makeUserImageUrl "robohash" "echobott"}
@@ -181,6 +182,7 @@ module StoreImplementation =
         }
         loop initialState
 
+open Persist
 open StoreImplementation
 
 type UserStore(system: Akka.Actor.ActorSystem) =
