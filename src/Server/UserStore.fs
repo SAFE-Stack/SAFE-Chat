@@ -3,176 +3,222 @@ module UserStore
 
 open Akkling
 open Akkling.Persistence
+open Suave.Logging
 
 open ChatTypes
 open ChatUser
 
 module UserIds =
-
     let system = UserId "sys"
     let echo = UserId "echo"
 
-module public Implementation =
-
-    type ErrorInfo = ErrorInfo of string
-
-    type StoreCommand =
-        | Register of UserKind
-        | Unregister of UserId
-        | Update of RegisteredUser
-        | GetUsers of UserId list
+module Persist =
+    // keep this module public, so that Json serializer (Newtonsoft's) will not complain
+    type UpdateChannelInfo =
+        | Joined of ChannelId
+        | Left of ChannelId
 
     type StoreEvent =
         | AddUser of RegisteredUser
         | DropUser of UserId
         | UpdateUser of RegisteredUser
+        | JoinedChannel of UserId * ChannelId
+        | LeftChannel of UserId * ChannelId
 
-    type ReplyMessage =
-        | RegisterResult of Result<UserId, ErrorInfo>
-        | UpdateResult of Result<RegisteredUser, ErrorInfo>
-        | GetUsersResult of RegisteredUser list
+    type StoreCommand =
+        | Register of UserInfo
+        | Unregister of UserId
+        | Update of UserId * UserInfo
+        | UpdateUserChannels of UserId * UpdateChannelInfo
+        | GetUsers of UserId list
+        | DumpUsers // dumps user list to a logger (debugging)
 
     type StoreMessage =
         | Event of StoreEvent
         | Command of StoreCommand
 
+module private StoreImplementation =
+    open Persist
+
+    type ErrorInfo = ErrorInfo of string
+
+    type ReplyMessage =
+        | RegisterResult of Result<RegisteredUser, ErrorInfo>
+        | UpdateResult of Result<RegisteredUser, ErrorInfo>
+        | GetUsersResult of RegisteredUser list
+
     type State = {
         nextId: int
-        users: Map<UserId, RegisteredUser>
+        users: Map<UserId, UserInfo>
     }
 
-    let createUser userid user = Map.add userid (RegisteredUser(userid, user))
-    let makeBot nick = Bot {ChatUser.empty with nick = nick; imageUrl = makeUserImageUrl "robohash" "echobott"}
+    let logger = Log.create "userstore"
+
+    let makeUser nick identity = {identity = identity; nick = nick; status = None; imageUrl = None; channelList = []}
+    let makeBot nick = {makeUser nick Bot with imageUrl = makeUserImageUrl "robohash" "echobott"}
 
     let initialState = {
         nextId = 100
         users = Map.empty
-            |> createUser UserIds.system System
-            |> createUser UserIds.echo (makeBot "echo")
+            |> Map.add UserIds.system (makeUser "system" System)
+            |> Map.add UserIds.echo (makeBot "echo")
     }
 
-    let lookupNick nickName _ user =
-        getUserNick user = nickName
+    let lookupNick nickName _ (userInfo: UserInfo) =
+        userInfo.nick = nickName
 
-    let updateUserKind =
-        function
-        | Anonymous _, Anonymous n -> Ok <| Anonymous n
-        | Person p, Person n -> Ok <| Person {n with oauthId = p.oauthId}
-        | Bot p, Bot n -> Ok <| Bot {n with oauthId = p.oauthId} // id cannot be overwritten
-        | _ -> Result.Error <| ErrorInfo "Cannot update user because of different type"
-
-    let updateUser (RegisteredUser (userid, newuser) as uxx) (users: Map<UserId, RegisteredUser>) : Result<_,ErrorInfo> =
-        let newNick = getUserNick uxx
+    // TODO UserInfo is overkill here.
+    let updateUser userid newuser (users: Map<UserId, UserInfo>) : Result<_,ErrorInfo> =
+        let newNick = newuser.nick
         match users |> Map.tryFindKey (lookupNick newNick) with
         | Some foundUserId when foundUserId <> userid ->
             Result.Error <| ErrorInfo "Updated nick was already taken by other user"
         | _ ->
             match users |> Map.tryFind userid with
-            | Some (RegisteredUser (_, user)) -> updateUserKind (user, newuser)
+            | Some user -> (userid, {user with nick = newuser.nick; status = newuser.status; imageUrl = newuser.imageUrl}) |> (RegisteredUser >> Ok)
             | _ -> Result.Error <| ErrorInfo "User not found, nothing to update"
-            |> Result.map(fun u ->
-                let newUser = RegisteredUser (userid, u)
-                newUser )
 
     // in case user is logging anonymously check he cannot squote someone's nick
-    let (|AnonymousBusyNick|_|) (users: Map<UserId, RegisteredUser>) =
+    let (|AnonymousBusyNick|_|) (users: Map<UserId, UserInfo>) =
         function
-        | Anonymous {nick = userNick} ->
+        | Anonymous userNick ->
             users |> Map.tryFindKey (lookupNick userNick) |> Option.map(fun uid -> uid, userNick)
         | _ -> None
 
-    let (|AlreadyRegisteredOAuth|_|) (users: Map<UserId, RegisteredUser>) =
-        let lookup oauthIdArg _ = function
-            | (RegisteredUser (_, Person {oauthId = Some probe})) -> probe = oauthIdArg
-            | _ -> false
-
+    let (|AlreadyRegisteredOAuth|_|) (users: Map<UserId, UserInfo>) =
         function
         | Person {oauthId = Some oauthId} ->
-            users |> Map.tryFindKey (lookup oauthId)
+            users |> Map.tryPick (fun userId ->
+                function
+                | {identity = Person {oauthId = Some probe}} as userInfo when probe = oauthId -> RegisteredUser (userId, userInfo) |> Some
+                | _ -> None )
         | _ -> None
 
+    let updateUserInfo userId f (state: State) =
+        let updatedUser =
+            match state.users |> Map.tryFind userId with
+            | Some userInfo -> f userInfo
+            | None ->
+                failwith <| sprintf "no user with id=%A for update" userId
+        {state with users = state.users |> Map.add userId updatedUser}
+
+    // processes the event and updates store
+    // this is the only way to update users
     let update (state: State) = function
-        | AddUser user ->
-            let (RegisteredUser (userId, _)) = user
-            // FIXME nextId should be compared to userId
-            {state with nextId = state.nextId + 1; users = state.users |> Map.add userId user}
+        | AddUser (RegisteredUser (userId, userInfo)) ->
+            let (UserId uidstr) = userId
+            let lastId =
+                match System.Int32.TryParse uidstr with
+                | true, num -> num
+                | _ -> 0
+            {state with nextId = (max state.nextId lastId) + 1; users = state.users |> Map.add userId userInfo}
+
         | DropUser userid ->
             {state with users = state.users |> Map.remove userid}
-        | UpdateUser user ->
-            let (RegisteredUser (userId, _)) = user
-            {state with users = state.users |> Map.add userId user}
+
+        | UpdateUser (RegisteredUser (userId, userInfo)) ->
+            state |> updateUserInfo userId (fun _ -> userInfo)
+
+        | JoinedChannel (userId, chanId) ->
+            state |> updateUserInfo userId (fun userInfo -> {userInfo with channelList = chanId :: userInfo.channelList})
+
+        | LeftChannel (userId, chanId) ->
+            state |> updateUserInfo userId (fun userInfo -> {userInfo with channelList = userInfo.channelList |> List.except [chanId]})
 
     let handler (ctx: Eventsourced<_>) =
+        let reply m = ctx.Sender() <! m
+        let replyRegisterResult m = ctx.Sender() <! (RegisterResult m)
+        let persist = Event >> Persist
+
         let rec loop (state: State) = actor {
             let! msg = ctx.Receive()
-            let reply = (<!) (ctx.Sender())
-
             match msg with
             | Event e ->
                 return! loop (update state e)
             | Command cmd ->
                 match cmd with
                 | Register (user) ->
-                    match user with
+                    match user.identity with
                     | AnonymousBusyNick state.users (UserId uid, nickname) ->
                         let errorMessage = sprintf "The nickname %s is already taken by user %s" nickname uid
-                        errorMessage |> (ErrorInfo >> Result.Error >> RegisterResult >> reply)
+                        replyRegisterResult (ErrorInfo errorMessage |> Result.Error)
                         return loop state
-                    | AlreadyRegisteredOAuth state.users userId ->
-                        userId |> (Ok >> RegisterResult >> reply)
+                    | AlreadyRegisteredOAuth state.users user ->
+                        replyRegisterResult (Ok user)
                         return loop state
                     | _ ->
                         let userId = UserId <| state.nextId.ToString()
-                        userId |> (Ok >> RegisterResult >> reply)
-                        return Persist (Event <| AddUser (RegisteredUser (userId, user)))
+                        let newUser = RegisteredUser (userId, user)
+                        replyRegisterResult (Ok newUser)
+                        return persist (AddUser newUser)
 
                 | Unregister userid ->
-                    return Persist (Event <| DropUser userid)
+                    return persist (DropUser userid)
 
-                | Update user ->
-                    match state.users |> updateUser user with
-                    | Ok(newUser) ->
+                | Update (userId, user) ->
+                    match state.users |> updateUser userId user with
+                    | Ok newUser ->
                         newUser |> (Ok >> UpdateResult >> reply)
-                        return Persist (Event <| UpdateUser newUser)
+                        return persist (UpdateUser newUser)
                     | Result.Error e ->
                         e |> (Result.Error >> UpdateResult >> reply)
                         return loop state
+                | UpdateUserChannels (userId, update) ->
+                    return update |> function
+                        | UpdateChannelInfo.Joined chanId -> JoinedChannel (userId, chanId) |> persist
+                        | UpdateChannelInfo.Left chanId ->   LeftChannel (userId, chanId) |> persist
 
                 | GetUsers (userids) ->
-                    userids |> List.collect (Map.tryFind >< state.users >> Option.toList) |> (GetUsersResult >> reply)
+                    let findUser userId = Map.tryFind userId state.users |> Option.map (fun u -> RegisteredUser (userId, u))
+                    userids |> List.collect (findUser >> Option.toList)
+                            |> (GetUsersResult >> reply)
+                    return loop state
+                | DumpUsers ->
+                    
+                    do logger.debug (Message.eventX "DumpUsers ({count} users)" >> Message.setFieldValue "count" (Map.count state.users))
+                    for (UserId uid, user) in state.users |> Map.toList do
+                        do logger.debug (Message.eventX "   {userId}: \"{nick}\"" >> Message.setFieldValue "userId" uid >> Message.setFieldValue "nick" user.nick)
                     return loop state
         }
         loop initialState
 
-open Implementation
+open Persist
+open StoreImplementation
 
 type UserStore(system: Akka.Actor.ActorSystem) =
 
-    let storeActor = spawn system "userstore" <| propsPersist(handler)
+    let storeActor = spawn system "userstore" <| propsPersist handler
+    do storeActor <! (Command DumpUsers)
 
-    member _this.Register(user: UserKind) : Result<UserId,string> Async =
+    member __.Register(user: UserInfo) : Result<RegisteredUser,string> Async =
         async {
-            let! (RegisterResult result | OtherwiseFail result) = storeActor <? (Command <| Register user)
+            let! (RegisterResult result | OtherwiseFail result) = storeActor <? Command(Register user)
             return result |> Result.mapError (fun (ErrorInfo error) -> error)
         }
 
-    member _this.Unregister (userid: UserId) : unit =
+    member __.Unregister (userid: UserId) : unit =
         storeActor <! (Command <| Unregister userid)
 
-    member _this.Update(user: RegisteredUser) : Result<RegisteredUser,string> Async =
+    member __.Update(userId, user) : Result<RegisteredUser,string> Async =
         async {
-            let! (UpdateResult result | OtherwiseFail result) = storeActor <? (Command <| Update user)
+            let! (UpdateResult result | OtherwiseFail result) = storeActor <? (Command <| Update (userId, user))
             return result |> Result.mapError (fun (ErrorInfo error) -> error)
         }
 
-    member _this.GetUser userid : RegisteredUser option Async =
+    member __.GetUser userid : UserInfo option Async =
         async {
             let! (GetUsersResult result | OtherwiseFail result) = storeActor <? (Command <| GetUsers [userid])
-            return result |> function | [] -> None | x::_ -> Some x
+            return result |> function |[] -> None | (RegisteredUser (_, userInfo))::_ -> Some userInfo
         }
 
-    member _this.GetUsers (userids: UserId list) : RegisteredUser list Async =
+    member __.GetUsers (userids: UserId list) : RegisteredUser list Async =
         async {
             let! (GetUsersResult result | OtherwiseFailErr "no choice" result) = storeActor <? (Command <| GetUsers userids)
             return result
         }
+
+    member __.UpdateUserJoinedChannel(userId: UserId, channel: ChannelId) =
+        storeActor <! (Command <| UpdateUserChannels (userId, UpdateChannelInfo.Joined channel))
+
+    member __.UpdateUserLeftChannel(userId: UserId, channel: ChannelId) =
+        storeActor <! (Command <| UpdateUserChannels (userId, UpdateChannelInfo.Left channel))

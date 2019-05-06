@@ -4,27 +4,36 @@ open System
 
 open Akka.Actor
 open Akkling
+open Akkling.Persistence
+
 open Suave.Logging
 
 open ChatTypes
 
 let private logger = Log.create "chatserver"
-type ChannelActor = ChannelMessage IActorRef
+
+module public Impl =
+    // move internals here from below types definition
+    ()
 
 /// Channel is a primary store for channel info and data
 type ChannelData = {
-    id: ChannelId
+    cid: ChannelId
     name: string
     topic: string
-    channelActor: ChannelActor
+    channelActor: IActorRef<ChannelMessage>
+}
+and ChannelSettings = {
+    autoRemove: bool
 }
 and UserSessionData = {
     notifySink: ServerNotifyMessage IActorRef
 }
 
-and ServerData = {
-    channels: ChannelData list
+and State = {
+    channels: ChannelData list  // TODO consider map too
     sessions: Map<UserId, UserSessionData>
+    lastChannelId: int
 }
 
 // notification message sent to a subscribers via notify method
@@ -32,12 +41,31 @@ and ServerNotifyMessage =
     | AddChannel of ChannelData
     | DropChannel of ChannelData
 
+// Chan event type. I need this type to create proper actor while restoring channels
+// Consider omitting parameters and just let channel store its state/settings.
+type ChannelType =
+    | GroupChatChannel of ChannelSettings
+    | OtherChannel of Props<ChannelMessage>     // this is not persistable channel (such as About)
+
+type ChannelCreateInfo = {
+    chanId: string
+    name: string
+    topic: string
+    chanType: ChannelType
+}
+
+type ServerEvent =
+    | ChannelCreated of ChannelCreateInfo
+    | ChannelDeleted of ChannelId
+
 /// Server protocol
-type ServerControlMessage =
-    | UpdateState of (ServerData -> ServerData)
+type ServerCommand =
     | FindChannel of (ChannelData -> bool)
-    | GetOrCreateChannel of name: string * topic: string * (IActorRefFactory -> ChannelActor)
+    | GetOrCreateChannel of name: string * topic: string * ChannelType  // FIXME type instead of tuple
     | ListChannels of (ChannelData -> bool)
+    | DumpChannels
+
+    | NotifyLastUserLeft of ChannelId
 
     | StartSession of UserId * IActorRef<ServerNotifyMessage>
     | CloseSession of UserId
@@ -46,144 +74,186 @@ type ServerReplyMessage =
     | Done
     | RequestError of string
     | FoundChannel of ChannelData
+    | CreatedChannel of ChannelId
     | FoundChannels of ChannelData list
 
-type ServerT = IActorRef<ServerControlMessage>
+type ServerMessage =
+    | Event of ServerEvent
+    | Command of ServerCommand
 
-let private initialState = { channels = []; sessions = Map.empty }
+type ServerT = IActorRef<ServerMessage>
 
-module internal Helpers =
+let private initialState = { channels = []; sessions = Map.empty; lastChannelId = 100 }
 
-    let updateChannel f chanId serverState: ServerData =
-        let f chan = if chan.id = chanId then f chan else chan
+module private Implementation =
+
+    let updateChannel f chanId serverState =
+        let f (chan: ChannelData) = if chan.cid = chanId then f chan else chan
         in
         {serverState with channels = serverState.channels |> List.map f}
 
+    let getChannelProps ({chanType = channelType; chanId = channelId}: ChannelCreateInfo) =
+        match channelType with
+        | GroupChatChannel settings ->
+            let (true, chanId) | OtherwiseFail chanId = System.Int32.TryParse channelId
+            let notify = if settings.autoRemove then Some <| box (ServerMessage.Command (NotifyLastUserLeft <| ChannelId chanId)) else None
+            GroupChatChannelActor.props notify
+        | OtherChannel props -> props
+
     let byChanName name c = (c:ChannelData).name = name
+    let byChanId chanId c = (c:ChannelData).cid = chanId
 
     // verifies the name is correct
     let isValidName (name: string) =
         (String.length name) > 0 && Char.IsLetter name.[0]
 
-    let __lastid = ref 100
-    let newId () = System.Threading.Interlocked.Increment __lastid
+open Implementation
 
-module private Implementation =
-    open Helpers
+let startServer (system: ActorSystem) : IActorRef<ServerMessage> =
 
-    /// Creates a new channel or returns existing if channel already exists
-    let addChannel createChannel name topic (state: ServerData) =
-        match state.channels |> List.tryFind (byChanName name) with
-        | Some chan ->
-            Ok (state, chan)
-        | _ when isValidName name ->
-            let channelActor = createChannel ()
-            let newChan = {id = ChannelId (newId()); name = name; topic = topic; channelActor = channelActor }
+    let serverBehavior (ctx: Eventsourced<_>) =
 
-            do state.sessions |> Map.iter(fun _ session -> session.notifySink <! AddChannel newChan)
-            Ok ({state with channels = newChan::state.channels}, newChan)
-        | _ ->
-            Result.Error "Invalid channel name"
-
-    let setTopic chanId newTopic state =
-        Ok (state |> updateChannel (fun chan -> {chan with topic = newTopic}) chanId)
-
-    let getChannelImpl message (server: ServerT) =
-        async {
-            let! (reply: ServerReplyMessage) = server <? message
-            match reply with
-            | FoundChannel channel -> return Ok channel
-            | RequestError error -> return Result.Error error
-            | _ -> return Result.Error "Unknown reason"
-        }
-
-let startServer (system: ActorSystem) : IActorRef<ServerControlMessage> =
-
-    let rec serverBehavior (state: ServerData) (ctx: Actor<obj>): obj -> Effect<_> =
-        let replyAndUpdate f = function
-            | Ok (newState, reply) -> ctx.Sender() <! f reply; become (serverBehavior newState ctx)
-            | Result.Error errtext -> ctx.Sender() <! RequestError errtext; ignored ()
-
-        function
-        | Terminated(ref, _, _) ->
-            state.channels |> List.tryFind (fun chan -> chan.channelActor = ref) |>
+        let update (state: State) =
             function
-            | Some channel ->
-                do state.sessions |> Map.iter(fun _ session -> session.notifySink <! DropChannel channel)
-                become (serverBehavior { state with channels = state.channels |> List.except [channel]} ctx)
-            | _ ->
-                do logger.error (Message.eventX "Failed to locate terminated object: {a}" >> Message.setFieldValue "a" ref)
-                ignored state
+            | ChannelCreated ci when state.channels |> List.exists(fun {cid = ChannelId cid} -> string cid = ci.chanId) ->
 
-        | :? ServerControlMessage as msg ->
+                do logger.error (Message.eventX "Channel named {a} (id={chanid}) already exists, cannot restore"
+                    >> Message.setFieldValue "a" ci.name >> Message.setFieldValue "chanid" ci.chanId)
+
+                state
+
+            | ChannelCreated ci ->
+
+                let actorName = ci.chanId
+                let actor = spawn ctx actorName (getChannelProps ci)
+                let (true, chanId) | OtherwiseFail chanId = System.Int32.TryParse ci.chanId
+
+                let newChan =  { cid = ChannelId chanId; name = ci.name; topic = ci.topic; channelActor = actor }
+                let newState = { state with lastChannelId = max chanId state.lastChannelId; channels = newChan::state.channels }
+
+                do logger.debug (Message.eventX "Started watching {cid} \"{chanName}\"" >> Message.setFieldValue "chanName" ci.name >> Message.setFieldValue "cid" ci.chanId)
+
+                do state.sessions |> Map.iter(fun _ session -> session.notifySink <! AddChannel newChan)
+
+                newState
+
+            | ChannelDeleted channelId ->
+                match state.channels |> List.tryFind (byChanId channelId) with
+                | Some channel ->
+                    do logger.debug (Message.eventX "deleted channel {cid}" >> Message.setFieldValue "cid" channelId)
+                    if ctx.IsRecovering() then
+                        // FIXME the design here is to replay channels creation/destroy. See we ignore Terminated event for the same purpose
+                        // Eventually I'm going to keep channel actor active until the channel is purged.
+                        do logger.debug (Message.eventX "... and sent poison pill")
+                        retype channel.channelActor <! PoisonPill.Instance
+
+                    do state.sessions |> Map.iter(fun _ session -> session.notifySink <! DropChannel channel)
+
+                    { state with channels = state.channels |> List.filter (fun chand -> chand.cid <> channelId)}
+                | None ->
+                    do logger.error (Message.eventX "deleted channel {cid} not found in server" >> Message.setFieldValue "cid" channelId)
+                    state
+
+        let rec loop (state: State) : Effect<_> = actor {
+            let! msg = ctx.Receive()
+            // removed lifetime Terminated event tracking in March 2019
+
             match msg with
-            | UpdateState updater ->
-                become (serverBehavior (updater state) ctx)
-            | FindChannel criteria ->
+            | Event evt ->
+                return update state evt |> loop
+
+            | Command (NotifyLastUserLeft chanId) ->
+                match state.channels |> List.tryFind (byChanId chanId) with
+                | Some channel ->
+                    do logger.debug (Message.eventX "Last user left from: {chanName}, removing" >> Message.setFieldValue "chanName" channel.name)
+                    return ChannelDeleted channel.cid |> (Event >> Persist)
+                | _ ->
+                    do logger.error (Message.eventX "Failed to locate channel: {a}" >> Message.setFieldValue "a" chanId)
+                    return loop state
+
+            | Command (FindChannel criteria) ->
                 let found = state.channels |> List.tryFind criteria
                 ctx.Sender() <! (found |> function |Some chan -> FoundChannel chan |_ -> RequestError "Not found")
-                ignored ()
+                return ignored ()
 
-            | GetOrCreateChannel (name, topic, createChannel) ->
-                let createChannel1 () =
-                    let actor = createChannel (ctx)
-                    do logger.debug (Message.eventX "Started watching {a}" >> Message.setFieldValue "a" name)
-                    monitor ctx actor |> ignore
-                    actor
-                state
-                    |> Implementation.addChannel createChannel1 name topic
-                    |> replyAndUpdate FoundChannel
+            | Command (GetOrCreateChannel (name, topic, channelType)) ->
+                match state.channels |> List.tryFind (byChanName name) with
+                | Some chan ->
+                    ctx.Sender() <! FoundChannel chan
+                    return loop state
+                | _ when isValidName name ->
+                    let newChannelId = state.lastChannelId + 1
+                    let event = ChannelCreated { chanId = string newChannelId; name = name; topic = topic; chanType = channelType }
 
-            | ListChannels criteria ->
+                    ctx.Sender() <! CreatedChannel (ChannelId newChannelId)
+                    // only persist regular channels which we know how to instantiate (persist)
+                    match channelType with
+                    | GroupChatChannel _ ->
+                        return Persist (Event event)
+                    | _ ->
+                        return update state event |> loop
+
+                | _ ->
+                    ctx.Sender() <! RequestError "Invalid channel name"
+                    return state |> loop
+
+            | Command (ListChannels criteria) ->
                 let found = state.channels |> List.filter criteria
                 ctx.Sender() <! FoundChannels found
-                ignored()
+                return ignored()
 
-            | StartSession (user, nsink) ->
+            | Command (StartSession (user, nsink)) ->
                 do logger.debug (Message.eventX "StartSession user={userId}" >> Message.setFieldValue "userId" user)
 
                 let newState = { state with sessions = state.sessions |> Map.add user { notifySink = nsink } }
-                become (serverBehavior newState ctx)
+                return loop newState
 
-            | CloseSession userid ->
+            | Command (CloseSession userid) ->
                 do logger.debug (Message.eventX "CloseSession user={userId}" >> Message.setFieldValue "userId" userid)
                 
                 let newState = { state with sessions = state.sessions |> Map.remove userid }
-                become (serverBehavior newState ctx)          
-        | msg ->
-            do logger.debug (Message.eventX "Failed to process message: {a}" >> Message.setFieldValue "a" msg)
-            unhandled()
+                return loop newState
+            | Command DumpChannels ->
+                do logger.debug (Message.eventX "DumpChannels ({count} channels)" >> Message.setFieldValue "count" (List.length state.channels))
+                for chan in state.channels do
+                    do logger.debug (Message.eventX "DumpChannels   {cid}: \"{name}\"" >> Message.setFieldValue "cid" chan.cid >> Message.setFieldValue "name" chan.name)
+                return loop state
+        }
+        loop initialState
     in
 
-    spawn system "ircserver" <| props (actorOf2 (serverBehavior initialState)) |> retype
+    let props = propsPersist serverBehavior
+    let server = spawn system "ircserver" props |> retype
+    server <! Command DumpChannels
 
-let getChannel criteria =
-    Implementation.getChannelImpl (FindChannel criteria)
+    server
 
-let getOrCreateChannel name topic makeChan =
-    Implementation.getChannelImpl (GetOrCreateChannel (name, topic, makeChan))
+let getChannel criteria (server: ServerT) =
+    async {
+        let! (reply: ServerReplyMessage) = server <? Command (FindChannel criteria)
+        match reply with
+        | FoundChannel channel -> return Ok channel
+        | RequestError error -> return Result.Error error
+        | _ -> return Result.Error "Unknown reason"
+    }
+
+let getOrCreateChannel name topic (channelType: ChannelType) (server: ServerT) =
+    async {
+        let! (reply: ServerReplyMessage) = server <? Command (GetOrCreateChannel (name, topic, channelType))
+        match reply with
+        | CreatedChannel channelId -> return Ok channelId
+        | FoundChannel channel -> return Ok channel.cid
+        | RequestError error -> return Result.Error error
+        | _ -> return Result.Error "Unknown reason"
+    }
 
 let listChannels criteria (server: ServerT) =
     async {
-        let! (reply: ServerReplyMessage) = server <? (ListChannels criteria)
+        let! (reply: ServerReplyMessage) = server <? Command (ListChannels criteria)
         match reply with
         | FoundChannels channels -> return Ok channels
         | _ -> return Result.Error "Unknown error"
     }
 
 let startSession (server: ServerT) userId (actor: IActorRef<ServerNotifyMessage>) =
-    server <! StartSession (userId, actor)
-
-open GroupChatFlow  // TODO BAD dependency
-
-let addChannel name topic (config: ChannelConfig option) (server: ServerT) = async {
-
-    let createChannel = createActor >< (config |> Option.defaultValue ChannelConfig.Default)
-
-    let! (reply: ServerReplyMessage) = server <? GetOrCreateChannel (name, topic, createChannel)
-    return
-        match reply with
-        | FoundChannel channelData -> Ok channelData
-        | RequestError message -> Result.Error message
-        | _ -> Result.Error "Unknown reply"
-}
+    server <! Command (StartSession (userId, actor))

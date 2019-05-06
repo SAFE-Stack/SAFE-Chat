@@ -2,18 +2,26 @@ module ChatUser
 
 open ChatTypes
 
-type PersonalInfo = {oauthId: string option; nick: string; status: string; email: string option; imageUrl: string option}
-type AnonymousUserInfo = {nick: string; status: string; imageUrl: string option}
+type PersonalInfo = {oauthId: string option; name: string option; email: string option}
 
-type UserKind =
-| Person of PersonalInfo
-| Bot of PersonalInfo
-| Anonymous of AnonymousUserInfo
-| System
+type Identity =
+    | Person of PersonalInfo
+    | Bot
+    | Anonymous of string
+    | System
 
-type RegisteredUser = RegisteredUser of UserId * UserKind
+// keeps information about chat user
+type UserInfo = {
+    identity: Identity
+    nick: string
+    status: string option
+    imageUrl: string option
+    channelList: ChannelId list
+}
 
-let empty = {nick = ""; status = ""; email = None; imageUrl = None; oauthId = None}
+type RegisteredUser = RegisteredUser of UserId * UserInfo
+
+let makeNew identity nick = {identity = identity; nick = nick; status = None; imageUrl = None; channelList = []}
 
 let makeUserImageUrl deflt = // FIXME find the place for the method
     let computeMd5 (text: string) =
@@ -25,11 +33,7 @@ let makeUserImageUrl deflt = // FIXME find the place for the method
     | null | "" -> None
     | name -> name |> (computeMd5 >> sprintf "https://www.gravatar.com/avatar/%s?d=%s" >< deflt >> Some)
 
-let getUserNick (RegisteredUser (_, user)) =
-    match user with
-    | Anonymous {nick = nick}
-    | Bot {nick = nick}
-    | Person {nick = nick} -> nick
-    | System -> "system"
+let getUserNick (RegisteredUser (_,{nick = nick})) = nick
+let getUserId (RegisteredUser (userId,_)) = userId
 
-type GetUser = UserId -> RegisteredUser option Async
+type GetUser = UserId -> UserInfo option Async

@@ -5,19 +5,31 @@ module Protocol =
 
     type UserId = string
     type ChannelId = string
+    type RequestId = string
 
+    type ChannelMessageInfo = {
+        id: int; ts: System.DateTime; text: string; chan: ChannelId; author: UserId
+    }
     type ChanUserInfo = {
         id: UserId; nick: string; isbot: bool; status: string; email: string; imageUrl: string
     }
     type ChannelInfo = {
-        id: ChannelId; name: string; userCount: int; topic: string; joined: bool; users: ChanUserInfo list
+        id: ChannelId; name: string; userCount: int; topic: string
     }
 
-    type UserMessageInfo = {text: string; chan: ChannelId}
-    type UserCommandInfo = {command: string; chan: ChannelId}
+    type ActiveChannelData = {
+        channelId: ChannelId
+        users: ChanUserInfo list
+        messageCount: int
+        unreadMessageCount: int option
+        lastMessages: ChannelMessageInfo list
+    }
+
+    type UserMessageData = {text: string; chan: ChannelId}
+    type UserCommandData = {command: string; chan: ChannelId}
 
     type ServerCommand =
-        | UserCommand of UserCommandInfo
+        | UserCommand of UserCommandData
         | Join of ChannelId
         | JoinOrCreate of channelName: string
         | Leave of ChannelId
@@ -25,8 +37,8 @@ module Protocol =
 
     type ServerMsg =
         | Greets
-        | UserMessage of UserMessageInfo
-        | ServerCommand of reqId: string * message: ServerCommand
+        | UserMessage of UserMessageData
+        | ServerCommand of reqId: RequestId * message: ServerCommand
 
     type HelloInfo = {
         me: ChanUserInfo
@@ -37,18 +49,20 @@ module Protocol =
         | AuthFail of string
         | CannotProcess of string
 
-    type ChannelMsgInfo = {
-        id: int; ts: System.DateTime; text: string; chan: ChannelId; author: UserId
-    }
+    type ChannelEvent =
+        | Joined of ChanUserInfo
+        | Left of UserId
+        | Updated of ChanUserInfo
 
-    type ChannelEventKind =
-        | Joined of ChannelId * ChanUserInfo
-        | Left of ChannelId * UserId
-        | Updated of ChannelId * ChanUserInfo
+    type ServerEvent =
+        | NewChannel of ChannelInfo
+        | RemoveChannel of ChannelInfo
+        | ChannelEvent of ChannelId * ChannelEvent
+        | JoinedChannel of ActiveChannelData
 
-    type ChannelEventInfo = {
+    type ServerEventInfo = {
         id: int; ts: System.DateTime
-        evt: ChannelEventKind
+        evt: ServerEvent
     }
 
     type CommandResponse =
@@ -61,11 +75,8 @@ module Protocol =
     /// The messages from server to client
     type ClientMsg =
         | Hello of HelloInfo
-        | CmdResponse of reqId: string * reply: CommandResponse
+        | CmdResponse of reqId: RequestId * reply: CommandResponse
 
         // external events
-        | ChanMsg of ChannelMsgInfo
-        | ChannelEvent of ChannelEventInfo
-        | NewChannel of ChannelInfo
-        | RemoveChannel of ChannelInfo
-
+        | ChanMsg of ChannelMessageInfo
+        | ServerEvent of ServerEventInfo

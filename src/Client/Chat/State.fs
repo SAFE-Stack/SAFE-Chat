@@ -26,6 +26,8 @@ module private Conversions =
     let mapChannel (ch: Protocol.ChannelInfo) : ChannelInfo =
         {Id = ch.id; Name = ch.name; Topic = ch.topic; UserCount = ch.userCount}
 
+    let mapUserMessage (msg: Protocol.ChannelMessageInfo) = (msg.author, {Id = msg.id; Ts = msg.ts; Content = msg.text})
+
 module private Implementation =
 
     let updateChanCmd chanId (f: ChannelData -> ChannelData * Channel.Types.Msg Cmd) (chat: ChatData) : ChatData * Chat.Types.AppMsg Cmd=
@@ -97,31 +99,54 @@ module private Implementation =
 
     let getUser (userId: string) (users: Map<UserId,UserInfo>) : UserInfo =
         users |> Map.tryFind userId |> Core.Option.defaultWith (fun () -> unknownUser userId)
+
+    let joinChannel channel chat =
+        // TODO this should put channel to a Connecting state
+        let chanData, cmd =
+            Channel.State.init() |> fst
+            |> Channel.State.update (Init (channel, [], []))
+        {chat with Channels = chat.Channels |> Map.add channel.Id chanData}, cmd
+
+    let updateChannelData isMe channel (chanData: Protocol.ActiveChannelData) chat =
+        let users = chanData.users |> List.map (Conversions.mapUserInfo isMe)
+        let messages = chanData.lastMessages |> List.sortBy(fun msg -> msg.id) |> List.map Conversions.mapUserMessage
         
+        let chanData, cmd =
+            fst (Channel.State.init()) |> Channel.State.update (Init (channel, users, messages))
+        {chat with Channels = chat.Channels |> Map.add channel.Id chanData}, cmd
+
     let chatUpdate isMe (msg: Protocol.ClientMsg) (state: ChatData) : ChatData * Cmd<Msg> =
+    
+        let mapCmd f (state, cmd) = state, cmd |> Cmd.map f
+        let ignoreCmd (state, _) = state, Cmd.none
+
         match msg with
         | Protocol.ClientMsg.ChanMsg msg ->
-            let message = AppendUserMessage (msg.author, {Id = msg.id; Ts = msg.ts; Content = msg.text})
-            let newState, cmd = state |> updateChanCmd msg.chan (Channel.State.update message)
-            newState, cmd |> Cmd.map ApplicationMsg
+            let channelCmd = msg |> Conversions.mapUserMessage |> AppendUserMessage
+            state |> updateChanCmd msg.chan (Channel.State.update channelCmd) |> mapCmd ApplicationMsg
 
-        | Protocol.ClientMsg.ChannelEvent ev ->
+        | Protocol.ClientMsg.ServerEvent { evt = Protocol.ChannelEvent (chan, evt) } ->
 
             let userInfo user = Conversions.mapUserInfo isMe user
 
             let chan, message =
-                ev.evt |> function
-                | Protocol.Joined (chan, user)  -> chan, Channel.Types.UserJoined (userInfo user)
-                | Protocol.Left (chan, userid)    -> chan, Channel.Types.UserLeft userid
-                | Protocol.Updated (chan, user) -> chan, Channel.Types.UserUpdated (userInfo user)
+                evt |> function
+                | Protocol.Joined user  -> chan, Channel.Types.UserJoined (userInfo user)
+                | Protocol.Left userid  -> chan, Channel.Types.UserLeft userid
+                | Protocol.Updated user -> chan, Channel.Types.UserUpdated (userInfo user)
 
-            updateChanCmd chan (Channel.State.update message) state |> fst, Cmd.none
+            updateChanCmd chan (Channel.State.update message) state |> ignoreCmd
 
-        | Protocol.ClientMsg.NewChannel chan ->
+        | Protocol.ClientMsg.ServerEvent { evt = Protocol.NewChannel chan } ->
             { state with ChannelList = state.ChannelList |> Map.add chan.id (Conversions.mapChannel chan)}, Cmd.none
 
-        | Protocol.ClientMsg.RemoveChannel chan ->
+        | Protocol.ClientMsg.ServerEvent { evt = Protocol.RemoveChannel chan } ->
             { state with ChannelList = state.ChannelList |> Map.remove chan.id }, Cmd.none
+
+        | Protocol.ClientMsg.ServerEvent { evt = Protocol.JoinedChannel chanData } ->
+            let chanInfo = state.ChannelList.[chanData.channelId]
+            in
+            updateChannelData isMe chanInfo chanData state |> mapCmd (fun msg -> ChannelMsg (chanData.channelId, msg) |> ApplicationMsg)
 
         | notProcessed ->
             printfn "message was not processed: %A" notProcessed
@@ -135,31 +160,23 @@ module private Implementation =
 
             | Protocol.Hello hello ->
                 let me = Conversions.mapUserInfo ((=) hello.me.id) hello.me
-                let mapChannel (ch: Protocol.ChannelInfo) = ch.id, Conversions.mapChannel ch
-                let chatData = {
-                    ChatData.Empty with
-                      socket = chat.socket
-                      ChannelList = hello.channels |> List.map mapChannel |> Map.ofList }
-                Connected (me, chatData), Cmd.none
+                let channels = hello.channels |> List.map (fun ch -> ch.id, Conversions.mapChannel ch) |> Map.ofList
+                in
+                Connected (me, { ChatData.Empty with socket = chat.socket; ChannelList = channels }), Cmd.batch []
 
             | Protocol.CmdResponse (reqId, reply) ->
                 match reply with
                 | Protocol.UserUpdated newUser ->
                     let meNew = Conversions.mapUserInfo isMe newUser
+                    in
                     Connected (meNew, chat), Cmd.none
 
-                | Protocol.JoinedChannel chanInfo ->
-                    let channel = Conversions.mapChannel chanInfo
-                    let users = chanInfo.users |> List.map (Conversions.mapUserInfo isMe)
-                    let (chanData, cmd) =
-                        Channel.State.init() |> fst
-                        |> Channel.State.update (Init (channel, users))
-                        // Conversions.mapChannel isMe chanInfo
-                    Connected (me, {chat with Channels = chat.Channels |> Map.add chanInfo.id chanData}),
-                        Cmd.batch [
-                            cmd |> Cmd.map (fun msg -> ChannelMsg (chanInfo.id, msg) |> ApplicationMsg)
-                            Channel chanInfo.id |> toHash |> Navigation.newUrl
-                        ]
+                | Protocol.CommandResponse.JoinedChannel chanInfo ->
+                    let newState, cmd = chat |> joinChannel (Conversions.mapChannel chanInfo)
+                    in
+                    Connected (me, newState), Cmd.batch [
+                          cmd |> Cmd.map (fun msg -> ChannelMsg (chanInfo.id, msg) |> ApplicationMsg)
+                          Channel chanInfo.id |> toHash |> Navigation.newUrl ]
 
                 | Protocol.LeftChannel channelId ->
                     chat.Channels |> Map.tryFind channelId

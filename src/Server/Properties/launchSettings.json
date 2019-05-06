@@ -1,0 +1,8 @@
+{
+  "profiles": {
+    "server": {
+      "commandName": "Project",
+      "workingDirectory": "C:\\projects\\SAFE-Chat\\src\\Server"
+    }
+  }
+}

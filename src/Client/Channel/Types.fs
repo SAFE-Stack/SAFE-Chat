@@ -19,7 +19,7 @@ type 't Envelope = {
 
 type ChannelId = string // I do know it should be single case type
 type ChannelInfo = {
-    Id: string
+    Id: ChannelId
     Name: string
     Topic: string
     UserCount: int
@@ -33,7 +33,7 @@ type ChannelData = {
 }
 
 type Msg =
-    | Init of ChannelInfo * UserInfo list
+    | Init of ChannelInfo * UserInfo list * (UserId * string Envelope) list
     | Update of ChannelInfo
     | AppendMessage of Message Envelope
     | AppendUserMessage of UserId * string Envelope

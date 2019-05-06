@@ -11,8 +11,8 @@ module Views =
     let private partUser (session : ClientSession) = 
         div ["id", "part-user"] [
             match session with
-            | UserLoggedOn user ->
-                yield p [] [Text (sprintf "Logged on as %s" (getUserNick user))]
+            | UserLoggedOn (RegisteredUser (_, user)) ->
+                yield p [] [Text (sprintf "Logged on as %s" user.nick)]
                 yield p [][]
                 yield a "/" [] [Text "Proceed to chat screen"]
                 yield p [][]

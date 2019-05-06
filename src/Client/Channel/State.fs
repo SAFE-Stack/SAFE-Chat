@@ -17,24 +17,32 @@ let unknownUser userId () = {
     Id = userId; Nick = "Unknown #" + userId; Status = ""
     IsBot = false; Online = true; ImageUrl = None; isMe = false}
 
+let mapUser users userId =
+    users
+    |> Map.tryFind userId
+    |> Option.defaultWith (unknownUser userId)
+
+let mapMessage { Id = id; Ts = ts; Content = text} author =
+    { Id = id; Ts = ts; Content = UserMessage (text, author) }
+
 let update (msg: Msg) state: (ChannelData * Msg Cmd) =
 
     match msg with
-    | Init (info, userlist) ->
-        { Info = info; Messages = []; PostText = ""
-          Users = userlist |> List.map (fun u -> u.Id, u) |> Map.ofList}, Cmd.none
+    | Init (info, userlist, messagelist) ->
+        let users = userlist |> List.map (fun u -> u.Id, u) |> Map.ofList
+        let messages = messagelist |> List.map (fun (u, msg) -> mapMessage msg (mapUser users u))
+        in
+        { Info = info; Messages = messages; PostText = ""; Users = users }, Cmd.none
     | Update info ->
         { state with Info = info }, Cmd.none
 
     | AppendMessage message ->
         { state with Messages = state.Messages @ [message] }, Cmd.none
 
-    | AppendUserMessage (userId, { Id = id; Ts = ts; Content = text}) ->
-        let authorInfo =
-            state.Users
-            |> Map.tryFind userId
-            |> Option.defaultWith (unknownUser userId)
-        let message = { Id = id; Ts = ts; Content = UserMessage (text, authorInfo) }
+    | AppendUserMessage (userId, message) ->
+        let author = mapUser state.Users userId
+        let message = mapMessage message author
+        in
         { state with Messages = state.Messages @ [message] }, Cmd.none
 
     | UserJoined user ->

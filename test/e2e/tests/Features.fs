@@ -23,8 +23,12 @@ let all () =
             |> Expect.contains "newly added channel" "MyPersonalChannel"
 
         click Selectors.channelLeaveBtn
+
+        sleep ()
+
         elements Selectors.menuSwitchChannelTitle |> List.map (fun e -> e.Text)
             |> Expect.all "channel is not removed" ((<>) "MyPersonalChannel")
+        sleep ()    // FIXME maybe the reason is incorrect events order
 
         ()
 

@@ -1,13 +1,11 @@
-module AboutFlow
+module AboutChannelActor
 
-open Akka.Actor
 open Akkling
-
 open Suave.Logging
 
 open ChatTypes
 
-let internal logger = Log.create "aboutflow"
+let private logger = Log.create "aboutflow"
 
 let private aboutMessage =
     [   """## Welcome to F# Chat
@@ -23,39 +21,38 @@ F# Chat application built with Fable, Elmish, React, Suave, Akka.Streams, Akklin
 * **/nick <newnick>** - changes your nickname
 * **/status <newstatus>** - change status
 * **/avatar <imageUrl>** - change user avatar
-"""
-]
+""" ]
 
-let createActor systemUser (system: IActorRefFactory) =
+let props systemUser =
 
-    // TODO put user to map
+    // TODO put to actor state, otherwise only one instance would be supported
     let mutable users = Map.empty
+    let mkChatMessage message =
+        ChatMessage { ts = (0, System.DateTime.Now); author =systemUser; message = Message message }
 
     let rec behavior (ctx: Actor<_>) =
         function
-        | NewParticipant (user, subscriber) ->
+        | ChannelCommand (NewParticipant (user, subscriber)) ->
             users <- users |> Map.add user subscriber
             logger.debug (Message.eventX "Sending about to {user}" >> Message.setFieldValue "user" user)
-            let ts = (0, System.DateTime.Now)
 
-            aboutMessage |> List.indexed |> List.iter (fun (i, m) ->
-                ctx.System.Scheduler.ScheduleTellOnce( System.TimeSpan.FromMilliseconds(400. * float i), subscriber, ChatMessage (ts, systemUser, Message m))
+            aboutMessage |> List.indexed |> List.iter (fun (i, msgText) ->
+                ctx.System.Scheduler.ScheduleTellOnce( System.TimeSpan.FromMilliseconds(400. * float i), subscriber, mkChatMessage msgText)
                 )
             // sending messages with some delay. Sending while flow is initialized causes intermittently dropped messages
             ignored ()
 
-        | ParticipantLeft user ->
+        | ChannelCommand (ParticipantLeft user) ->
             users <- users |> Map.remove user
             logger.debug (Message.eventX "Participant left {user}" >> Message.setFieldValue "user" user)
             ignored ()
 
-        | NewMessage (user, _) ->
-            let ts = (0, System.DateTime.Now)
+        | ChannelCommand (PostMessage (user, _)) ->
             let sub = users |> Map.find user
-            do sub <! ChatMessage (ts, systemUser, Message "> Sorry, this feature is not implemented yet.")
+            do sub <! mkChatMessage "> Sorry, this feature is not implemented yet."
             ignored ()
 
-        | ListUsers ->
+        | ChannelCommand ListUsers ->
             do ctx.Sender() <! [systemUser]
             ignored ()
 
@@ -63,5 +60,5 @@ let createActor systemUser (system: IActorRefFactory) =
             ignored ()
 
     in
-    props <| actorOf2 behavior |> (spawn system null)
+    props <| actorOf2 behavior
 
