@@ -1,6 +1,7 @@
 module App
 
 open System.Net
+open System.IO
 
 open Suave
 open Suave.OAuth
@@ -29,14 +30,13 @@ open UserSessionFlow
 // ---------------------------------
 // Web app
 // ---------------------------------
+let private (</>) a b = Path.Combine(a, b)
 
 module Secrets =
 
-    open System.IO
     open Suave.Utils
     open Microsoft.Extensions.Configuration
     
-    let (</>) a b = Path.Combine(a, b)
     let CookieSecretFile = "CHAT_DATA" </> "COOKIE_SECRET"
     let OAuthConfigFile = "CHAT_DATA" </> "suave.oauth.config"
 
@@ -79,7 +79,9 @@ type ServerActor = IActorRef<ChatServer.ServerCommand>
 let mutable private appServerState = None
 
 let startChatServer () = async {
-    let config = ConfigurationFactory.ParseString """akka {  
+    let inline replace (str: string, sub: string) : string -> string = function s -> s.Replace(str, sub) 
+    let journalFileName: string = "CHAT_DATA" </> "journal.db"
+    let configStr = """akka {  
     stdout-loglevel = WARNING
     loglevel = DEBUG
     persistence {
@@ -87,7 +89,7 @@ let startChatServer () = async {
             plugin = "akka.persistence.journal.sqlite"
             sqlite {
                 class = "Akka.Persistence.Sqlite.Journal.SqliteJournal, Akka.Persistence.Sqlite"
-                connection-string = "Data Source=CHAT_DATA\\journal.db;cache=shared;"
+                connection-string = "Data Source=$JOURNAL$;cache=shared;"
                 connection-timeout = 30s
                 auto-initialize = on
 
@@ -113,7 +115,9 @@ let startChatServer () = async {
             unhandled = on
         }
     }
-    }"""
+}"""
+    let config = configStr |> replace ("$JOURNAL$", journalFileName) |> ConfigurationFactory.ParseString
+
     let actorSystem = ActorSystem.Create("chatapp", config)
     let userStore = UserStore.UserStore actorSystem
 
