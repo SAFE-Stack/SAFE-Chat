@@ -8,6 +8,7 @@ open ChatTypes
 open ChatUser
 
 open Suave.Logging
+open Newtonsoft.Json
 
 let private logger = Log.create "userstore"
 
@@ -15,7 +16,7 @@ module UserIds =
     let system = UserId "sys"
     let echo = UserId "echo"
 
-module private StoreImplementation =
+module StoreImplementation =
 
     type ErrorInfo = ErrorInfo of string
 
