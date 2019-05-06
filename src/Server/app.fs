@@ -116,7 +116,7 @@ let startChatServer () = async {
         }
     }
 }"""
-    let config = configStr |> replace ("$JOURNAL$", journalFileName) |> ConfigurationFactory.ParseString
+    let config = configStr |> replace ("$JOURNAL$", replace ("\\", "\\\\") journalFileName) |> ConfigurationFactory.ParseString
 
     let actorSystem = ActorSystem.Create("chatapp", config)
     let userStore = UserStore.UserStore actorSystem
