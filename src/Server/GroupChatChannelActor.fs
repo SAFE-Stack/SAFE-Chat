@@ -52,26 +52,26 @@ let props<'User, 'Message when 'User: comparison> lastUserLeft =
             | ChannelCommand cmd ->
                 let eventId = state.LastEventId + 1
                 let ts = eventId, System.DateTime.Now
-                let mkPartiesMsgInfo f user parties = f { ts = ts; user = user;all = parties |> allMembers }
+                let mkPartiesMsgInfo (f, user, parties) = f { ts = ts; user = user;all = parties |> allMembers }
 
                 match cmd with
                 | NewParticipant (user, subscriber) ->
                     logger.debug (Message.eventX "NewParticipant {user}" >> Message.setFieldValue "user" user)
 
                     let parties = state.Parties |> Map.add user subscriber
-                    do dispatch state.Parties <| mkPartiesMsgInfo Joined user parties
-
                     let newState = { state with LastEventId = eventId; Parties = parties }
-                    // subscriber <! JoinedChannel (mkChannelInfo newState)
-                    // TODO
-                    ctx.Schedule (TimeSpan.FromMilliseconds 5.) subscriber (JoinedChannel (mkChannelInfo newState)) |> ignore
+
+                    subscriber <! JoinedChannel (mkChannelInfo newState)
+                    do dispatch state.Parties <| mkPartiesMsgInfo (Joined, user, parties)
+
+                    // ctx.Schedule (TimeSpan.FromMilliseconds 5.) subscriber (JoinedChannel (mkChannelInfo newState)) |> ignore
 
                     return loop newState
 
                 | ParticipantLeft user ->
                     logger.debug (Message.eventX "Participant left {user}" >> Message.setFieldValue "user" user)
                     let parties = state.Parties |> Map.remove user
-                    do dispatch state.Parties <| mkPartiesMsgInfo Left user parties
+                    do dispatch state.Parties <| mkPartiesMsgInfo (Left, user, parties)
 
                     if parties |> Map.isEmpty then
                         logger.debug (Message.eventX "Last user left the channel")
