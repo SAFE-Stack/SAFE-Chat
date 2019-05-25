@@ -1,12 +1,12 @@
 module Channel.View
 
 open Fable.Core.JsInterop
-open Fable.Helpers.React
+open Fable.React
 
 open Props
 open Types
 
-open Fable.ReactMarkdownImport
+// open Fable.ReactMarkdownImport TODO
 
 let private formatTs (ts: System.DateTime) =
   match (System.DateTime.Now - ts) with
@@ -61,7 +61,8 @@ let chatInfo dispatch (model: ChannelData) =
     ]
 
 let message (text: string) =
-    [ reactMarkdown [Source text] ]
+    // [ reactMarkdown [Source text] ] TODO
+    [ str text ]
 
 let messageList (messages: Message Envelope list) =
     div

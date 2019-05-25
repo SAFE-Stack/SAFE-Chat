@@ -15,22 +15,26 @@ nuget Fable.JsonConverter
 nuget Microsoft.Extensions.Configuration
 nuget Microsoft.Extensions.Configuration.Json
 
-nuget Fable.Elmish.HMR
 nuget FSharp.Core
-nuget Fable.Core
-nuget Fable.Elmish.React
-nuget Fable.Elmish.Browser
-nuget Fable.Elmish.Debugger
-nuget Fable.Websockets.Elmish
 
-clitool Microsoft.DotNet.Watcher.Tools 2.0.0
-clitool dotnet-fable
+group Client
+    source https://api.nuget.org/v3/index.json
+    framework: netstandard2.0
+    storage: none
+
+    nuget Fable.Elmish.HMR
+    nuget Fable.Core
+    nuget Fable.Browser.Dom
+    nuget Fable.Elmish.React
+    nuget Fable.Elmish.Browser
+    nuget Fable.Elmish.Debugger
+    nuget Elmish.Bridge.Client
 
 group UITests
-  source https://nuget.org/api/v2
-  framework >= net461
-  nuget FSharp.Core
-  nuget Canopy
-  nuget Expecto
-  nuget phantomjs
-  nuget Selenium.WebDriver.ChromeDriver
+    source https://nuget.org/api/v2
+    framework >= net461
+    nuget FSharp.Core
+    nuget Canopy
+    nuget Expecto
+    nuget phantomjs
+    nuget Selenium.WebDriver.ChromeDriver

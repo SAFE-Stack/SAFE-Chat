@@ -1,7 +1,7 @@
 module App.State
 
 open Elmish
-open Elmish.Browser.Navigation
+open Elmish.Navigation
 open Fable.Websockets.Elmish
 open Router
 open Types

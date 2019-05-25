@@ -3,7 +3,7 @@ module rec Fable.ReactMarkdownImport
 open System
 open Fable.Core
 open Fable.Core.JsInterop
-open Fable.Import.React
+open Fable.React
 open Fable.Import.JS
 
 type ReactMarkdownProps =
@@ -69,4 +69,4 @@ type [<StringEnum>] [<RequireQualifiedAccess>] NodeType =
 
 let ReactMarkdown : ComponentClass<obj> = importDefault "react-markdown"
 let inline reactMarkdown (props : ReactMarkdownProps list) =
-    Fable.Helpers.React.from ReactMarkdown (keyValueList CaseRules.LowerFirst props) []
+    Fable.React.from ReactMarkdown (keyValueList CaseRules.LowerFirst props) []

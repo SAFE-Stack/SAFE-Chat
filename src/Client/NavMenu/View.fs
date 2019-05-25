@@ -1,13 +1,13 @@
 module NavMenu.View
 
 open Fable.Core.JsInterop
-open Fable.Helpers.React
+open Fable.React
 open Props
 
 open Router
 open Channel.Types
 open Chat.Types
-open Fable.Import
+open Browser.Dom
 
 let menuItem htmlProp name topic isCurrent =
     button
@@ -18,7 +18,7 @@ let menuItem htmlProp name topic isCurrent =
 
 let menuItemChannel (ch: ChannelInfo) currentPage = 
     let targetRoute = Channel ch.Id
-    let jump _ = Browser.location.hash <- toHash targetRoute
+    let jump _ = document.location.hash <- toHash targetRoute
     menuItem (OnClick jump) ch.Name ch.Topic (targetRoute = currentPage)
 
 let menuItemChannelJoin dispatch = 
@@ -39,7 +39,7 @@ let menu (chatData: ChatState) currentPage dispatch =
             span [Id "userstatus"] [ str me.Status]
             button
               [ Id "logout"; ClassName "btn"; Title "Logout"
-                OnClick (fun _ -> Browser.location.href <- "/logoff") ]
+                OnClick (fun _ -> document.location.href <- "/logoff") ]
               [ i [ ClassName "mdi mdi-logout-variant"] [] ]
            ]
         yield h2 []

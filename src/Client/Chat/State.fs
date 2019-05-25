@@ -1,9 +1,10 @@
 module Chat.State
 
-open Elmish
-open Elmish.Browser.Navigation
+open Browser.Dom
 
-open Fable.Import.Browser
+open Elmish
+open Elmish.Navigation
+
 open Fable.Websockets.Elmish
 open Fable.Websockets.Protocol
 open Fable.Websockets.Elmish.Types
@@ -189,24 +190,26 @@ module private Implementation =
                         state, Cmd.none
 
                 | Protocol.Pong ->
-                    console.debug <| sprintf "Pong %s" reqId
+                    
+                    console.debug (sprintf "Pong %s" reqId)
                     state, Cmd.none
 
                 | Protocol.Error error ->
-                    console.error <| sprintf "Server replied with error %A" error    // FIXME report error to user
+                    console.error (sprintf "Server replied with error %A" error)    // FIXME report error to user
                     state, Cmd.none
 
             | protocolMsg ->
                 let chatData, cmd = chatUpdate isMe protocolMsg chat
                 Connected (me, chatData), cmd
         | other ->
-            console.info <| sprintf "Socket message %A" other
+            console.info (sprintf "Socket message %A" other)
             (other, Cmd.none)
 
 open Implementation
+open Browser.Types
 
 let init () : ChatState * Cmd<Msg> =
-    let socketAddr = sprintf "ws://%s/api/socket" location.host
+    let socketAddr = sprintf "ws://%s/api/socket" document.location.host
     console.debug ("Opening socket at '%s'", socketAddr)
     NotConnected, Cmd.tryOpenSocket socketAddr
 
@@ -218,7 +221,7 @@ let update msg state : ChatState * Cmd<Msg> =
             let newChat, cmd = applicationMsgUpdate amsg chat
             Connected(me, newChat), cmd
         | _ ->
-            console.error <| "Failed to process channel message. Server is not connected"
+            console.error "Failed to process channel message. Server is not connected"
             state, Cmd.none
     | WebsocketMsg (socket, Opened) ->
         Connected (UserInfo.Anon, { ChatData.Empty with socket = socket }), Cmd.ofSocketMessage socket Protocol.ServerMsg.Greets

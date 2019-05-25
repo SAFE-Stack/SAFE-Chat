@@ -1,8 +1,8 @@
 module App.View
 
 open Elmish
-open Elmish.Browser.Navigation
-open Elmish.Browser.UrlParser
+open Elmish.Navigation
+open Elmish.UrlParser
 open Fable.Websockets.Elmish
 open Fable.Core.JsInterop
 
@@ -11,7 +11,7 @@ open App.State
 open Router
 open Chat.Types
 
-open Fable.Helpers.React
+open Fable.React
 open Props
 
 importAll "./sass/app.scss"
@@ -50,7 +50,6 @@ Program.mkProgram init update root
 |> Program.toNavigable (parseHash Router.route) urlUpdate
 #if DEBUG
 |> Program.withDebugger
-|> Program.withHMR
 #endif
 |> Program.withReact "elmish-app"
 |> Program.run

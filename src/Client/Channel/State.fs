@@ -2,7 +2,7 @@ module Channel.State
 
 open Elmish
 open Types
-open Fable.Import
+open Browser.Dom
 
 let init () : ChannelData * Cmd<Msg> =
     {Users = Map.empty; Messages = []; PostText = ""; Info = ChannelInfo.Empty}, Cmd.none
@@ -89,5 +89,5 @@ let update (msg: Msg) state: (ChannelData * Msg Cmd) =
 
     | Leave
     | Forward _ ->
-        Browser.console.error <| sprintf "%A message is not expected in channel update." msg
+        console.error (sprintf "%A message is not expected in channel update." msg)
         state, Cmd.none
