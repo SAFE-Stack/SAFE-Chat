@@ -2,12 +2,11 @@ module Chat.Types
 
 open FsChat
 open Fable.Websockets.Elmish
-open Fable.Websockets.Elmish.Types
 
 open Channel.Types
 
 type ChatData = {
-    socket: SocketHandle<Protocol.ServerMsg, Protocol.ClientMsg>
+    socket: SocketHandle<Protocol.ServerMsg>
     ChannelList: Map<ChannelId,ChannelInfo>
     Channels: Map<ChannelId, ChannelData>
     NewChanName: string option   // name for new channel (part of SetCreateChanName), None - panel is hidden

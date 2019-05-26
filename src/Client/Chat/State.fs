@@ -7,7 +7,6 @@ open Elmish.Navigation
 
 open Fable.Websockets.Elmish
 open Fable.Websockets.Protocol
-open Fable.Websockets.Elmish.Types
 
 open Router
 

@@ -7,7 +7,8 @@
     <Compile Include="Websockets/Protocol.fs" />
     <Compile Include="Websockets/Observables.fs" />
     <Compile Include="Websockets/Client.fs" />
-    <Compile Include="Websockets/Elmish.fs" />
+    <Compile Include="Websockets/SocketHandle.fs" />
+    <Compile Include="Websockets/Cmd.fs" />
 
     <!-- Global to the app -->
     <Compile Include="../Shared/ChatProtocol.fs" />

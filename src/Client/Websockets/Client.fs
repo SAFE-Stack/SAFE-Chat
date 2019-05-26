@@ -17,6 +17,7 @@ let toObj () = obj()
 
 let inline private receiveMessage<'clientProtocol> (receiveSubject:Subject<WebsocketEvent<'clientProtocol>>) (msgEvent:MessageEvent) =         
     try
+        Dom.console.log("receivemsg", msgEvent)
         let msg = ofJson<'clientProtocol> (string msgEvent.data)
         Msg msg
     with     
