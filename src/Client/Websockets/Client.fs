@@ -1,7 +1,6 @@
 module Fable.Websockets.Client
 
 open System
-open Fable.Import
 
 open Fable.Websockets.Observables
 open Fable.Websockets.Protocol
@@ -14,17 +13,11 @@ open Thoth.Json
 let inline private toJson x = Encode.Auto.toString(0, x)
 let inline private ofJson<'T> json = Decode.Auto.unsafeFromString<'T>(json)
 
-// open Fable.Core.JS
-// let inline private toJson x = JSON.stringify x
-// let inline private ofJson<'T> json = JSON.parse json :?> 'T
-
 let toObj () = obj()
 
 let inline private receiveMessage<'clientProtocol> (receiveSubject:Subject<WebsocketEvent<'clientProtocol>>) (msgEvent:MessageEvent) =         
     try
-        Dom.console.log("receivemsg1", msgEvent.data)
         let msg = ofJson<'clientProtocol> (string msgEvent.data)
-        Dom.console.log("receivemsg2", msg)
         Msg msg
     with     
         | e -> Exception e

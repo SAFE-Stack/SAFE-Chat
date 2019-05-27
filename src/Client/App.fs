@@ -51,5 +51,5 @@ Program.mkProgram init update root
 #if DEBUG
 |> Program.withDebugger
 #endif
-|> Program.withReact "elmish-app"
+|> Program.withReactBatched "elmish-app"
 |> Program.run

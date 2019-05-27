@@ -6,7 +6,7 @@ open Fable.React
 open Props
 open Types
 
-// open Fable.ReactMarkdownImport TODO
+open Fable.ReactMarkdownImport
 
 let private formatTs (ts: System.DateTime) =
   match (System.DateTime.Now - ts) with
@@ -61,8 +61,7 @@ let chatInfo dispatch (model: ChannelData) =
     ]
 
 let message (text: string) =
-    // [ reactMarkdown [Source text] ] TODO
-    [ str text ]
+    [ reactMarkdown [Source text ]]
 
 let messageList (messages: Message Envelope list) =
     div
@@ -96,4 +95,4 @@ let root (model: ChannelData) dispatch =
       messageList model.Messages
       div [ ClassName "fs-splitter" ] []
       messageInput dispatch model
-     ]
+    ]
