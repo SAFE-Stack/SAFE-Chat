@@ -1,13 +1,6 @@
 module Json
 
-open Newtonsoft.Json
+open Thoth.Json.Net
 
-let private jsonConverter = Fable.JsonConverter() :> JsonConverter
-
-/// Object to Json 
-let internal json<'t> (myObj:'t) =   
-    JsonConvert.SerializeObject (myObj, [|jsonConverter|])
-
-/// Object from Json 
-let internal unjson<'t> (jsonString:string)  : 't =  
-    JsonConvert.DeserializeObject<'t> (jsonString, [|jsonConverter|])
+let inline json<'T> (x: 'T) = Encode.Auto.toString(0, x)
+let inline unjson<'T> json = Decode.Auto.unsafeFromString<'T>(json)

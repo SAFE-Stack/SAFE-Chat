@@ -6,6 +6,6 @@ Suave
 Suave.OAuth
 Suave.Experimental
 Newtonsoft.Json
-Fable.JsonConverter
 Microsoft.Extensions.Configuration
 Microsoft.Extensions.Configuration.Json
+Thoth.Json.Net

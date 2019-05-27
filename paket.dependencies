@@ -1,6 +1,7 @@
 source https://www.nuget.org/api/v2
 storage: none
 
+nuget Fable.JsonConverter
 nuget Suave
 nuget Suave.OAuth
 nuget Suave.Experimental
@@ -10,12 +11,12 @@ nuget Akkling.Persistence
 nuget Akka.Persistence.Sqlite
 
 nuget Newtonsoft.Json
-nuget Fable.JsonConverter
 
 nuget Microsoft.Extensions.Configuration
 nuget Microsoft.Extensions.Configuration.Json
 
 nuget FSharp.Core
+nuget Thoth.Json.Net
 
 group Client
     source https://api.nuget.org/v3/index.json
