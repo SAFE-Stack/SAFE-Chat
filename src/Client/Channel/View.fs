@@ -69,7 +69,7 @@ let messageList (messages: Message Envelope list) =
       [ for m in messages ->
           match m.Content with
           | UserMessage (text, user) ->
-              // Fable.Import.Browser.console.warn <| sprintf "%A %A" text user
+              // Browser.Dom.console.warn (sprintf "%A %A" text user)
               div
                 [ classList ["fs-message", true; "user", user.isMe ] ]
                 [ div

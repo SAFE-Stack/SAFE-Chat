@@ -3,29 +3,15 @@ module Chat.Types
 open FsChat
 open Fable.Websockets.Elmish
 
-open Channel.Types
-
-type ChatData = {
+// TODO rename to a ServerInfo
+type ChatInfo = {
     socket: SocketHandle<Protocol.ServerMsg>
-    ChannelList: Map<ChannelId,ChannelInfo>
-    Channels: Map<ChannelId, ChannelData>
-    NewChanName: string option   // name for new channel (part of SetCreateChanName), None - panel is hidden
-} with
-    static member Empty = {
-        socket = SocketHandle.Blackhole()
-        ChannelList = Map.empty; Channels = Map.empty; NewChanName = None}
+    user: Channel.Types.UserInfo
+    serverData: RemoteServer.Types.Model
+}
 
 type ChatState =
     | NotConnected
-    | Connected of UserInfo * ChatData
+    | Connected of ChatInfo
 
-type AppMsg =
-    | Nop
-    | ChannelMsg of ChannelId * Channel.Types.Msg
-    | SetNewChanName of string option
-    | CreateJoin
-    | Join of chanId: string
-
-    | Leave of chanId: string
- 
-type Msg = Msg<Protocol.ServerMsg, Protocol.ClientMsg, AppMsg>
+type Msg = Msg<Protocol.ServerMsg, Protocol.ClientMsg, RemoteServer.Types.Msg>

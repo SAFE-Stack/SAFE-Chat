@@ -21,12 +21,12 @@ let root model dispatch =
     let mainAreaView = function
         | Route.Overview -> [Overview.View.root]
         | Channel chan ->
-            let toChannelMessage m = ChannelMsg (chan, m)
+            let toChannelMessage m = RemoteServer.Types.ChannelMsg (chan, m)
 
             match model.chat with
-            | Connected (_,chatdata) when chatdata.Channels |> Map.containsKey chan ->
+            | Connected { serverData = { Channels = channels }} when channels |> Map.containsKey chan ->
 
-                Channel.View.root chatdata.Channels.[chan]
+                Channel.View.root channels.[chan]
                   (toChannelMessage >> ApplicationMsg >> ChatDataMsg >> dispatch)
 
             | _ ->

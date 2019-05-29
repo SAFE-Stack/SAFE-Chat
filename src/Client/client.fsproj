@@ -21,6 +21,9 @@
     <Compile Include="Channel/State.fs" />
     <Compile Include="Channel/View.fs" />
 
+    <Compile Include="RemoteServer/Types.fs" />
+    <Compile Include="RemoteServer/State.fs" />
+
     <Compile Include="Chat/Types.fs" />
     <Compile Include="Chat/State.fs" />
 

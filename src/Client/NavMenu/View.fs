@@ -1,13 +1,14 @@
 module NavMenu.View
 
+open Browser.Dom
 open Fable.Core.JsInterop
 open Fable.React
 open Props
 
 open Router
 open Channel.Types
+open RemoteServer.Types
 open Chat.Types
-open Browser.Dom
 
 let menuItem htmlProp name topic isCurrent =
     button
@@ -30,7 +31,7 @@ let menu (chatData: ChatState) currentPage dispatch =
     match chatData with
     | NotConnected ->
       [ div [] [str "not connected"] ]
-    | Connected (me, chat) ->
+    | Connected { user = me; serverData = chat } ->
       let opened, newChanName = chat.NewChanName |> function |Some text -> (true, text) |None -> (false, "")
       [ yield div
           [ ClassName "fs-user" ]
