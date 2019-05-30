@@ -3,14 +3,14 @@ module Chat.Types
 open FsChat
 open Fable.Websockets.Elmish
 
-// TODO rename to a ServerInfo
-type ChatInfo = {
+type ConnectionInfo = {
     socket: SocketHandle<Protocol.ServerMsg>
     serverData: RemoteServer.Types.Model
 }
 
 type ChatState =
     | NotConnected
-    | Connected of ChatInfo
+    | Connecting of SocketHandle<Protocol.ServerMsg>
+    | Connected of ConnectionInfo
 
 type Msg = Msg<Protocol.ServerMsg, Protocol.ClientMsg, RemoteServer.Types.Msg>

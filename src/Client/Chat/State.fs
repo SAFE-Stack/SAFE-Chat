@@ -30,11 +30,19 @@ let update msg state : ChatState * Cmd<Msg> =
             state, Cmd.none
 
     | WebsocketMsg (socket, Opened) ->
-        let remoteServerState, _ =  RemoteServer.State.init()   // TODO pass second parameter
-        Connected { serverData = remoteServerState; socket = socket }, Cmd.ofSocketMessage socket Protocol.ServerMsg.Greets
+        Connecting socket, Cmd.ofSocketMessage socket Protocol.ServerMsg.Greets
 
     | WebsocketMsg (_, Msg msg) ->
         match state with
+        | Connecting socket ->
+            match msg with
+            | Protocol.Hello hello ->
+                let serverData, cmd = RemoteServer.State.init hello
+                Connected { socket = socket; serverData = serverData }, cmd |> Cmd.map ApplicationMsg
+            | unknown ->
+                console.error ("Unexpected message in Connecting state, ignoring ", unknown)
+                state, Cmd.none
+
         | Connected ({ serverData = serverData } as chat) ->
             let newServerData, cmd = RemoteServer.State.chatUpdate msg serverData
             Connected { chat with serverData = newServerData }, cmd |> Cmd.map ApplicationMsg

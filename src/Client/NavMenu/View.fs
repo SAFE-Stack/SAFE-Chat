@@ -31,6 +31,8 @@ let menu (chatData: ChatState) currentPage dispatch =
     match chatData with
     | NotConnected ->
       [ div [] [str "not connected"] ]
+    | Connecting _ ->
+      [ div [] [str "connecting"] ]
     | Connected { serverData = { Me = me; NewChanName = newChanName; Channels = channels; ChannelList = channelList } } ->
       let opened, newChanName = newChanName |> function |Some text -> (true, text) |None -> (false, "")
       [ yield div

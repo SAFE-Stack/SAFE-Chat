@@ -55,10 +55,15 @@ module private Implementation =
 
 open Implementation
 
-let init () =
-    { Me = Channel.Types.UserInfo.Anon; ChannelList = Map.empty; Channels = Map.empty; NewChanName = None }, Cmd.none
+let init (hello: Protocol.HelloInfo) =
 
-let update (msg: Msg) (state: Model) :(Model * Msg Cmd * Protocol.ServerMsg option) = // TODO Cmd
+    let me = Conversions.mapUserInfo ((=) hello.me.id) hello.me
+    let channels = hello.channels |> List.map (fun ch -> ch.id, Conversions.mapChannel ch) |> Map.ofList
+    in
+    { ChannelList = channels; Me = me; Channels = Map.empty; NewChanName = None }, Cmd.none
+
+// Processes application (internal) message
+let update (msg: Msg) (state: Model) :(Model * Msg Cmd * Protocol.ServerMsg option) =
 
     match msg with
     | Nop -> state, Cmd.none, None
@@ -91,6 +96,7 @@ let update (msg: Msg) (state: Model) :(Model * Msg Cmd * Protocol.ServerMsg opti
     | Leave chanId ->
         state, Cmd.none, Protocol.Leave chanId |> toCommand
 
+// Processes server message
 let chatUpdate (msg: Protocol.ClientMsg) (state: Model) : Model * Cmd<Msg> =
 
     let isMe = (=) state.Me.Id
@@ -105,13 +111,6 @@ let chatUpdate (msg: Protocol.ClientMsg) (state: Model) : Model * Cmd<Msg> =
         {chat with Channels = chat.Channels |> Map.add channel.Id chanData}, cmd
 
     match msg with
-    | Protocol.Hello hello ->
-        let me = Conversions.mapUserInfo ((=) hello.me.id) hello.me
-        let channels = hello.channels |> List.map (fun ch -> ch.id, Conversions.mapChannel ch) |> Map.ofList
-        in
-        let remoteServerData, cmd = init()
-        { remoteServerData with ChannelList = channels; Me = me }, cmd
-
     | Protocol.CmdResponse (reqId, reply) ->
         match reply with
         | Protocol.UserUpdated newUser ->
@@ -167,3 +166,7 @@ let chatUpdate (msg: Protocol.ClientMsg) (state: Model) : Model * Cmd<Msg> =
         let chanInfo = state.ChannelList.[chanData.channelId]
         in
         updateChannelData isMe chanInfo chanData state |> mapCmd (fun msg -> ChannelMsg (chanData.channelId, msg))
+
+    | unknown ->
+        console.error ("Unexpected message in Connected state, ignoring ", unknown)
+        state, Cmd.none
