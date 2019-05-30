@@ -2,12 +2,13 @@ module RemoteServer.State
 
 open Browser.Dom
 open Elmish
+open Elmish.Navigation
 
 open FsChat
 open Types
 
 type private ChannelMsg = Channel.Types.Msg
-type private ChannelModel = Channel.Types.ChannelData
+type private ChannelModel = Channel.Types.Model
 
 module private Conversions =
 
@@ -55,7 +56,7 @@ module private Implementation =
 open Implementation
 
 let init () =
-    { ChannelList = Map.empty; Channels = Map.empty; NewChanName = None }, Cmd.none
+    { Me = Channel.Types.UserInfo.Anon; ChannelList = Map.empty; Channels = Map.empty; NewChanName = None }, Cmd.none
 
 let update (msg: Msg) (state: Model) :(Model * Msg Cmd * Protocol.ServerMsg option) = // TODO Cmd
 
@@ -90,18 +91,62 @@ let update (msg: Msg) (state: Model) :(Model * Msg Cmd * Protocol.ServerMsg opti
     | Leave chanId ->
         state, Cmd.none, Protocol.Leave chanId |> toCommand
 
-let chatUpdate isMe (msg: Protocol.ClientMsg) (state: Model) : Model * Cmd<Msg> =
+let chatUpdate (msg: Protocol.ClientMsg) (state: Model) : Model * Cmd<Msg> =
+
+    let isMe = (=) state.Me.Id
 
     let mapCmd f (state, cmd) = state, cmd |> Cmd.map f
     let ignoreCmd (state, _) = state, Cmd.none
 
+    let joinChannel channel (chat: RemoteServer.Types.Model) =
+        let chanData, cmd =
+            Channel.State.init() |> fst
+            |> Channel.State.update (Channel.Types.Init (channel, [], []))
+        {chat with Channels = chat.Channels |> Map.add channel.Id chanData}, cmd
+
     match msg with
+    | Protocol.Hello hello ->
+        let me = Conversions.mapUserInfo ((=) hello.me.id) hello.me
+        let channels = hello.channels |> List.map (fun ch -> ch.id, Conversions.mapChannel ch) |> Map.ofList
+        in
+        let remoteServerData, cmd = init()
+        { remoteServerData with ChannelList = channels; Me = me }, cmd
+
+    | Protocol.CmdResponse (reqId, reply) ->
+        match reply with
+        | Protocol.UserUpdated newUser ->
+            { state with Me = Conversions.mapUserInfo isMe newUser }, Cmd.none
+
+        | Protocol.CommandResponse.JoinedChannel chanInfo ->
+            let newServerData, cmd = state |> joinChannel (Conversions.mapChannel chanInfo)
+            in
+            newServerData, Cmd.batch [
+                  cmd |> Cmd.map (fun msg -> RemoteServer.Types.ChannelMsg (chanInfo.id, msg))
+                  Router.Channel chanInfo.id |> Router.toHash |> Navigation.newUrl ]
+
+        | Protocol.LeftChannel channelId ->
+            state.Channels |> Map.tryFind channelId
+            |> function
+            | Some _ ->
+                { state with Channels = state.Channels |> Map.remove channelId},
+                    Router.Overview |> Router.toHash |> Navigation.newUrl
+            | _ ->
+                console.error ("Channel not found", channelId)
+                state, Cmd.none
+
+        | Protocol.Pong ->
+            console.debug ("Pong", reqId)
+            state, Cmd.none
+
+        | Protocol.Error error ->
+            console.error ("Server replied with error", error)    // FIXME report error to user
+            state, Cmd.none
+
     | Protocol.ClientMsg.ChanMsg msg ->
         let channelCmd = msg |> Conversions.mapUserMessage |> Channel.Types.AppendUserMessage
         state |> updateChannel msg.chan (Channel.State.update channelCmd)
 
     | Protocol.ClientMsg.ServerEvent { evt = Protocol.ChannelEvent (chan, evt) } ->
-
         let userInfo user = Conversions.mapUserInfo isMe user
 
         let chan, message =
@@ -122,7 +167,3 @@ let chatUpdate isMe (msg: Protocol.ClientMsg) (state: Model) : Model * Cmd<Msg> 
         let chanInfo = state.ChannelList.[chanData.channelId]
         in
         updateChannelData isMe chanInfo chanData state |> mapCmd (fun msg -> ChannelMsg (chanData.channelId, msg))
-
-    | notProcessed ->
-        printfn "message was not processed: %A" notProcessed
-        state, Cmd.none

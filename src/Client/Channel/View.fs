@@ -45,7 +45,7 @@ let chanUsers (users: Map<string, UserInfo>) =
               li [] [str <| screenName u.Value]
           ]]
 
-let chatInfo dispatch (model: ChannelData) =
+let chatInfo dispatch (model: Model) =
   div
     [ ClassName "fs-chat-info" ]
     [ h1
@@ -89,7 +89,7 @@ let messageList (messages: Message Envelope list) =
       ]
 
 
-let root (model: ChannelData) dispatch =
+let root (model: Model) dispatch =
     [ chatInfo dispatch model
       div [ ClassName "fs-splitter" ] []
       messageList model.Messages

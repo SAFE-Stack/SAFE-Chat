@@ -1,10 +1,11 @@
 module RemoteServer.Types
 
-open Channel.Types
+open Channel.Types;
 
 type Model = {
-    ChannelList: Map<ChannelId,ChannelInfo>
-    Channels: Map<ChannelId, ChannelData>
+    Me: Channel.Types.UserInfo
+    ChannelList: Map<ChannelId, ChannelInfo>
+    Channels: Map<ChannelId, Channel.Types.Model>
     NewChanName: string option   // name for new channel (part of SetCreateChanName), None - panel is hidden
 }
 

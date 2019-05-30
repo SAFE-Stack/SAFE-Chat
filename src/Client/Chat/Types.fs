@@ -6,7 +6,6 @@ open Fable.Websockets.Elmish
 // TODO rename to a ServerInfo
 type ChatInfo = {
     socket: SocketHandle<Protocol.ServerMsg>
-    user: Channel.Types.UserInfo
     serverData: RemoteServer.Types.Model
 }
 

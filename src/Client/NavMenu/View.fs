@@ -31,8 +31,8 @@ let menu (chatData: ChatState) currentPage dispatch =
     match chatData with
     | NotConnected ->
       [ div [] [str "not connected"] ]
-    | Connected { user = me; serverData = chat } ->
-      let opened, newChanName = chat.NewChanName |> function |Some text -> (true, text) |None -> (false, "")
+    | Connected { serverData = { Me = me; NewChanName = newChanName; Channels = channels; ChannelList = channelList } } ->
+      let opened, newChanName = newChanName |> function |Some text -> (true, text) |None -> (false, "")
       [ yield div
           [ ClassName "fs-user" ]
           [ UserAvatar.View.root me.ImageUrl
@@ -60,7 +60,7 @@ let menu (chatData: ChatState) currentPage dispatch =
             OnKeyPress (fun ev -> if !!ev.which = 13 || !!ev.keyCode = 13 then dispatch CreateJoin)
             ]
 
-        for (_, ch) in chat.Channels |> Map.toSeq do
+        for (_, ch) in channels |> Map.toSeq do
           yield menuItemChannel ch.Info currentPage
 
         yield h2 []
@@ -69,7 +69,7 @@ let menu (chatData: ChatState) currentPage dispatch =
                 [ ClassName "btn"; Title "Search" ]
                 [ i [ ClassName "mdi mdi-magnify" ] []]
             ]
-        for (chid, ch) in chat.ChannelList |> Map.toSeq do
-            if chat.Channels |> Map.containsKey chid |> not then
+        for (chid, ch) in channelList |> Map.toSeq do
+            if not(channels |> Map.containsKey chid) then
                 yield menuItemChannelJoin dispatch ch
       ]
