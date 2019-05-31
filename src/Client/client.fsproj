@@ -21,20 +21,21 @@
     <Compile Include="Channel/State.fs" />
     <Compile Include="Channel/View.fs" />
 
-    <Compile Include="RemoteServer/Types.fs" />
-    <Compile Include="RemoteServer/State.fs" />
+    <Compile Include="ChatServer/Types.fs" />
+    <Compile Include="ChatServer/State.fs" />
 
-    <Compile Include="Chat/Types.fs" />
-    <Compile Include="Chat/State.fs" />
+    <Compile Include="Connection/Types.fs" />
+    <Compile Include="Connection/State.fs" />
 
     <Compile Include="Overview/View.fs" />
 
     <Compile Include="NavMenu/View.fs" />
 
     <!-- App -->
-    <Compile Include="Types.fs" />
-    <Compile Include="State.fs" />
-    <Compile Include="App.fs" />
+    <Compile Include="App/Types.fs" />
+    <Compile Include="App/State.fs" />
+    <Compile Include="App/View.fs" />
+    <Compile Include="Program.fs" />
   </ItemGroup>
   <Import Project="..\..\.paket\Paket.Restore.targets" />
 </Project>

@@ -1,4 +1,4 @@
-module RemoteServer.State
+module ChatServer.State
 
 open Browser.Dom
 open Elmish
@@ -40,7 +40,7 @@ module private Implementation =
             | newData, cmd when newData = channel && cmd.IsEmpty -> chat, Cmd.none
             | newData, cmd ->
                 { chat with Channels = chat.Channels |> Map.add chanId newData },
-                  cmd |> Cmd.map (fun x -> RemoteServer.Types.ChannelMsg (chanId, x))
+                  cmd |> Cmd.map (fun x -> ChatServer.Types.ChannelMsg (chanId, x))
         | None ->
             console.error ("Channel %s update failed - channel not found", chanId)
             chat, Cmd.none
@@ -62,49 +62,15 @@ let init (hello: Protocol.HelloInfo) =
     in
     { ChannelList = channels; Me = me; Channels = Map.empty; NewChanName = None }, Cmd.none
 
-// Processes application (internal) message
-let update (msg: Msg) (state: Model) :(Model * Msg Cmd * Protocol.ServerMsg option) =
-
-    match msg with
-    | Nop -> state, Cmd.none, None
-
-    | ChannelMsg (chanId, ChannelMsg.Forward text) ->
-        let message =
-            match text with
-            | cmd when cmd.StartsWith "/" -> Protocol.UserCommand {command = cmd; chan = chanId} |> toCommand
-            | _ -> Some <| Protocol.UserMessage {text = text; chan = chanId}
-
-        state, Cmd.none, message
-
-    | ChannelMsg (chanId, ChannelMsg.Leave) ->
-        state, Cmd.none, Protocol.Leave chanId |> toCommand
-
-    | ChannelMsg (chanId, msg) ->
-        let newState, cmd = state |> updateChannel chanId (Channel.State.update msg)
-        newState, cmd, None
-
-    | SetNewChanName name ->
-        { state with NewChanName = name }, Cmd.none, None
-        
-    | CreateJoin ->
-        match state.NewChanName with
-        | Some channelName ->
-            state, Cmd.ofMsg <| (SetNewChanName None), Protocol.JoinOrCreate channelName |> toCommand
-        | None -> state, Cmd.none, None
-    | Join chanId ->
-        state, Cmd.none, Protocol.Join chanId |> toCommand
-    | Leave chanId ->
-        state, Cmd.none, Protocol.Leave chanId |> toCommand
-
 // Processes server message
-let chatUpdate (msg: Protocol.ClientMsg) (state: Model) : Model * Cmd<Msg> =
+let private processServerMessage (msg: Protocol.ClientMsg) (state: Model) : Model * Cmd<Msg> =
 
     let isMe = (=) state.Me.Id
 
     let mapCmd f (state, cmd) = state, cmd |> Cmd.map f
     let ignoreCmd (state, _) = state, Cmd.none
 
-    let joinChannel channel (chat: RemoteServer.Types.Model) =
+    let joinChannel channel (chat: ChatServer.Types.Model) =
         let chanData, cmd =
             Channel.State.init() |> fst
             |> Channel.State.update (Channel.Types.Init (channel, [], []))
@@ -120,7 +86,7 @@ let chatUpdate (msg: Protocol.ClientMsg) (state: Model) : Model * Cmd<Msg> =
             let newServerData, cmd = state |> joinChannel (Conversions.mapChannel chanInfo)
             in
             newServerData, Cmd.batch [
-                  cmd |> Cmd.map (fun msg -> RemoteServer.Types.ChannelMsg (chanInfo.id, msg))
+                  cmd |> Cmd.map (fun msg -> ChatServer.Types.ChannelMsg (chanInfo.id, msg))
                   Router.Channel chanInfo.id |> Router.toHash |> Navigation.newUrl ]
 
         | Protocol.LeftChannel channelId ->
@@ -170,3 +136,41 @@ let chatUpdate (msg: Protocol.ClientMsg) (state: Model) : Model * Cmd<Msg> =
     | unknown ->
         console.error ("Unexpected message in Connected state, ignoring ", unknown)
         state, Cmd.none
+
+// Processes application (internal) message
+let update (msg: Msg) (state: Model) :(Model * Msg Cmd * Protocol.ServerMsg option) =
+
+    match msg with
+    | Nop -> state, Cmd.none, None
+
+    | ChannelMsg (chanId, ChannelMsg.Forward text) ->
+        let message =
+            match text with
+            | cmd when cmd.StartsWith "/" -> Protocol.UserCommand {command = cmd; chan = chanId} |> toCommand
+            | _ -> Some <| Protocol.UserMessage {text = text; chan = chanId}
+
+        state, Cmd.none, message
+
+    | ChannelMsg (chanId, ChannelMsg.Leave) ->
+        state, Cmd.none, Protocol.Leave chanId |> toCommand
+
+    | ChannelMsg (chanId, msg) ->
+        let newState, cmd = state |> updateChannel chanId (Channel.State.update msg)
+        newState, cmd, None
+
+    | SetNewChanName name ->
+        { state with NewChanName = name }, Cmd.none, None
+        
+    | CreateJoin ->
+        match state.NewChanName with
+        | Some channelName ->
+            state, Cmd.ofMsg <| (SetNewChanName None), Protocol.JoinOrCreate channelName |> toCommand
+        | None -> state, Cmd.none, None
+    | Join chanId ->
+        state, Cmd.none, Protocol.Join chanId |> toCommand
+    | Leave chanId ->
+        state, Cmd.none, Protocol.Leave chanId |> toCommand
+
+    | ServerMessage message ->
+        let state, cmd = processServerMessage message state
+        state, cmd, None

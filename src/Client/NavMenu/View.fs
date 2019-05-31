@@ -7,8 +7,8 @@ open Props
 
 open Router
 open Channel.Types
-open RemoteServer.Types
-open Chat.Types
+open ChatServer.Types
+open Connection.Types
 
 let menuItem htmlProp name topic isCurrent =
     button
@@ -27,7 +27,7 @@ let menuItemChannelJoin dispatch =
     fun (ch: ChannelInfo) ->
       menuItem (OnClick <| join ch.Id) ch.Name ch.Topic false
 
-let menu (chatData: ChatState) currentPage dispatch =
+let menu (chatData: Model) currentPage dispatch =
     match chatData with
     | NotConnected ->
       [ div [] [str "not connected"] ]

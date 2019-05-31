@@ -1,4 +1,4 @@
-module RemoteServer.Types
+module ChatServer.Types
 
 open Channel.Types;
 
@@ -17,3 +17,4 @@ type Msg =
     | Join of chanId: string
 
     | Leave of chanId: string
+    | ServerMessage of FsChat.Protocol.ClientMsg
