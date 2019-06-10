@@ -10,7 +10,7 @@ type ConnectionInfo = {
 
 type Model =
     | NotConnected
-    | Connecting of SocketHandle<Protocol.ServerMsg>
+    | Connecting
     | Connected of ConnectionInfo
 
 type Msg = Msg<Protocol.ServerMsg, Protocol.ClientMsg, ChatServer.Types.Msg>

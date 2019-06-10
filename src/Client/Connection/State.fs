@@ -18,9 +18,9 @@ let rec update msg state : Model * Cmd<Msg> =
 
     match state, msg with
     | NotConnected, WebsocketMsg (socket, Opened) ->
-        Connecting socket, Cmd.ofSocketMessage socket Protocol.ServerMsg.Greets
+        Connecting, Cmd.ofSocketMessage socket Protocol.ServerMsg.Greets
 
-    | Connecting socket, WebsocketMsg (_, Msg (Protocol.Hello hello)) ->
+    | Connecting, WebsocketMsg (socket, Msg (Protocol.Hello hello)) ->
         let serverData, cmd = ChatServer.State.init hello
         Connected { socket = socket; serverData = serverData }, cmd |> Cmd.map ApplicationMsg
 
