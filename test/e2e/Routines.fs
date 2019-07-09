@@ -1,6 +1,6 @@
 module Routines
 
-open canopy
+open canopy.classic
 
 // Performs server login. Fails if user is already logged out
 let loginAnonymous name =

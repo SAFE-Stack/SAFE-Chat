@@ -1,5 +1,7 @@
 ﻿//these are similar to C# using statements
 open canopy
+open canopy.classic
+open canopy.runner.classic
 
 [<EntryPoint>]
 let main _ =
@@ -19,4 +21,4 @@ let main _ =
     run()
     quit()
 
-    canopy.runner.failedCount
+    failedCount
