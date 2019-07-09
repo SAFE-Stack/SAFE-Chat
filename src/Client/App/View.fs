@@ -1,6 +1,6 @@
 module App.View
 
-open Fable.Websockets.Elmish
+open Fable.Websockets.Elmish.Types
 open App.Types
 open Router
 open Connection.Types

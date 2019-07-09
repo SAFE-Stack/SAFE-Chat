@@ -6,3 +6,5 @@ Fable.Elmish.Browser
 Fable.Elmish.Debugger
 Fable.Elmish.HMR
 Thoth.Json
+Fable.Websockets.Elmish
+Fable.Websockets.Client

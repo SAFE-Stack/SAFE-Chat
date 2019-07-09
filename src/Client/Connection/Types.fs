@@ -1,7 +1,7 @@
 module Connection.Types
 
 open FsChat
-open Fable.Websockets.Elmish
+open Fable.Websockets.Elmish.Types
 
 type ConnectionInfo = {
     socket: SocketHandle<Protocol.ServerMsg>

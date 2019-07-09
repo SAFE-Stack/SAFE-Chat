@@ -3,14 +3,10 @@
     <TargetFramework>netstandard2.0</TargetFramework>
   </PropertyGroup>
   <ItemGroup>
-    <Compile Include="Websockets/Protocol.fs" />
-    <Compile Include="Websockets/Observables.fs" />
-    <Compile Include="Websockets/Client.fs" />
-    <Compile Include="Websockets/SocketHandle.fs" />
-    <Compile Include="Websockets/Cmd.fs" />
-
     <!-- Global to the app -->
     <Compile Include="../Shared/ChatProtocol.fs" />
+    <!-- <Compile Include="Websockets/SocketHandle.fs" />
+    <Compile Include="Websockets/Cmd.fs" /> -->
     <Compile Include="Router.fs" />
 
     <Compile Include="fable.react.markdown.fs" />

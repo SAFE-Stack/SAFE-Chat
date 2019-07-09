@@ -30,6 +30,7 @@ group Client
     nuget Fable.Elmish.Browser
     nuget Fable.Elmish.Debugger
     nuget Elmish.Bridge.Client
+    nuget Fable.Websockets.Elmish
 
 group UITests
     source https://nuget.org/api/v2
