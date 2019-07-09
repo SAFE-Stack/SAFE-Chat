@@ -1,4 +1,4 @@
-yarn build
-cd ..\Server
+call yarn build
+cd src\Server
 dotnet build
 cd ..\..

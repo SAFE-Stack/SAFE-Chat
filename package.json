@@ -18,7 +18,7 @@
     "@babel/preset-env": "^7.0.0",
     "babel-loader": "^8.0.0",
     "css-loader": "^0.28.7",
-    "fable-compiler": "^2.1.10",
+    "fable-compiler": "^2.3.12",
     "fable-loader": "^2.1.2",
     "fable-utils": "^1.0.6",
     "node-sass": "^4.5.3",
