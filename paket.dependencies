@@ -1,22 +1,24 @@
-source https://www.nuget.org/api/v2
-storage: none
+group Server
 
-nuget Fable.JsonConverter
-nuget Suave
-nuget Suave.OAuth
-nuget Suave.Experimental
-nuget Akkling
-nuget Akkling.Streams
-nuget Akkling.Persistence
-nuget Akka.Persistence.Sqlite
+    source https://www.nuget.org/api/v2
+    storage: none
 
-nuget Newtonsoft.Json
+    nuget Fable.JsonConverter
+    nuget Suave
+    nuget Suave.OAuth
+    nuget Suave.Experimental
+    nuget Akkling
+    nuget Akkling.Streams
+    nuget Akkling.Persistence
+    nuget Akka.Persistence.Sqlite
 
-nuget Microsoft.Extensions.Configuration
-nuget Microsoft.Extensions.Configuration.Json
+    nuget Newtonsoft.Json
 
-nuget FSharp.Core
-nuget Thoth.Json.Net
+    nuget Microsoft.Extensions.Configuration
+    nuget Microsoft.Extensions.Configuration.Json
+
+    nuget FSharp.Core
+    nuget Thoth.Json.Net
 
 group Client
     source https://api.nuget.org/v3/index.json
