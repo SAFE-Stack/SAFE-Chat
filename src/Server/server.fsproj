@@ -16,7 +16,7 @@
     <Compile Include="UserStore.fs" />
     <Compile Include="Diag.fs" />
     <Compile Include="Json.fs" />
-    <Compile Include="../Shared/ChatProtocol.fs" />
+    <Compile Include="../Client/Shared/ChatProtocol.fs" />
     <Compile Include="ProtocolConv.fs" />
     <Compile Include="SocketFlow.fs" />
     <Compile Include="UserSession.fs" />
