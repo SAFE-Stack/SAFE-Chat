@@ -1,5 +1,5 @@
 cd src\Client
-dotnet fable webpack -- -p
+call yarn build
 cd ..\Server
 dotnet build
 cd ..\..

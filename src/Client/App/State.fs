@@ -1,8 +1,7 @@
 module App.State
 
 open Elmish
-open Elmish.Browser.Navigation
-open Fable.Websockets.Elmish
+open Elmish.Navigation
 open Router
 open Types
 
@@ -16,7 +15,7 @@ let urlUpdate (result: Option<Route>) model =
         { model with currentPage = route }, []
 
 let init result =
-    let (chinfo, chinfoCmd) = Chat.State.init()
+    let (chinfo, chinfoCmd) = Connection.State.init()
     let (model, cmd) = urlUpdate result { currentPage = Overview; chat = chinfo }
     model, Cmd.batch [ cmd
                        Cmd.map (ChatDataMsg) chinfoCmd
@@ -25,5 +24,5 @@ let init result =
 let update msg model =
     match msg with
     | ChatDataMsg msg ->
-        let (chinfo, chinfoCmd) = Chat.State.update msg model.chat
+        let (chinfo, chinfoCmd) = Connection.State.update msg model.chat
         { model with chat = chinfo }, Cmd.map ChatDataMsg chinfoCmd

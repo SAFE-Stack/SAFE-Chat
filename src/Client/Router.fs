@@ -1,6 +1,6 @@
 module Router
 
-open Elmish.Browser.UrlParser
+open Elmish.UrlParser
 
 type Route =
     | Overview

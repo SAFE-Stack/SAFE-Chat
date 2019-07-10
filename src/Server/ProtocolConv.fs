@@ -19,7 +19,7 @@ let makeBlankUserInfo userid nick :Protocol.ChanUserInfo =
 
 let mapUserToProtocol (RegisteredUser (UserId userid, userInfo)) :Protocol.ChanUserInfo =
 
-    let tostr = Option.toObj
+    let tostr = Option.defaultValue ""
     in
     {id = userid; nick = userInfo.nick; isbot = false; status = tostr userInfo.status; email = ""; imageUrl = tostr userInfo.imageUrl} : Protocol.ChanUserInfo
     |>

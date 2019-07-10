@@ -1,3 +1,5 @@
+group Server
+
 Akkling
 Akkling.Streams
 Akkling.Persistence
@@ -6,6 +8,6 @@ Suave
 Suave.OAuth
 Suave.Experimental
 Newtonsoft.Json
-Fable.JsonConverter
 Microsoft.Extensions.Configuration
 Microsoft.Extensions.Configuration.Json
+Thoth.Json.Net

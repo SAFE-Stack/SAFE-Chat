@@ -2,12 +2,12 @@ module Channel.State
 
 open Elmish
 open Types
-open Fable.Import
+open Browser.Dom
 
-let init () : ChannelData * Cmd<Msg> =
+let init () : Model * Cmd<Msg> =
     {Users = Map.empty; Messages = []; PostText = ""; Info = ChannelInfo.Empty}, Cmd.none
 
-let init2 (chan: ChannelInfo, users: UserInfo list) : ChannelData * Cmd<Msg> =
+let init2 (chan: ChannelInfo, users: UserInfo list) : Model * Cmd<Msg> =
     { (fst <| init()) with Info = chan; Users = users |> List.map (fun u -> u.Id, u) |> Map.ofList }, Cmd.none
 
 let getUserNick userid users =
@@ -25,7 +25,7 @@ let mapUser users userId =
 let mapMessage { Id = id; Ts = ts; Content = text} author =
     { Id = id; Ts = ts; Content = UserMessage (text, author) }
 
-let update (msg: Msg) state: (ChannelData * Msg Cmd) =
+let update (msg: Msg) state: (Model * Msg Cmd) =
 
     match msg with
     | Init (info, userlist, messagelist) ->
@@ -89,5 +89,5 @@ let update (msg: Msg) state: (ChannelData * Msg Cmd) =
 
     | Leave
     | Forward _ ->
-        Browser.console.error <| sprintf "%A message is not expected in channel update." msg
+        console.error (sprintf "%A message is not expected in channel update." msg)
         state, Cmd.none

@@ -1,7 +1,7 @@
 module Channel.View
 
 open Fable.Core.JsInterop
-open Fable.Helpers.React
+open Fable.React
 
 open Props
 open Types
@@ -45,7 +45,7 @@ let chanUsers (users: Map<string, UserInfo>) =
               li [] [str <| screenName u.Value]
           ]]
 
-let chatInfo dispatch (model: ChannelData) =
+let chatInfo dispatch (model: Model) =
   div
     [ ClassName "fs-chat-info" ]
     [ h1
@@ -61,7 +61,7 @@ let chatInfo dispatch (model: ChannelData) =
     ]
 
 let message (text: string) =
-    [ reactMarkdown [Source text] ]
+    [ reactMarkdown [Source text ]]
 
 let messageList (messages: Message Envelope list) =
     div
@@ -69,7 +69,7 @@ let messageList (messages: Message Envelope list) =
       [ for m in messages ->
           match m.Content with
           | UserMessage (text, user) ->
-              // Fable.Import.Browser.console.warn <| sprintf "%A %A" text user
+              // Browser.Dom.console.warn (sprintf "%A %A" text user)
               div
                 [ classList ["fs-message", true; "user", user.isMe ] ]
                 [ div
@@ -89,10 +89,10 @@ let messageList (messages: Message Envelope list) =
       ]
 
 
-let root (model: ChannelData) dispatch =
+let root (model: Model) dispatch =
     [ chatInfo dispatch model
       div [ ClassName "fs-splitter" ] []
       messageList model.Messages
       div [ ClassName "fs-splitter" ] []
       messageInput dispatch model
-     ]
+    ]

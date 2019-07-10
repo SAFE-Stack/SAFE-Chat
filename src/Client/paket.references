@@ -1,10 +1,11 @@
-FSharp.Core
+group Client
+
 Fable.Core
+Fable.Browser.WebSocket
 Fable.Elmish.React
 Fable.Elmish.Browser
 Fable.Elmish.Debugger
 Fable.Elmish.HMR
-Fable.Websockets.Client
+Thoth.Json
 Fable.Websockets.Elmish
-
-dotnet-fable
+Fable.Websockets.Client

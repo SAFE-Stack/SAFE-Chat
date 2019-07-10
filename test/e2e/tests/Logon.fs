@@ -1,6 +1,7 @@
 module Logon
 
-open canopy
+open canopy.runner.classic
+open canopy.classic
 
 let all() =
 
