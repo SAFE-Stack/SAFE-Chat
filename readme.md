@@ -16,6 +16,11 @@ Sample chat application built with netcore, F#, Akka.net and Fable.
 
 ## Building and running the app
 
+* restore dependencies and build application: `fake build`
+* run the server: `fake build -- start`
+
+Alternatively follow the instruction below:
+
 * **change current folder to `src/Client` folder**: `cd src/Client`
 * Install JS dependencies: `yarn`
 * Build client bundle: `yarn build`
@@ -26,7 +31,7 @@ Sample chat application built with netcore, F#, Akka.net and Fable.
 
 ## Developing the app
 
-* Start the server (see instruction above)
+* Start the server by starting `dotnet run` in `src/Server` folder
 * Navigate to `src/Client` folder
 * Start Fable daemon and [Webpack](https://webpack.js.org/) dev server: `yarn start`
 * In your browser, open: http://localhost:8080/
