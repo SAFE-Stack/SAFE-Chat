@@ -16,6 +16,17 @@ Sample chat application built with netcore, F#, Akka.net and Fable.
 
 ## Building and running the app
 
+* restore dependencies and build application: `fake build`
+* run the application: `fake build -- start`
+
+More commands:
+
+* `fake build -- clean build`
+* `fake build -- restore`
+* `fake build -- build` -- just build, no restore
+
+Alternatively follow the instruction below:
+
 * **change current folder to `src/Client` folder**: `cd src/Client`
 * Install JS dependencies: `yarn`
 * Build client bundle: `yarn build`
@@ -26,7 +37,7 @@ Sample chat application built with netcore, F#, Akka.net and Fable.
 
 ## Developing the app
 
-* Start the server (see instruction above)
+* Start the server by starting `dotnet run` in `src/Server` folder
 * Navigate to `src/Client` folder
 * Start Fable daemon and [Webpack](https://webpack.js.org/) dev server: `yarn start`
 * In your browser, open: http://localhost:8080/
@@ -36,11 +47,16 @@ Sample chat application built with netcore, F#, Akka.net and Fable.
 
 E2e tests are based on canopy and webdriver so currently I know it runs on Windows. I have no idea how to run in non-windows environment.
 
-* Follow the instructions above to start the server
+* run the tests: `fake build -- test`
+* stop script by typing `q` then pressing `Enter`
+
+or follow these steps:
+
+* start the server
 * **Move to `test/e2e` folder**: `cd test\e2e`
 * run the tests: `dotnet run`
 
-It used to work with Expecto plugin but it's no longer included in Ionide.
+> Tests should be run on clean server, but after server became persistent this condition is usually not met (consider cleaning the src/Server/CHAT_DATA folder ny hands).
 
 ## Implementation overview
 
@@ -75,6 +91,11 @@ Client is written on F# with the help of Fable and Elmish (library?, framework?)
 ### Communication protocol
 
 After client is authenticated all communication between client and server is carried via WebSockets. The protocol is defined in `src/Shared/ChatProtocol.fs` file which is shared between client and server projects.
+
+### Persistence
+
+Server implementation demonstrates using Akka Persistance to restore server state after restart. It's based on event sourcing.
+However the server destroys the channels when all users are gone. So all channels created by users are non-permanent and will unlikely be restored after restart.
 
 ## References
 
