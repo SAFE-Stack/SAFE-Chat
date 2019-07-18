@@ -3,6 +3,10 @@
 
 #load ".fake/build.fsx/intellisense.fsx"
 
+// Notice: this is not a traditional FAKE script.
+// Instead it uses Xake module to define build targets and rules in CMAKE fashion.
+// See https://github.com/FakeBuild/Xake/wiki for more details.
+
 open Xake
 open Xake.Tasks
 
