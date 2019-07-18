@@ -10,6 +10,15 @@ let clientBundle = "src/Client/public/bundle.js"
 let serverDllRel = "bin/Debug/netcoreapp2.0/fschathost.dll"
 let serverDll = "src/Server/" + serverDllRel
 
+let shellx cmd folder =
+    let command::arglist | OtherwiseFail(command,arglist) = (cmd: string).Split(' ') |> List.ofArray
+    shell {
+        cmd command
+        args arglist
+        workdir folder
+        failonerror
+    } |> Ignore
+
 do xakeScript {
     consolelog Diag
 
@@ -26,12 +35,8 @@ do xakeScript {
 
         // restores packages and node modules
         "restore" => recipe {
-            do! (Ignore <| shell {
-                cmd "yarn"; workdir "src/Client"
-                failonerror })
-            do! (Ignore <| shell {
-                cmd "dotnet"; args ["restore"]; workdir "src/Server"
-                failonerror })
+            do! "src/Client" |> shellx "yarn"
+            do! "src/Server" |> shellx "dotnet restore"
         }
 
         // build the client bundle
@@ -46,43 +51,29 @@ do xakeScript {
                 includes "client.fsproj"
             })
             do! needFiles files
-            
-            do! (shell {
-                cmd "yarn"; args ["build"]; workdir "src/Client"
-                failonerror
-            } |> Ignore)
+            do! "src/Client" |> shellx "yarn build"
         }
 
         serverDll ..> recipe {
             do! need [clientBundle]
-            do! (shell {
-                cmd "dotnet"
-                args ["build"]
-                workdir "src/Server"
-                failonerror
-            } |> Ignore)
+            do! "src/Server" |> shellx "dotnet build"
         }
 
         // build the application
         "build" <== [serverDll]
 
-        // start in parallel
+        // start server and browser in parallel
         "start" <== [ "start:server"; "start:browser" ]
+
+        // starts the server and runs
+        "test" <== [ "start:server"; "test-e2e" ]
 
         "start:server" => recipe {
             do! need ["build"]
-            do! (shell {
-                cmd "dotnet"
-                args [serverDllRel]
-                workdir "src/Server"
-                failonerror
-            } |> Ignore)
+            do! "src/Server" |> shellx ("dotnet " + serverDllRel)
         }
-        "start:browser" => recipe {
-            do! (shell {
-                cmd "start"
-                args ["http://localhost:8083"]
-            } |> Ignore)
-        }
+        "test-e2e" => shellx "dotnet run" "test/e2e"
+        // opens the application in browser, windows only
+        "start:browser" => shellx "start http://localhost:8083" "."
     ]
 }
