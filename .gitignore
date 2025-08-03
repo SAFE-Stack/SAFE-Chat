@@ -25,6 +25,7 @@ _UpgradeReport*
 *.swp
 TestResult.*
 .xake
+.fake/
 .vs/
 .ionide/
 .idea/
@@ -41,4 +42,4 @@ packages/
 # Node
 node_modules/
 project.lock.json
-
+paket.local

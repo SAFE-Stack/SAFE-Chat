@@ -1,2 +1,3 @@
 @cd src\Client
-dotnet fable webpack-dev-server
+call yarn start
+cd ..\..

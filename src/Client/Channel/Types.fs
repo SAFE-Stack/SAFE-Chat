@@ -17,7 +17,7 @@ type 't Envelope = {
     Content: 't
 }
 
-type ChannelId = string // I do know it should be single case type
+type ChannelId = string // FIXME make it single case union
 type ChannelInfo = {
     Id: ChannelId
     Name: string
@@ -25,7 +25,7 @@ type ChannelInfo = {
     UserCount: int
 } with static member Empty = {Id = null; Name = null; Topic = ""; UserCount = 0}
 
-type ChannelData = {
+type Model = {
     Info: ChannelInfo
     Users: Map<UserId, UserInfo>
     Messages: Message Envelope list

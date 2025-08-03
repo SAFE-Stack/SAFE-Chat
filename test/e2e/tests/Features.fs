@@ -1,6 +1,8 @@
 module Features
 
-open canopy
+open canopy.runner.classic
+open canopy.classic
+
 open Expecto
 open Expecto.Flip
 

@@ -1,6 +1,6 @@
 module Overview.View
 
-open Fable.Helpers.React
+open Fable.React
 
 let root =
   div [] []

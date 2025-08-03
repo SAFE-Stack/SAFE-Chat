@@ -1,6 +1,7 @@
 module NavigationPane
 
-open canopy
+open canopy.runner.classic
+open canopy.classic
 open Expecto
 
 let all() =

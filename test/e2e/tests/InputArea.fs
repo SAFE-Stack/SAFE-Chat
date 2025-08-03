@@ -1,6 +1,7 @@
 module InputArea
 
-open canopy
+open canopy.runner.classic
+open canopy.classic
 
 let all () =
     context "Input area tests"

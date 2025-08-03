@@ -1,5 +1,7 @@
 ﻿//these are similar to C# using statements
 open canopy
+open canopy.classic
+open canopy.runner.classic
 
 [<EntryPoint>]
 let main _ =
@@ -16,7 +18,9 @@ let main _ =
     InputArea.all()
     Features.all()
 
+    resize (1200, 800)
+
     run()
     quit()
 
-    canopy.runner.failedCount
+    failedCount
