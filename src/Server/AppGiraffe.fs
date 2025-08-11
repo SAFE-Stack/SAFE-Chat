@@ -178,14 +178,6 @@ let getUserFromSession (ctx: HttpContext) = async {
     | None -> return None
 }
 
-let requireAuth : HttpFunc -> HttpFunc =
-    fun next ctx -> task {
-        let! userOpt = getUserFromSession ctx
-        match userOpt with
-        | Some user -> return! next ctx
-        | None -> return! redirectTo false "/logon" next ctx
-    }
-
 // ---------------------------------
 // OAuth Helpers
 // ---------------------------------

@@ -12,7 +12,7 @@ open Fable.React.Props
 open Connection.Types
 
 // Import SCSS for Vite
-importAll "../../sass/app.scss"
+importAll "../sass/app.scss"
 
 let root model dispatch =
 

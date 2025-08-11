@@ -4,7 +4,7 @@ open Elmish
 open Elmish.Navigation
 open Fable.Core.JsInterop
 
-importAll "../sass/app.scss"
+importAll "./sass/app.scss"
 
 open Elmish.Debug
 open Elmish.HMR

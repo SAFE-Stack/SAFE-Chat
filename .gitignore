@@ -35,7 +35,7 @@ CHAT_DATA/
 
 # Node
 node_modules/
+fable_modules/
 
 src/**/*.fs.js
-/dist/
 src/Client/public/
