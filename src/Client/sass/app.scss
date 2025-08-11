@@ -1,4 +1,7 @@
-@import './variables';
+@use 'sass:color';
+@use './variables' as *;
+@use './chat';
+@use './menu';
 
 html, body {
 	width: 100%;
@@ -50,11 +53,11 @@ html, body {
 
 	&:not([disabled]):not(.disabled):hover {
 		outline: none;
-		background-color: transparentize(#000, .88);
+		background-color: color.adjust(#000, $alpha: -0.88);
 	}
 
 	&:not([disabled]):not(.disabled):active {
-		background-color: transparentize(#000, .77);
+		background-color: color.adjust(#000, $alpha: -0.77);
 	}
 }
 
@@ -95,5 +98,3 @@ html, body {
 	}
 }
 
-@import './chat';
-@import './menu';

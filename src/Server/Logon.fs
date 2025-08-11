@@ -1,7 +1,6 @@
 module Logon
 
-open Suave
-open Suave.Html
+open Giraffe.ViewEngine
 
 open ChatUser
 
@@ -9,69 +8,78 @@ type ClientSession = NoSession | UserLoggedOn of RegisteredUser
 
 module Views =
     let private partUser (session : ClientSession) = 
-        div ["id", "part-user"] [
+        div [ _id "part-user" ] [
             match session with
             | UserLoggedOn (RegisteredUser (_, user)) ->
-                yield p [] [Text (sprintf "Logged on as %s" user.nick)]
-                yield p [][]
-                yield a "/" [] [Text "Proceed to chat screen"]
-                yield p [][]
-                yield Text "Or you can "
-                yield a "/logoff" [] [Text "log off now"]
-                yield p [][]
+                p [] [ str (sprintf "Logged on as %s" user.nick) ]
+                p [] []
+                a [ _href "/" ] [ str "Proceed to chat screen" ]
+                p [] []
+                str "Or you can "
+                a [ _href "/logoff" ] [ str "log off now" ]
+                p [] []
             | _ ->
-                yield tag "form" ["method", "POST"] (
-                    [ p ["class", "subtitle"]
-                        [ Text "Log on using your "
-                          a "/oaquery?provider=Google" [] [Text "Google"]
-                          Text " or "
-                          a "/oaquery?provider=Github" [] [Text "Github"]
-                          Text " account, or..." ]
-                      div ["class", "label"]
-                        [ Text "Choose a nickname" ]
-                      div ["class", "field"]
-                        [ div ["class", "control"]
-                            [ tag "input" ["id", "nickname"; "class","input"; "name", "nick"; "type", "text"; "required", "true"] [] ]]
-                      div ["class", "control"]
-                          [ tag "input" [
-                              "id", "login"
-                              "class", "button is-primary"
-                              "type", "submit"; "value", "Connect anonymously"] [] ] ]
-                )
+                form [ _method "POST" ] [
+                    p [ _class "subtitle" ] [
+                        str "Log on using your "
+                        a [ _href "/oaquery?provider=Google" ] [ str "Google" ]
+                        str " or "
+                        a [ _href "/oaquery?provider=Github" ] [ str "Github" ]
+                        str " account, or..."
+                    ]
+                    div [ _class "label" ] [
+                        str "Choose a nickname"
+                    ]
+                    div [ _class "field" ] [
+                        div [ _class "control" ] [
+                            input [ _id "nickname"; _class "input"; _name "nick"; _type "text"; _required ]
+                        ]
+                    ]
+                    div [ _class "control" ] [
+                        input [ 
+                            _id "login"
+                            _class "button is-primary"
+                            _type "submit"
+                            _value "Connect anonymously"
+                        ]
+                    ]
+                ]
         ]
 
     let page content =
-        html []
-            [ head []
-                [ title [] "F# Chat server"
-                  link [ "rel", "stylesheet"
-                         "href", "https://cdnjs.cloudflare.com/ajax/libs/bulma/0.6.1/css/bulma.css" ]
-                  link [ "rel", "stylesheet"
-                         "href", "logon.css" ] ]
-              body []
-                [ div ["id", "header"]
-                    [ tag "h1" ["class", "title"] [Text "F# Chat server"]
-                      tag "h1" ["class", "subtitle"] [Text "Logon screen"]
-                      hr [] ]
-                  content
-
-                  tag "footer" ["class", "footer"]
-                    [ div [ "class", "container"]
-                        [ div [ "class", "content has-text-centered"]
-                            [   tag "strong" [] [Text "F# Chat"]
-                                Text " built by "
-                                a "https://github.com/OlegZee" [] [Text "Anonymous"]
-                                Text " with (in alphabetical order) "
-                                a "http://getakka.net" [] [Text "Akka.NET"]
-                                Text ", "
-                                a "https://github.com/Horusiath/Akkling" [] [Text "Akkling"]
-                                Text ", "
-                                a "http://fable.io" [] [Text "Fable"]
-                                Text ", "
-                                a "http://ionide.io" [] [Text "Ionide"]
-                                Text " and "
-                                a "http://suave.io" [] [Text "Suave.IO"] ]
-                        ]]
-                ]]
+        html [] [
+            head [] [
+                title [] [ str "F# Chat server" ]
+                link [ _rel "stylesheet"; _href "https://cdnjs.cloudflare.com/ajax/libs/bulma/0.6.1/css/bulma.css" ]
+                link [ _rel "stylesheet"; _href "logon.css" ]
+            ]
+            body [] [
+                div [ _id "header" ] [
+                    h1 [ _class "title" ] [ str "F# Chat server" ]
+                    h1 [ _class "subtitle" ] [ str "Logon screen" ]
+                    hr []
+                ]
+                content
+                footer [ _class "footer" ] [
+                    div [ _class "container" ] [
+                        div [ _class "content has-text-centered" ] [
+                            strong [] [ str "F# Chat" ]
+                            str " built by "
+                            a [ _href "https://github.com/OlegZee" ] [ str "Anonymous" ]
+                            str " with (in alphabetical order) "
+                            a [ _href "http://getakka.net" ] [ str "Akka.NET" ]
+                            str ", "
+                            a [ _href "https://github.com/Horusiath/Akkling" ] [ str "Akkling" ]
+                            str ", "
+                            a [ _href "http://fable.io" ] [ str "Fable" ]
+                            str ", "
+                            a [ _href "http://ionide.io" ] [ str "Ionide" ]
+                            str " and "
+                            a [ _href "https://giraffe.wiki" ] [ str "Giraffe" ]
+                        ]
+                    ]
+                ]
+            ]
+        ]
 
     let index session = page (partUser session)

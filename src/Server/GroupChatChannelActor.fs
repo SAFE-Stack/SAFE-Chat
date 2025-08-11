@@ -4,7 +4,7 @@ open System
 open Akkling
 open Akkling.Persistence
 
-open Suave.Logging
+open Microsoft.Extensions.Logging
 open ChatTypes
 
 module private Internals =
@@ -16,7 +16,7 @@ module private Internals =
         LastEventId: int
         Messages: ChatMsgInfo list }
 
-    let logger = Log.create "chanflow"
+    let logger = LoggerFactory.Create(fun builder -> builder.AddConsole() |> ignore).CreateLogger("chanflow")
 
     let storeMessage (state: ChannelState) (message: ChatMsgInfo) =
         let messageId = fst message.ts
@@ -56,7 +56,7 @@ let props<'User, 'Message when 'User: comparison> lastUserLeft =
 
                 match cmd with
                 | NewParticipant (user, subscriber) ->
-                    logger.debug (Message.eventX "NewParticipant {user}" >> Message.setFieldValue "user" user)
+                    logger.LogDebug("NewParticipant {user}", user)
 
                     let parties = state.Parties |> Map.add user subscriber
                     let newState = { state with LastEventId = eventId; Parties = parties }
@@ -69,19 +69,19 @@ let props<'User, 'Message when 'User: comparison> lastUserLeft =
                     return loop newState
 
                 | ParticipantLeft user ->
-                    logger.debug (Message.eventX "Participant left {user}" >> Message.setFieldValue "user" user)
+                    logger.LogDebug("Participant left {user}", user)
                     let parties = state.Parties |> Map.remove user
                     do dispatch state.Parties <| mkPartiesMsgInfo (Left, user, parties)
 
                     if parties |> Map.isEmpty then
-                        logger.debug (Message.eventX "Last user left the channel")
+                        logger.LogDebug("Last user left the channel")
                         match lastUserLeft with
                         | Some msg -> do ctx.Parent() <! msg
                         | _ -> ()
                     return loop <| { state with LastEventId = eventId; Parties = parties }
 
                 | ParticipantUpdate user ->
-                    logger.debug (Message.eventX "Participant updated {user}" >> Message.setFieldValue "user" user)
+                    logger.LogDebug("Participant updated {user}", user)
                     do dispatch state.Parties <| UserUpdated { ts = ts; user = user }
                     return loop { state with LastEventId = eventId }
 

@@ -1,36 +1,50 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <TargetFramework>netstandard2.0</TargetFramework>
+    <TargetFramework>net8.0</TargetFramework>
   </PropertyGroup>
   <ItemGroup>
     <!-- Global to the app -->
-    <Compile Include="Shared/ChatProtocol.fs" />
+    <Compile Include="src/Shared/ChatProtocol.fs" />
 
-    <Compile Include="Router.fs" />
+    <Compile Include="src/Router.fs" />
 
-    <Compile Include="fable.react.markdown.fs" />
+    <Compile Include="src/fable.react.markdown.fs" />
 
-    <Compile Include="UserAvatar/View.fs" />
+    <!-- WebSocket infrastructure -->
+    <Compile Include="src/Websockets/Websockets.Elmish.fs" />
 
-    <Compile Include="Channel/Types.fs" />
-    <Compile Include="Channel/State.fs" />
-    <Compile Include="Channel/View.fs" />
+    <Compile Include="src/UserAvatar/View.fs" />
 
-    <Compile Include="ChatServer/Types.fs" />
-    <Compile Include="ChatServer/State.fs" />
+    <Compile Include="src/Channel/Types.fs" />
+    <Compile Include="src/Channel/State.fs" />
+    <Compile Include="src/Channel/View.fs" />
 
-    <Compile Include="Connection/Types.fs" />
-    <Compile Include="Connection/State.fs" />
+    <Compile Include="src/ChatServer/Types.fs" />
+    <Compile Include="src/ChatServer/State.fs" />
 
-    <Compile Include="Overview/View.fs" />
+    <Compile Include="src/Connection/Types.fs" />
+    <Compile Include="src/Connection/State.fs" />
 
-    <Compile Include="NavMenu/View.fs" />
+    <Compile Include="src/Overview/View.fs" />
+
+    <Compile Include="src/NavMenu/View.fs" />
 
     <!-- App -->
-    <Compile Include="App/Types.fs" />
-    <Compile Include="App/State.fs" />
-    <Compile Include="App/View.fs" />
-    <Compile Include="Program.fs" />
+    <Compile Include="src/App/Types.fs" />
+    <Compile Include="src/App/State.fs" />
+    <Compile Include="src/App/View.fs" />
+    <Compile Include="src/Program.fs" />
   </ItemGroup>
-  <Import Project="..\..\.paket\Paket.Restore.targets" />
+  <ItemGroup>
+    <PackageReference Include="Fable.Core" Version="4.5.0" />
+    <PackageReference Include="Fable.Elmish.React" Version="4.0.0" />
+    <PackageReference Include="Fable.Elmish.Browser" Version="4.0.0" />
+    <PackageReference Include="Fable.Browser.Dom" Version="2.20.0" />
+    <PackageReference Include="Fable.Browser.WebSocket" Version="1.2.0" />
+    <PackageReference Include="Fable.Elmish.Debugger" Version="4.0.0" />
+    <PackageReference Include="Fable.Elmish.HMR" Version="7.0.0" />
+    <PackageReference Include="Fable.Elmish.UrlParser" Version="1.0.2" />
+    <PackageReference Include="Fable.React" Version="9.3.0" />
+    <PackageReference Include="Thoth.Json" Version="10.4.1" />
+  </ItemGroup>
 </Project>

@@ -16,9 +16,10 @@
     <Content Include="App.config">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </Content>
-    <Content Include="..\\..\\packages\\uitests\\Selenium.WebDriver.ChromeDriver\\driver\\win32\*.*">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </Content>
   </ItemGroup>
-  <Import Project="..\..\.paket\Paket.Restore.targets" />
+  <ItemGroup>
+    <PackageReference Include="Canopy" Version="2.1.0" />
+    <PackageReference Include="Expecto" Version="8.10.1" />
+    <PackageReference Include="Selenium.WebDriver.ChromeDriver" Version="*" />
+  </ItemGroup>
 </Project>

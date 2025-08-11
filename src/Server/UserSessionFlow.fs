@@ -5,8 +5,7 @@ open Akkling.Streams
 open Akka.Streams
 open Akka.Streams.Dsl
 
-open Suave
-open Suave.Logging
+open Microsoft.Extensions.Logging
 
 open ChatUser
 open ChatTypes
@@ -24,22 +23,23 @@ module private Implementation =
         | ControlMessage of Protocol.ServerMsg
         | Trash of reason: string
 
-    let logger = Log.create "chatapi"
+    let logger = LoggerFactory.Create(fun builder -> builder.AddConsole() |> ignore).CreateLogger("chatapi")
 
     // extracts message from websocket reply, only handles User input (channel * string)
     let extractMessage message =
         try
             match message with
-            | Text t ->
+            | SocketFlow.Text t ->
                 match t |> Json.unjson<Protocol.ServerMsg> with
-                | Protocol.UserMessage {chan = channelId; text = messageText} ->
+                | Ok (Protocol.UserMessage {chan = channelId; text = messageText}) ->
                     match Int32.TryParse channelId with
                     | true, chanId -> ChannelMessage (ChannelId chanId, Message messageText)
                     | _ -> Trash "Bad channel id"
-                | message -> ControlMessage message                
+                | Ok message -> ControlMessage message
+                | Error e -> Trash <| sprintf "Failed to parse message '%s'. Reason: %s" t e
             | x -> Trash <| sprintf "Not a Text message '%A'" x
         with e ->
-            do logger.error (Message.eventX "Failed to parse message '{msg}'. Reason: {e}" >> Message.setFieldValue "msg" message  >> Message.setFieldValue "e" e)
+            do logger.LogError("Failed to parse message '{msg}'. Reason: {e}", message, e)
             Trash "exception"
 
     let partitionFlows (pfn: _ -> int) worker1 worker2 combine =
@@ -160,10 +160,10 @@ let createSessionFlow (userStore: UserStore) messageFlow controlFlow =
         partitionFlows partition userMessageFlow controlFlow Keep.left
 
     let socketFlow =
-        Flow.empty<WsMessage, Akka.NotUsed>
+        Flow.empty<SocketFlow.WsMessage, Akka.NotUsed>
         |> Flow.map extractMessage
         // |> Flow.log "Extracting message"
         |> Flow.viaMat combinedFlow Keep.right
-        |> Flow.map (Json.json >> Text)
+        |> Flow.map (Json.json >> SocketFlow.Text)
 
     socketFlow

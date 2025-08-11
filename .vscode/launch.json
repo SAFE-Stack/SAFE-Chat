@@ -9,7 +9,7 @@
             "type": "coreclr",
             "request": "launch",
             // "preLaunchTask": "build",
-            "program": "${workspaceFolder}/src/Server/bin/Debug/netcoreapp2.0/fschathost.dll",
+            "program": "${workspaceFolder}/src/Server/bin/Debug/net8.0/fschathost.dll",
             "args": [],
             "cwd": "${workspaceFolder}",
             "console": "internalConsole",
