@@ -25,7 +25,6 @@ _UpgradeReport*
 *.swp
 TestResult.*
 .xake
-.fake/
 .vs/
 .ionide/
 .idea/

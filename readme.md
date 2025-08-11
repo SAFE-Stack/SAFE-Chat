@@ -15,14 +15,14 @@ Sample chat application built with .NET 8, F#, Akka.NET and Fable.
 
 ## Building and running the app
 
-* restore dependencies and build application: `fake build`
-* run the application: `fake build -- start`
+* restore dependencies and build application: `./build.sh`
+* run the application: `./build.sh start`
 
 More commands:
 
-* `fake build -- clean build`
-* `fake build -- restore`
-* `fake build -- build` -- just build, no restore
+* `./build.sh clean;build`
+* `./build.sh build restore`
+* `./build.sh build` -- just build, no restore
 
 Alternatively follow the instruction below:
 
@@ -55,7 +55,7 @@ Alternatively follow the instruction below:
 
 E2e tests are based on canopy and webdriver so currently I know it runs on Windows. I have no idea how to run in non-windows environment.
 
-* run the tests: `fake build -- test`
+* run the tests: `./build.sh test`
 * stop script by typing `q` then pressing `Enter`
 
 or follow these steps:

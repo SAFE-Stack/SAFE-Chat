@@ -1,1 +1,1 @@
-fake build
+dotnet fsi build.fsx

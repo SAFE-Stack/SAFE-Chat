@@ -67,7 +67,7 @@ do xakeScript {
             do! sh ("dotnet " + serverDllRel) { workdir "src/Server" }
         }
         "test-e2e" => sh "dotnet run" { workdir "test/e2e" }
-        // opens the application in browser, windows only
-        "start:browser" => sh "start http://localhost:8083" { workdir "." }
+        // opens the application in browser, macos only, for windows this has to be replaced to start http://...
+        "start:browser" => sh "open http://localhost:8083" { workdir "." }
     ]
 }
