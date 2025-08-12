@@ -38,11 +38,21 @@ let messageInput dispatch model =
 let chanUsers (users: Map<string, UserInfo>) =
   let screenName (u: UserInfo) =
     match u.IsBot with |true -> sprintf "#%s" u.Nick |_ -> u.Nick
+  
+  let userItem (u: UserInfo) =
+    li [ classList ["user-item", true; "online", u.Online; "offline", not u.Online; "me", u.isMe] ]
+       [ span [ ClassName "user-status" ]
+              [ i [ classList ["mdi", true; "mdi-circle", true; "online", u.Online; "offline", not u.Online] ] [] ]
+         span [ ClassName "user-nick" ] [ str <| screenName u ]
+         if not (System.String.IsNullOrEmpty(u.Status)) then
+           span [ ClassName "user-status-text" ] [ str u.Status ]
+       ]
+  
   div [ ClassName "userlist" ]
-      [ str "Users:"
-        ul []
-          [ for u in users ->
-              li [] [str <| screenName u.Value]
+      [ h4 [] [ str "Users:" ]
+        ul [ ClassName "user-list" ]
+          [ for KeyValue(_, u) in users ->
+              userItem u
           ]]
 
 let chatInfo dispatch (model: Model) =
@@ -92,7 +102,12 @@ let messageList (messages: Message Envelope list) =
 let root (model: Model) dispatch =
     [ chatInfo dispatch model
       div [ ClassName "fs-splitter" ] []
-      messageList model.Messages
+      div [ ClassName "fs-chat-content" ]
+        [ div [ ClassName "fs-messages-container" ]
+            [ messageList model.Messages ]
+          div [ ClassName "fs-users-sidebar" ]
+            [ chanUsers model.Users ]
+        ]
       div [ ClassName "fs-splitter" ] []
       messageInput dispatch model
     ]
