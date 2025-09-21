@@ -1,7 +1,7 @@
-#r "paket:
-    nuget Xake ~> 1.1 prerelease //"
+// xake build file
 
-#load ".fake/build.fsx/intellisense.fsx"
+#r "nuget: Xake, 2.3.0"
+
 
 // Notice: this is not a traditional FAKE script.
 // Instead it uses Xake module to define build targets and rules in CMAKE fashion.
@@ -10,57 +10,47 @@
 open Xake
 open Xake.Tasks
 
-let clientBundle = "src/Client/public/bundle.js"
-let serverDllRel = "bin/Debug/netcoreapp2.0/fschathost.dll"
+let clientBundle = "src/Client/public/index.html"
+let serverDllRel = "bin/Debug/net8.0/fschathost.dll"
 let serverDll = "src/Server/" + serverDllRel
-
-let shellx cmd folder =
-    let command::arglist | OtherwiseFail(command,arglist) = (cmd: string).Split(' ') |> List.ofArray
-    shell {
-        cmd command
-        args arglist
-        workdir folder
-        failonerror
-    } |> Ignore
 
 do xakeScript {
     consolelog Diag
-
     rules [
         // main (default) target is to sequentially restore deps and build
         "main" <<< [ "restore"; "build" ]
 
         // cleans the build artifacts
         "clean" => recipe {
-            do! rm {file "src/Client/bundle.*"}
+            do! rm {dir "src/Client/public"}
+            do! rm {file "src/Client/**/*.fs.js"}
             do! rm {dir "src/*/bin/*"; verbose }
             do! rm {dir "src/*/obj/*"; verbose }
         }
 
         // restores packages and node modules
         "restore" => recipe {
-            do! "src/Client" |> shellx "yarn"
-            do! "src/Server" |> shellx "dotnet restore"
+            do! sh "yarn" { workdir "src/Client" }
+            do! sh "dotnet restore" { workdir "src/Server" }
         }
 
         // build the client bundle
         clientBundle ..> recipe {
             // record dependencies so that Xake will track the changes
-            let! files = getFiles (fileset {
+            do! dependsOn (fileset {
                 basedir "src/Client"
                 includes "**/*.fs"
                 includes "**/*.*css"
-                includes "webpack.config.js"
+                includes "vite.config.js"
                 includes "yarn.lock"
                 includes "client.fsproj"
             })
-            do! needFiles files
-            do! "src/Client" |> shellx "yarn build"
+            do! sh "yarn build" { workdir "src/Client" }
         }
 
         serverDll ..> recipe {
             do! need [clientBundle]
-            do! "src/Server" |> shellx "dotnet build"
+            do! sh "dotnet build" { workdir "src/Server" }
         }
 
         // build the application
@@ -74,10 +64,10 @@ do xakeScript {
 
         "start:server" => recipe {
             do! need ["build"]
-            do! "src/Server" |> shellx ("dotnet " + serverDllRel)
+            do! sh ("dotnet " + serverDllRel) { workdir "src/Server" }
         }
-        "test-e2e" => shellx "dotnet run" "test/e2e"
-        // opens the application in browser, windows only
-        "start:browser" => shellx "start http://localhost:8083" "."
+        "test-e2e" => sh "dotnet run" { workdir "test/e2e" }
+        // opens the application in browser, macos only, for windows this has to be replaced to start http://...
+        "start:browser" => sh "open http://localhost:8083" { workdir "." }
     ]
 }

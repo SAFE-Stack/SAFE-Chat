@@ -5,5 +5,5 @@ type Msg =
 
 type Model = {
     currentPage: Router.Route
-    chat: Connection.Types.Model
+    chatPage: Connection.Types.Model
   }

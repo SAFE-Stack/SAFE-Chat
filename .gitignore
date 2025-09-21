@@ -25,20 +25,16 @@ _UpgradeReport*
 *.swp
 TestResult.*
 .xake
-.fake/
 .vs/
+.ionide/
 .idea/
 .ionide/
 
 CHAT_DATA/
 
-**/public/bundle.js*
-
-# NuGet Packages Directory
-paket-files/
-packages/
-
 # Node
 node_modules/
-project.lock.json
-paket.local
+fable_modules/
+
+src/**/*.fs.js
+src/Client/public/

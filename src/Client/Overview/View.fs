@@ -1,14 +1,10 @@
 module Overview.View
 
 open Fable.React
+open Fable.React.Props
 
 let root =
-  div [] []
-
-  (*
-  open Fable.Helpers.React.Props
-
-  div
+  div 
     [ ClassName "content"; Style [ Margin "2em"] ]
     [ h1 []
         [ str "Welcome to F# Chat" ]
@@ -18,7 +14,6 @@ let root =
       p [] [ str "TBD" ] 
       p [] [ str "Channels:" ] 
       ul [] [
-          li [] [b [] [str "Channel 1"]; str " - channel desctiption"]
+          li [] [b [] [str "Channel 1"]; str " - channel description"]
           ]
     ]
-*)

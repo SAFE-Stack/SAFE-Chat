@@ -1,6 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <TargetFramework>netstandard2.0</TargetFramework>
+    <TargetFramework>net8.0</TargetFramework>
   </PropertyGroup>
   <ItemGroup>
     <!-- Global to the app -->
@@ -9,6 +9,9 @@
     <Compile Include="Router.fs" />
 
     <Compile Include="fable.react.markdown.fs" />
+
+    <!-- WebSocket infrastructure -->
+    <Compile Include="Websockets/Websockets.Elmish.fs" />
 
     <Compile Include="UserAvatar/View.fs" />
 
@@ -32,5 +35,16 @@
     <Compile Include="App/View.fs" />
     <Compile Include="Program.fs" />
   </ItemGroup>
-  <Import Project="..\..\.paket\Paket.Restore.targets" />
+  <ItemGroup>
+    <PackageReference Include="Fable.Core" Version="4.5.0" />
+    <PackageReference Include="Fable.Elmish.React" Version="4.0.0" />
+    <PackageReference Include="Fable.Elmish.Browser" Version="4.0.0" />
+    <PackageReference Include="Fable.Browser.Dom" Version="2.20.0" />
+    <PackageReference Include="Fable.Browser.WebSocket" Version="1.2.0" />
+    <PackageReference Include="Fable.Elmish.Debugger" Version="4.0.0" />
+    <PackageReference Include="Fable.Elmish.HMR" Version="7.0.0" />
+    <PackageReference Include="Fable.Elmish.UrlParser" Version="1.0.2" />
+    <PackageReference Include="Fable.React" Version="9.3.0" />
+    <PackageReference Include="Thoth.Json" Version="10.4.1" />
+  </ItemGroup>
 </Project>

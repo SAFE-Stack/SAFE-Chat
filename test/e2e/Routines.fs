@@ -30,4 +30,6 @@ let joinChannel name =
     Selectors.newChannelInput << name
     press enter
 
+    sleep()
+
     on "http://localhost:8083/#channel"

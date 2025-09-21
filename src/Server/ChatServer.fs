@@ -6,11 +6,11 @@ open Akka.Actor
 open Akkling
 open Akkling.Persistence
 
-open Suave.Logging
+open Microsoft.Extensions.Logging
 
 open ChatTypes
 
-let private logger = Log.create "chatserver"
+let private logger = LoggerFactory.Create(fun builder -> builder.AddConsole() |> ignore).CreateLogger("chatserver")
 
 module public Impl =
     // move internals here from below types definition
@@ -117,8 +117,7 @@ let startServer (system: ActorSystem) : IActorRef<ServerMessage> =
             function
             | ChannelCreated ci when state.channels |> List.exists(fun {cid = ChannelId cid} -> string cid = ci.chanId) ->
 
-                do logger.error (Message.eventX "Channel named {a} (id={chanid}) already exists, cannot restore"
-                    >> Message.setFieldValue "a" ci.name >> Message.setFieldValue "chanid" ci.chanId)
+                do logger.LogError("Channel named {name} (id={chanId}) already exists, cannot restore", ci.name, ci.chanId)
 
                 state
 
@@ -131,7 +130,7 @@ let startServer (system: ActorSystem) : IActorRef<ServerMessage> =
                 let newChan =  { cid = ChannelId chanId; name = ci.name; topic = ci.topic; channelActor = actor }
                 let newState = { state with lastChannelId = max chanId state.lastChannelId; channels = newChan::state.channels }
 
-                do logger.debug (Message.eventX "Started watching {cid} \"{chanName}\"" >> Message.setFieldValue "chanName" ci.name >> Message.setFieldValue "cid" ci.chanId)
+                do logger.LogDebug("Started watching {cid} \"{chanName}\"", ci.chanId, ci.name)
 
                 do state.sessions |> Map.iter(fun _ session -> session.notifySink <! AddChannel newChan)
 
@@ -140,18 +139,18 @@ let startServer (system: ActorSystem) : IActorRef<ServerMessage> =
             | ChannelDeleted channelId ->
                 match state.channels |> List.tryFind (byChanId channelId) with
                 | Some channel ->
-                    do logger.debug (Message.eventX "deleted channel {cid}" >> Message.setFieldValue "cid" channelId)
+                    do logger.LogDebug("deleted channel {cid}", channelId)
                     if ctx.IsRecovering() then
                         // FIXME the design here is to replay channels creation/destroy. See we ignore Terminated event for the same purpose
                         // Eventually I'm going to keep channel actor active until the channel is purged.
-                        do logger.debug (Message.eventX "... and sent poison pill")
+                        do logger.LogDebug("... and sent poison pill")
                         retype channel.channelActor <! PoisonPill.Instance
 
                     do state.sessions |> Map.iter(fun _ session -> session.notifySink <! DropChannel channel)
 
                     { state with channels = state.channels |> List.filter (fun chand -> chand.cid <> channelId)}
                 | None ->
-                    do logger.error (Message.eventX "deleted channel {cid} not found in server" >> Message.setFieldValue "cid" channelId)
+                    do logger.LogError("deleted channel {cid} not found in server", channelId)
                     state
 
         let rec loop (state: State) : Effect<_> = actor {
@@ -165,10 +164,10 @@ let startServer (system: ActorSystem) : IActorRef<ServerMessage> =
             | Command (NotifyLastUserLeft chanId) ->
                 match state.channels |> List.tryFind (byChanId chanId) with
                 | Some channel ->
-                    do logger.debug (Message.eventX "Last user left from: {chanName}, removing" >> Message.setFieldValue "chanName" channel.name)
+                    do logger.LogDebug("Last user left from: {chanName}, removing", channel.name)
                     return ChannelDeleted channel.cid |> (Event >> Persist)
                 | _ ->
-                    do logger.error (Message.eventX "Failed to locate channel: {a}" >> Message.setFieldValue "a" chanId)
+                    do logger.LogError("Failed to locate channel: {chanId}", chanId)
                     return loop state
 
             | Command (FindChannel criteria) ->
@@ -203,20 +202,20 @@ let startServer (system: ActorSystem) : IActorRef<ServerMessage> =
                 return ignored()
 
             | Command (StartSession (user, nsink)) ->
-                do logger.debug (Message.eventX "StartSession user={userId}" >> Message.setFieldValue "userId" user)
+                do logger.LogDebug("StartSession user={userId}", user)
 
                 let newState = { state with sessions = state.sessions |> Map.add user { notifySink = nsink } }
                 return loop newState
 
             | Command (CloseSession userid) ->
-                do logger.debug (Message.eventX "CloseSession user={userId}" >> Message.setFieldValue "userId" userid)
+                do logger.LogDebug("CloseSession user={userId}", userid)
                 
                 let newState = { state with sessions = state.sessions |> Map.remove userid }
                 return loop newState
             | Command DumpChannels ->
-                do logger.debug (Message.eventX "DumpChannels ({count} channels)" >> Message.setFieldValue "count" (List.length state.channels))
+                do logger.LogDebug("DumpChannels ({count} channels)", List.length state.channels)
                 for chan in state.channels do
-                    do logger.debug (Message.eventX "DumpChannels   {cid}: \"{name}\"" >> Message.setFieldValue "cid" chan.cid >> Message.setFieldValue "name" chan.name)
+                    do logger.LogDebug("DumpChannels   {cid}: \"{name}\"", chan.cid, chan.name)
                 return loop state
         }
         loop initialState

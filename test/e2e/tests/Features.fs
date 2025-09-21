@@ -21,6 +21,8 @@ let all () =
 
         Routines.joinChannel "MyPersonalChannel"
 
+        sleep()
+
         elements Selectors.menuSwitchChannelTitle |> List.map (fun e -> e.Text)
             |> Expect.contains "newly added channel" "MyPersonalChannel"
 

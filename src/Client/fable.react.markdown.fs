@@ -6,7 +6,6 @@ open Fable.React
 
 type ReactMarkdownProps =
 //    | ClassName of string option
-    | Source of string
     | SourcePos of bool option
     | EscapeHtml of bool option
     | SkipHtml of bool option
@@ -65,5 +64,8 @@ type [<StringEnum>] [<RequireQualifiedAccess>] NodeType =
     | Html
     | VirtualHtml
 
-let inline reactMarkdown (props : ReactMarkdownProps list) =
-    ofImport "default" "react-markdown" (keyValueList CaseRules.LowerFirst props) []
+let inline reactMarkdown (props : ReactMarkdownProps list) (children: ReactElement list) =
+    ofImport "default" "react-markdown" (keyValueList CaseRules.LowerFirst props) children
+
+let inline reactMarkdownText (text: string) (props : ReactMarkdownProps list) =
+    ofImport "default" "react-markdown" (keyValueList CaseRules.LowerFirst props) [str text]

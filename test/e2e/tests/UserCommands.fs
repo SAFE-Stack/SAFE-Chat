@@ -40,15 +40,21 @@ let all () =
         sendText "Hello all"
         sendText "/nick SuperTester"
 
+        sleep()
+
         "SuperTester" === read Selectors.userNick
 
     "Change status" &&& fun _ ->
         sendText "/status The first Human Spectre"
 
+        sleep()
+
         "The first Human Spectre" === read Selectors.userStatus
 
     "Change avatar" &&& fun _ ->
         sendText "/avatar http://pictures.org/1.png"
+
+        sleep()
 
         let avaimg = element Selectors.userAvatar
 
@@ -56,6 +62,8 @@ let all () =
 
     "Join channel" &&& fun _ ->
         sendText "/join Harvest"
+
+        sleep()
 
         // check the chat jumps off the channel
         on "http://localhost:8083/#channel"

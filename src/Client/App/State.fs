@@ -9,20 +9,20 @@ let urlUpdate (result: Option<Route>) model =
     match result with
     | None ->
         // console.error("Error parsing url")
-        model, Navigation.modifyUrl  "#" // no matching route - go home
-        // model,Navigation.modifyUrl (toHash model.currentPage)
+        { model with currentPage = Overview }, Navigation.modifyUrl "#"
     | Some route ->
         { model with currentPage = route }, []
 
 let init result =
-    let (chinfo, chinfoCmd) = Connection.State.init()
-    let (model, cmd) = urlUpdate result { currentPage = Overview; chat = chinfo }
-    model, Cmd.batch [ cmd
-                       Cmd.map (ChatDataMsg) chinfoCmd
-                       ]
+    let connModel, connCmd = Connection.State.init()
+    let model, cmd = urlUpdate result { currentPage = Overview; chatPage = connModel }
+    model, Cmd.batch [
+        cmd
+        Cmd.map ChatDataMsg connCmd
+    ]
 
 let update msg model =
     match msg with
     | ChatDataMsg msg ->
-        let (chinfo, chinfoCmd) = Connection.State.update msg model.chat
-        { model with chat = chinfo }, Cmd.map ChatDataMsg chinfoCmd
+        let (chinfo, chinfoCmd) = Connection.State.update msg model.chatPage
+        { model with chatPage = chinfo }, Cmd.map ChatDataMsg chinfoCmd

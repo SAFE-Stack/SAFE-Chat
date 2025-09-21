@@ -3,7 +3,7 @@ module NavMenu.View
 open Browser.Dom
 open Fable.Core.JsInterop
 open Fable.React
-open Props
+open Fable.React.Props
 
 open Router
 open Channel.Types
@@ -31,7 +31,7 @@ let menu (chatData: Model) currentPage dispatch =
     match chatData with
     | NotConnected ->
       [ div [] [str "not connected"] ]
-    | Connecting _ ->
+    | Initializing _ ->
       [ div [] [str "connecting"] ]
     | Connected { serverData = { Me = me; NewChanName = newChanName; Channels = channels; ChannelList = channelList } } ->
       let opened, newChanName = newChanName |> function |Some text -> (true, text) |None -> (false, "")
@@ -55,11 +55,11 @@ let menu (chatData: Model) currentPage dispatch =
         yield input
           [ Type "text"
             classList ["fs-new-channel", true; "open", opened]
-            Placeholder "Type the channel name here..."
+            Placeholder "Type channel name here..."
             DefaultValue newChanName
             AutoFocus true
             OnChange (fun ev -> !!ev.target?value |> (Some >> SetNewChanName >> dispatch) )
-            OnKeyPress (fun ev -> if !!ev.which = 13 || !!ev.keyCode = 13 then dispatch CreateJoin)
+            OnKeyPress (fun ev -> if !!ev.key = "Enter" then dispatch CreateJoin)
             ]
 
         for (_, ch) in channels |> Map.toSeq do
